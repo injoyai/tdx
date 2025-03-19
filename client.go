@@ -229,6 +229,9 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	if DefaultCodes == nil {
 		return nil, errors.New("DefaultCodes未初始化")
 	}
+	for i := range codes {
+		codes[i] = DefaultCodes.AddExchange(codes[i])
+	}
 	f, err := protocol.MQuote.Frame(codes...)
 	if err != nil {
 		return nil, err
