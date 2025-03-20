@@ -97,7 +97,7 @@ type Codes struct {
 	db        *xorm.Engine          //数据库实例
 	Map       map[string]*CodeModel //股票缓存
 	list      []*CodeModel          //列表方式缓存
-	exchanges map[string]string     //交易所缓存
+	exchanges map[string][]string   //交易所缓存
 }
 
 // GetName 获取股票名称
@@ -140,7 +140,11 @@ func (this *Codes) GetExchange(code string) protocol.Exchange {
 			return protocol.ExchangeSZ
 		}
 	}
-	exchange := this.exchanges[code]
+	var exchange string
+	exchanges := this.exchanges[code]
+	if len(exchanges) >= 1 {
+		exchange = exchanges[0]
+	}
 	if len(code) == 8 {
 		exchange = code[0:2]
 	}
@@ -154,6 +158,24 @@ func (this *Codes) GetExchange(code string) protocol.Exchange {
 	}
 }
 
+func (this *Codes) AddExchange(code string) string {
+	if exchanges := this.exchanges[code]; len(exchanges) == 1 {
+		return exchanges[0] + code
+	}
+	if len(code) == 6 {
+		switch {
+		case code[:1] == "6":
+			return protocol.ExchangeSH.String() + code
+		case code[:1] == "0":
+			return protocol.ExchangeSZ.String() + code
+		case code[:2] == "30":
+			return protocol.ExchangeSZ.String() + code
+		}
+		return this.GetExchange(code).String() + code
+	}
+	return code
+}
+
 // Update 更新数据,从服务器或者数据库
 func (this *Codes) Update(byDB ...bool) error {
 	codes, err := this.GetCodes(len(byDB) > 0 && byDB[0])
@@ -161,10 +183,10 @@ func (this *Codes) Update(byDB ...bool) error {
 		return err
 	}
 	codeMap := make(map[string]*CodeModel)
-	exchanges := make(map[string]string)
+	exchanges := make(map[string][]string)
 	for _, code := range codes {
 		codeMap[code.Exchange+code.Code] = code
-		exchanges[code.Code] = code.Exchange
+		exchanges[code.Code] = append(exchanges[code.Code], code.Exchange)
 	}
 	this.Map = codeMap
 	this.list = codes
