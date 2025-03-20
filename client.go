@@ -15,10 +15,26 @@ import (
 	"time"
 )
 
+const (
+	LevelNone  = 0
+	LevelDebug = 2
+	LevelWrite = 3
+	LevelRead  = 4
+	LevelInfo  = 5
+	LevelError = 7
+	LevelAll   = 999
+)
+
 // WithDebug 是否打印通讯数据
 func WithDebug(b ...bool) client.Option {
 	return func(c *client.Client) {
 		c.Logger.Debug(b...)
+	}
+}
+
+func WithLevel(level int) client.Option {
+	return func(c *client.Client) {
+		c.Logger.SetLevel(level)
 	}
 }
 
@@ -31,6 +47,7 @@ func WithRedial(b ...bool) client.Option {
 
 // DialDefault 默认连接方式
 func DialDefault(op ...client.Option) (cli *Client, err error) {
+	op = append([]client.Option{WithRedial()}, op...)
 	return DialHostsRange(Hosts, op...)
 }
 
