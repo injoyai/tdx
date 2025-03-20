@@ -77,7 +77,7 @@ func (this *Workday) Update() error {
 
 	now := time.Now()
 	if lastWorkday == nil || lastWorkday.Unix < IntegerDay(now).Unix() {
-		resp, err := this.Client.GetKlineDayAll("sh000001")
+		resp, err := this.Client.GetIndexDayAll("sh000001")
 		if err != nil {
 			logs.Err(err)
 			return err
