@@ -8,6 +8,7 @@ import (
 	"github.com/injoyai/conv"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
+	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"runtime/debug"
@@ -16,13 +17,13 @@ import (
 )
 
 const (
-	LevelNone  = 0
-	LevelDebug = 2
-	LevelWrite = 3
-	LevelRead  = 4
-	LevelInfo  = 5
-	LevelError = 7
-	LevelAll   = 999
+	LevelNone  = common.LevelNone
+	LevelDebug = common.LevelDebug
+	LevelWrite = common.LevelWrite
+	LevelRead  = common.LevelRead
+	LevelInfo  = common.LevelInfo
+	LevelError = common.LevelError
+	LevelAll   = common.LevelAll
 )
 
 // WithDebug 是否打印通讯数据
@@ -80,7 +81,8 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 	}
 
 	cli.Client, err = client.Dial(dial, func(c *client.Client) {
-		c.Logger.Debug(false)                          //关闭日志打印
+		c.Logger.Debug(true)                           //关闭日志打印
+		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
 		c.Logger.WithHEX()                             //以HEX显示
 		c.SetOption(op...)                             //自定义选项
 		c.Event.OnReadFrom = protocol.ReadFrom         //分包
