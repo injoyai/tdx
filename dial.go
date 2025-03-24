@@ -74,6 +74,7 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 			if i < len(hosts)-1 {
 				//最后一个错误返回出去
 				logs.Err(err)
+				<-time.After(time.Second * 3)
 			}
 		}
 		return
