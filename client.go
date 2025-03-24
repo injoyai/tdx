@@ -105,16 +105,6 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 
 	go cli.Client.Run()
 
-	/*
-		部分接口需要通过代码信息计算得出
-	*/
-	codesOnce.Do(func() {
-		//初始化代码管理
-		if DefaultCodes == nil {
-			DefaultCodes, err = NewCodes(cli, "./codes.db")
-		}
-	})
-
 	return cli, err
 }
 

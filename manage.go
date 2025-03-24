@@ -27,7 +27,6 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	}
 
 	//代码
-	DefaultCodes = &Codes{}
 	codesClient, err := cfg.Dial(op...)
 	if err != nil {
 		return nil, err
@@ -37,7 +36,6 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	if err != nil {
 		return nil, err
 	}
-	DefaultCodes = codes
 
 	//连接池
 	p, err := NewPool(func() (*Client, error) {

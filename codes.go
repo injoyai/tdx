@@ -8,17 +8,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
 
-// 增加单例,部分数据需要通过Codes里面的信息计算
-var (
-	DefaultCodes *Codes
-	codesOnce    sync.Once
-)
+// DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
+var DefaultCodes *Codes
 
 func NewCodes(c *Client, filename string) (*Codes, error) {
 
