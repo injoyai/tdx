@@ -16,19 +16,18 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	if cfg == nil {
 		cfg = &ManageConfig{}
 	}
-	if len(cfg.Hosts) == 0 {
-		cfg.Hosts = Hosts
-	}
 	if cfg.CodesDir == "" {
 		cfg.CodesDir = DefaultDatabaseDir
 	}
 	if cfg.WorkdayDir == "" {
 		cfg.WorkdayDir = DefaultDatabaseDir
 	}
+	if cfg.Dial == nil {
+		cfg.Dial = DialDefault
+	}
 
 	//代码
-	DefaultCodes = &Codes{}
-	codesClient, err := DialHostsRange(cfg.Hosts, op...)
+	codesClient, err := cfg.Dial(op...)
 	if err != nil {
 		return nil, err
 	}
@@ -37,18 +36,17 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	if err != nil {
 		return nil, err
 	}
-	DefaultCodes = codes
 
 	//连接池
 	p, err := NewPool(func() (*Client, error) {
-		return DialHostsRange(cfg.Hosts, op...)
+		return cfg.Dial(op...)
 	}, cfg.Number)
 	if err != nil {
 		return nil, err
 	}
 
 	//工作日
-	workdayClient, err := DialHostsRange(cfg.Hosts, op...)
+	workdayClient, err := cfg.Dial(op...)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +83,8 @@ func (this *Manage) AddWorkdayTask(spec string, f func(m *Manage)) {
 }
 
 type ManageConfig struct {
-	Hosts      []string //服务端IP
-	Number     int      //客户端数量
-	CodesDir   string   //代码数据库位置
-	WorkdayDir string   //工作日数据库位置
+	Number     int                                                //客户端数量
+	CodesDir   string                                             //代码数据库位置
+	WorkdayDir string                                             //工作日数据库位置
+	Dial       func(op ...client.Option) (cli *Client, err error) //默认连接方式
 }

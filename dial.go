@@ -73,7 +73,8 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 			}
 			if i < len(hosts)-1 {
 				//最后一个错误返回出去
-				logs.Err(err)
+				logs.Err(err, "等待2秒后尝试下一个服务地址...")
+				<-time.After(time.Second * 2)
 			}
 		}
 		return

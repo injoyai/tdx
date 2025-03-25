@@ -8,6 +8,7 @@ import (
 	"github.com/injoyai/conv"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
+	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"runtime/debug"
@@ -15,10 +16,26 @@ import (
 	"time"
 )
 
+const (
+	LevelNone  = common.LevelNone
+	LevelDebug = common.LevelDebug
+	LevelWrite = common.LevelWrite
+	LevelRead  = common.LevelRead
+	LevelInfo  = common.LevelInfo
+	LevelError = common.LevelError
+	LevelAll   = common.LevelAll
+)
+
 // WithDebug 是否打印通讯数据
 func WithDebug(b ...bool) client.Option {
 	return func(c *client.Client) {
 		c.Logger.Debug(b...)
+	}
+}
+
+func WithLevel(level int) client.Option {
+	return func(c *client.Client) {
+		c.Logger.SetLevel(level)
 	}
 }
 
@@ -31,6 +48,7 @@ func WithRedial(b ...bool) client.Option {
 
 // DialDefault 默认连接方式
 func DialDefault(op ...client.Option) (cli *Client, err error) {
+	op = append([]client.Option{WithRedial()}, op...)
 	return DialHostsRange(Hosts, op...)
 }
 
@@ -63,7 +81,8 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 	}
 
 	cli.Client, err = client.Dial(dial, func(c *client.Client) {
-		c.Logger.Debug(false)                          //关闭日志打印
+		c.Logger.Debug(true)                           //关闭日志打印
+		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
 		c.Logger.WithHEX()                             //以HEX显示
 		c.SetOption(op...)                             //自定义选项
 		c.Event.OnReadFrom = protocol.ReadFrom         //分包
@@ -85,16 +104,6 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 	}
 
 	go cli.Client.Run()
-
-	/*
-		部分接口需要通过代码信息计算得出
-	*/
-	codesOnce.Do(func() {
-		//初始化代码管理
-		if DefaultCodes == nil {
-			DefaultCodes, err = NewCodes(cli, "./codes.db")
-		}
-	})
 
 	return cli, err
 }

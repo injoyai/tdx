@@ -77,7 +77,10 @@ func (this *Kline) RisePrice() Price {
 
 // RiseRate 涨跌比例/涨跌幅,第一个数据不准，仅做参考
 func (this *Kline) RiseRate() float64 {
-	return float64(this.RisePrice()) / float64(this.Open) * 100
+	if this.Last == 0 {
+		return float64(this.Close-this.Open) / float64(this.Open) * 100
+	}
+	return float64(this.Close-this.Last) / float64(this.Last) * 100
 }
 
 type kline struct{}
