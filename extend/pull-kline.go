@@ -9,6 +9,7 @@ import (
 	"github.com/injoyai/tdx/protocol"
 	"path/filepath"
 	"sort"
+	"time"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
@@ -42,24 +43,28 @@ var (
 	}
 )
 
-func NewPullKline(codes, tables []string, dir string, limit int) *PullKline {
+type PullKlineConfig struct {
+	Codes   []string  //操作代码
+	Tables  []string  //数据类型
+	Dir     string    //数据位置
+	Limit   int       //协程数量
+	StartAt time.Time //数据开始时间
+}
+
+func NewPullKline(cfg PullKlineConfig) *PullKline {
 	_tables := []*KlineTable(nil)
-	for _, v := range tables {
+	for _, v := range cfg.Tables {
 		_tables = append(_tables, KlineTableMap[v])
 	}
 	return &PullKline{
 		tables: _tables,
-		dir:    dir,
-		Codes:  codes,
-		limit:  limit,
+		Config: cfg,
 	}
 }
 
 type PullKline struct {
 	tables []*KlineTable
-	dir    string   //数据目录
-	Codes  []string //指定的代码
-	limit  int      //并发数量
+	Config PullKlineConfig
 }
 
 func (this *PullKline) Name() string {
@@ -67,10 +72,10 @@ func (this *PullKline) Name() string {
 }
 
 func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
-	limit := chans.NewWaitLimit(uint(this.limit))
+	limit := chans.NewWaitLimit(uint(this.Config.Limit))
 
 	//1. 获取所有股票代码
-	codes := this.Codes
+	codes := this.Config.Codes
 	if len(codes) == 0 {
 		codes = m.Codes.GetStocks()
 	}
@@ -87,7 +92,7 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 			defer limit.Done()
 
 			//连接数据库
-			db, err := xorm.NewEngine("sqlite", filepath.Join(this.dir, code+".db"))
+			db, err := xorm.NewEngine("sqlite", filepath.Join(this.Config.Dir, code+".db"))
 			if err != nil {
 				logs.Err(err)
 				return
@@ -157,7 +162,7 @@ func (this *PullKline) pull(code string, lastDate int64, f func(code string, f f
 	}
 
 	resp, err := f(code, func(k *protocol.Kline) bool {
-		return k.Time.Unix() <= lastDate
+		return k.Time.Unix() <= lastDate || k.Time.Unix() <= this.Config.StartAt.Unix()
 	})
 	if err != nil {
 		return nil, err

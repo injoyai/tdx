@@ -6,6 +6,7 @@ import (
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
 	"path/filepath"
+	"time"
 )
 
 func main() {
@@ -13,12 +14,13 @@ func main() {
 	m, err := tdx.NewManage(nil)
 	logs.PanicErr(err)
 
-	err = extend.NewPullKline(
-		[]string{"sz000001"},
-		[]string{extend.Year},
-		filepath.Join(tdx.DefaultDatabaseDir, "kline"),
-		1,
-	).Run(context.Background(), m)
+	err = extend.NewPullKline(extend.PullKlineConfig{
+		Codes:   []string{"sz000001"},
+		Tables:  []string{extend.Year},
+		Dir:     filepath.Join(tdx.DefaultDatabaseDir, "kline"),
+		Limit:   1,
+		StartAt: time.Time{},
+	}).Run(context.Background(), m)
 	logs.PanicErr(err)
 
 }
