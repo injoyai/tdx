@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"errors"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
@@ -194,6 +195,10 @@ func (this *Codes) Update(byDB ...bool) error {
 
 // GetCodes 更新股票并返回结果
 func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
+
+	if this.Client == nil {
+		return nil, errors.New("client is nil")
+	}
 
 	//2. 查询数据库所有股票
 	list := []*CodeModel(nil)

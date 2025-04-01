@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"errors"
 	_ "github.com/glebarez/go-sqlite"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/logs"
@@ -59,6 +60,11 @@ type Workday struct {
 
 // Update 更新
 func (this *Workday) Update() error {
+
+	if this.Client == nil {
+		return errors.New("client is nil")
+	}
+
 	//获取沪市指数的日K线,用作历史是否节假日的判断依据
 	//判断日K线是否拉取过
 
