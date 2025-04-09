@@ -11,10 +11,10 @@ func main() {
 	logs.PanicErr(err)
 
 	codes := m.Codes.GetStocks()
-	codes = []string{
-		"sz000001",
-		"sz000002",
-	}
+	//codes = []string{
+	//	"sz000001",
+	//	"sz000002",
+	//}
 
 	for _, code := range codes {
 		m.Do(func(c *tdx.Client) error {
@@ -24,7 +24,19 @@ func main() {
 			resp2, err := c.GetKlineDay(code, 0, 1)
 			logs.PanicErr(err)
 
-			logs.Debug(code, resp2.List[0].Close == resp.List[len(resp.List)-1].Price)
+			if len(resp2.List) == 0 {
+				logs.Debug(code)
+				return nil
+			}
+
+			if len(resp.List) == 0 {
+				logs.Debug(code)
+				return nil
+			}
+
+			if resp2.List[0].Close != resp.List[len(resp.List)-1].Price {
+				logs.Debug(code)
+			}
 
 			return nil
 
