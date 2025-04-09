@@ -33,10 +33,10 @@ func (this historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 		Count: Uint16(bs[:2]),
 	}
 
-	multiple := Price(1)
-	if bs[5] > 0x40 {
-		multiple = 10
-	}
+	multiple := Price(1) * 10
+	//if bs[5] > 0x40 {
+	//multiple = 10
+	//}
 
 	//2-4字节是啥?
 	bs = bs[6:]
