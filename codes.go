@@ -3,6 +3,7 @@ package tdx
 import (
 	"errors"
 	"github.com/injoyai/conv"
+	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
@@ -17,7 +18,17 @@ import (
 // DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
 var DefaultCodes *Codes
 
-func NewCodes(c *Client, filename string) (*Codes, error) {
+func DialCodes(filename string, op ...client.Option) (*Codes, error) {
+	c, err := DialDefault(op...)
+	if err != nil {
+		return nil, err
+	}
+	return NewCodes(c, filename)
+}
+
+func NewCodes(c *Client, filenames ...string) (*Codes, error) {
+
+	filename := conv.DefaultString("./codes.db", filenames...)
 
 	//如果文件夹不存在就创建
 	dir, _ := filepath.Split(filename)
