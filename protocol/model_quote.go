@@ -47,7 +47,7 @@ type Quote struct {
 func (this *Quote) String() string {
 	return fmt.Sprintf(`%s%s
 %s
-总量：%s, 现量：%s, 总金额：%s, 内盘：%s, 外盘：%s
+总手：%s, 现量：%s, 总金额：%s, 内盘：%s, 外盘：%s
 %s%s
 `,
 		this.Exchange.String(), this.Code, this.K,
@@ -142,9 +142,9 @@ func (this quote) Decode(bs []byte) QuotesResp {
 			sellLevel := PriceLevel{}
 
 			bs, p = GetPrice(bs)
-			buyLevel.Price = p + sec.K.Close
+			buyLevel.Price = p*10 + sec.K.Close
 			bs, p = GetPrice(bs)
-			sellLevel.Price = p + sec.K.Close
+			sellLevel.Price = p*10 + sec.K.Close
 
 			bs, buyLevel.Number = CutInt(bs)
 			bs, sellLevel.Number = CutInt(bs)

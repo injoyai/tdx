@@ -235,12 +235,18 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 
 // GetQuote 获取盘口五档报价
 func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
-	if DefaultCodes == nil {
-		return nil, errors.New("DefaultCodes未初始化")
-	}
 	for i := range codes {
-		codes[i] = DefaultCodes.AddExchange(codes[i])
+		//如果是股票代码,则加上前缀
+		codes[i] = protocol.AddPrefix(codes[i])
+		if !protocol.IsStock(codes[i]) {
+			if DefaultCodes == nil {
+				return nil, errors.New("DefaultCodes未初始化")
+			}
+			//不是股票代码的话，根据codes的信息加上前缀
+			codes[i] = DefaultCodes.AddExchange(codes[i])
+		}
 	}
+
 	f, err := protocol.MQuote.Frame(codes...)
 	if err != nil {
 		return nil, err
@@ -256,26 +262,25 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 		if len(quotes) != len(codes) {
 			return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
 		}
-		if DefaultCodes == nil {
-			return nil, errors.New("DefaultCodes未初始化")
-		}
 		for i, code := range codes {
-			m := DefaultCodes.Get(code)
-			if m == nil {
-				return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
-			}
-			for ii, v := range quotes[i].SellLevel {
-				quotes[i].SellLevel[ii].Price = m.Price(v.Price)
-			}
-			for ii, v := range quotes[i].BuyLevel {
-				quotes[i].BuyLevel[ii].Price = m.Price(v.Price)
-			}
-			quotes[i].K = protocol.K{
-				Last:  m.Price(quotes[i].K.Last),
-				Open:  m.Price(quotes[i].K.Open),
-				High:  m.Price(quotes[i].K.High),
-				Low:   m.Price(quotes[i].K.Low),
-				Close: m.Price(quotes[i].K.Close),
+			if !protocol.IsStock(code) {
+				m := DefaultCodes.Get(code)
+				if m == nil {
+					return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
+				}
+				for ii, v := range quotes[i].SellLevel {
+					quotes[i].SellLevel[ii].Price = m.Price(v.Price)
+				}
+				for ii, v := range quotes[i].BuyLevel {
+					quotes[i].BuyLevel[ii].Price = m.Price(v.Price)
+				}
+				quotes[i].K = protocol.K{
+					Last:  m.Price(quotes[i].K.Last),
+					Open:  m.Price(quotes[i].K.Open),
+					High:  m.Price(quotes[i].K.High),
+					Low:   m.Price(quotes[i].K.Low),
+					Close: m.Price(quotes[i].K.Close),
+				}
 			}
 		}
 	}

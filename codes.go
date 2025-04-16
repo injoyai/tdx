@@ -314,7 +314,8 @@ func (this *CodeModel) FullCode() string {
 }
 
 func (this *CodeModel) Price(p protocol.Price) protocol.Price {
-	return p * protocol.Price(math.Pow10(int(3-this.Decimal)))
+	return protocol.Price(float64(p) * math.Pow10(int(2-this.Decimal)))
+	return p * protocol.Price(math.Pow10(int(2-this.Decimal)))
 }
 
 func NewSessionFunc(db *xorm.Engine, fn func(session *xorm.Session) error) error {
