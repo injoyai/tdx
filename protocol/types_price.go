@@ -78,6 +78,13 @@ func DecodeK(bs []byte) ([]byte, K) {
 	bs, k.Low = GetPrice(bs)
 	k.Low += k.Close
 
+	//默认按股票展示
+	k.Last *= 10
+	k.Open *= 10
+	k.Close *= 10
+	k.High *= 10
+	k.Low *= 10
+
 	return bs, k
 }
 
