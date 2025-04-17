@@ -117,7 +117,7 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 				last := new(Kline)
 				if _, err = db.Table(table).Desc("Date").Get(last); err != nil {
 					logs.Err(err)
-					return
+					//return
 				}
 
 				//3. 从服务器获取数据
