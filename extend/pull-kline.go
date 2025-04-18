@@ -7,6 +7,7 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/protocol"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -103,6 +104,8 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 		go func(code string) {
 			defer limit.Done()
 
+			_ = os.MkdirAll(this.Config.Dir, 0777)
+
 			//连接数据库
 			db, err := xorm.NewEngine("sqlite", filepath.Join(this.Config.Dir, code+".db"))
 			if err != nil {
@@ -123,13 +126,13 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 				default:
 				}
 
-				db.Sync2(table)
+				logs.PrintErr(db.Sync2(table))
 
 				//2. 获取最后一条数据
 				last := new(Kline)
 				if _, err = db.Table(table).Desc("Date").Get(last); err != nil {
 					logs.Err(err)
-					//return
+					return
 				}
 
 				//3. 从服务器获取数据
