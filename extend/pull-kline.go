@@ -41,6 +41,18 @@ var (
 		Quarter:  NewKlineTable("QuarterKline", func(c *tdx.Client) KlineHandler { return c.GetKlineQuarterUntil }),
 		Year:     NewKlineTable("YearKline", func(c *tdx.Client) KlineHandler { return c.GetKlineYearUntil }),
 	}
+	AllKlineTables = []string{
+		"MinuteKline",
+		"Minute5Kline",
+		"Minute15Kline",
+		"Minute30Kline",
+		"HourKline",
+		"DayKline",
+		"WeekKline",
+		"MonthKline",
+		"QuarterKline",
+		"YearKline",
+	}
 )
 
 type PullKlineConfig struct {
