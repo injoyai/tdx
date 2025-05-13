@@ -28,7 +28,10 @@ func DialCodes(filename string, op ...client.Option) (*Codes, error) {
 
 func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 
-	filename := conv.DefaultString("./codes.db", filenames...)
+	//如果没有指定文件名,则使用默认
+	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
+	filename := conv.Default[string](defaultFilename, filenames...)
+	filename = conv.Select[string](filename == "", defaultFilename, filename)
 
 	//如果文件夹不存在就创建
 	dir, _ := filepath.Split(filename)
@@ -118,7 +121,7 @@ func (this *Codes) GetName(code string) string {
 
 // GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
 func (this *Codes) GetStocks(limits ...int) []string {
-	limit := conv.DefaultInt(-1, limits...)
+	limit := conv.Default[int](-1, limits...)
 	ls := []string(nil)
 	for _, m := range this.list {
 		code := m.FullCode()

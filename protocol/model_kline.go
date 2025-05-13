@@ -3,7 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"github.com/injoyai/base/g"
+	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
 	"time"
 )
@@ -15,7 +15,7 @@ type KlineReq struct {
 	Count    uint16
 }
 
-func (this *KlineReq) Bytes(Type uint8) (g.Bytes, error) {
+func (this *KlineReq) Bytes(Type uint8) (types.Bytes, error) {
 	if this.Count > 800 {
 		return nil, errors.New("单次数量不能超过800")
 	}
