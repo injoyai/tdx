@@ -3,7 +3,6 @@ package protocol
 import (
 	"bytes"
 	"fmt"
-	bytes2 "github.com/injoyai/base/bytes"
 	"github.com/injoyai/conv"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
@@ -15,12 +14,12 @@ import (
 
 // String 字节先转小端,再转字符
 func String(bs []byte) string {
-	return string(bytes2.Reverse(bs))
+	return string(Reverse(bs))
 }
 
 // Bytes 任意类型转小端字节
 func Bytes(n any) []byte {
-	return bytes2.Reverse(conv.Bytes(n))
+	return Reverse(conv.Bytes(n))
 }
 
 // Reverse 字节倒序
@@ -34,12 +33,12 @@ func Reverse(bs []byte) []byte {
 
 // Uint32 字节通过小端方式转为uint32
 func Uint32(bs []byte) uint32 {
-	return conv.Uint32(bytes2.Reverse(bs))
+	return conv.Uint32(Reverse(bs))
 }
 
 // Uint16 字节通过小端方式转为uint16
 func Uint16(bs []byte) uint16 {
-	return conv.Uint16(bytes2.Reverse(bs))
+	return conv.Uint16(Reverse(bs))
 }
 
 func UTF8ToGBK(text []byte) []byte {

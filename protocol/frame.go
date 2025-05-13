@@ -1,11 +1,11 @@
 package protocol
 
 import (
+	"bytes"
 	"compress/zlib"
 	"errors"
 	"fmt"
-	"github.com/injoyai/base/bytes"
-	"github.com/injoyai/base/g"
+	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
 	"io"
 )
@@ -19,7 +19,7 @@ const (
 )
 
 type Message interface {
-	Bytes() g.Bytes
+	Bytes() types.Bytes
 }
 
 /*
@@ -39,7 +39,7 @@ type Frame struct {
 	Data    []byte  //数据
 }
 
-func (this *Frame) Bytes() g.Bytes {
+func (this *Frame) Bytes() types.Bytes {
 	length := uint16(len(this.Data) + 2)
 	data := make([]byte, 12+len(this.Data))
 	data[0] = Prefix
