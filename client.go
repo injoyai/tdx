@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/injoyai/base/maps"
-	"github.com/injoyai/base/maps/wait/v2"
+	"github.com/injoyai/base/maps/wait"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
