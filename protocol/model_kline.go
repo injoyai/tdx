@@ -177,11 +177,35 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 
 		resp.List = append(resp.List, k)
 	}
-
+	resp.List = FixKlineTime(resp.List)
 	return resp, nil
 }
 
 type KlineCache struct {
 	Type uint8  //1分钟,5分钟,日线等
 	Kind string //指数,个股等
+}
+
+// FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00
+func FixKlineTime(ks []*Kline) []*Kline {
+	if len(ks) == 0 {
+		return ks
+	}
+	now := time.Now()
+	//只有当天下午13~15点之间才会出现的时间问题
+	node1 := time.Date(now.Year(), now.Month(), now.Day(), 13, 0, 0, 0, now.Location())
+	node2 := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, now.Location())
+	if ks[len(ks)-1].Time.Unix() < node1.Unix() || ks[len(ks)-1].Time.Unix() > node2.Unix() {
+		return ks
+	}
+	ls := ks
+	if len(ls) >= 120 {
+		ls = ls[len(ls)-120:]
+	}
+	for i, v := range ls {
+		if v.Time.Unix() == node1.Unix() {
+			ls[i].Time = time.Date(now.Year(), now.Month(), now.Day(), 11, 30, 0, 0, now.Location())
+		}
+	}
+	return ks
 }
