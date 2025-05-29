@@ -1,5 +1,12 @@
 package tdx
 
+import (
+	"github.com/injoyai/logs"
+	"net"
+	"strings"
+	"sync"
+)
+
 var (
 
 	// Hosts 所有服务器地址(2024-11-30测试通过)
@@ -67,3 +74,31 @@ var (
 		"119.97.185.59", //电信
 	}
 )
+
+// FastHosts 通过tcp(ping不可用)的方式筛选可用的地址,并排序(有点误差)
+func FastHosts(hosts ...string) []string {
+	wg := sync.WaitGroup{}
+	wg.Add(len(hosts))
+	mu := sync.Mutex{}
+	ls := []string(nil)
+	for _, host := range hosts {
+		go func(host string) {
+			defer wg.Done()
+			addr := host
+			if !strings.Contains(addr, ":") {
+				addr += ":7709"
+			}
+			c, err := net.Dial("tcp", addr)
+			if err != nil {
+				logs.Err(err)
+				return
+			}
+			defer c.Close()
+			mu.Lock()
+			ls = append(ls, host)
+			mu.Unlock()
+		}(host)
+	}
+	wg.Wait()
+	return ls
+}
