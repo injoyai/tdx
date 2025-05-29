@@ -49,7 +49,7 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 			Multiple:  Uint16(bs[6:8]),
 			Name:      string(UTF8ToGBK(bs[8:16])),
 			Decimal:   int8(bs[20]),
-			LastPrice: getVolume(Uint32(bs[21:25])),
+			LastPrice: getVolume2(Uint32(bs[21:25])),
 		}
 		//logs.Debug(bs[25:29]) //26和28字节 好像是枚举(基本是44,45和34,35)
 		bs = bs[29:]

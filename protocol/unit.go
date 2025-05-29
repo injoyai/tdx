@@ -195,6 +195,46 @@ func getVolume(val uint32) (volume float64) {
 	return
 }
 
+func getVolume2(val uint32) float64 {
+	ivol := int32(val)
+	logpoint := ivol >> 24       // 提取最高字节（原8*3移位）
+	hleax := (ivol >> 16) & 0xff // 提取次高字节
+	lheax := (ivol >> 8) & 0xff  // 提取第三字节
+	lleax := ivol & 0xff         // 提取最低字节
+
+	dwEcx := logpoint*2 - 0x7f            // 基础指数计算
+	dbl_xmm6 := math.Exp2(float64(dwEcx)) // 核心指数计算仅一次
+
+	// 计算dbl_xmm4
+	var dbl_xmm4 float64
+	if hleax > 0x80 {
+		// 高位分支：合并指数计算
+		dbl_xmm4 = dbl_xmm6 * (64.0 + float64(hleax&0x7f)) / 64.0
+	} else {
+		// 低位分支：复用核心指数
+		dbl_xmm4 = dbl_xmm6 * float64(hleax) / 128.0
+	}
+
+	// 计算缩放因子
+	scale := 1.0
+	if (hleax & 0x80) != 0 {
+		scale = 2.0
+	}
+
+	// 预计算常量的倒数，优化除法
+	const (
+		inv32768   = 1.0 / 32768.0   // 2^15
+		inv8388608 = 1.0 / 8388608.0 // 2^23
+	)
+
+	// 计算低位分量
+	dbl_xmm3 := dbl_xmm6 * float64(lheax) * inv32768 * scale
+	dbl_xmm1 := dbl_xmm6 * float64(lleax) * inv8388608 * scale
+
+	// 合计最终结果
+	return dbl_xmm6 + dbl_xmm4 + dbl_xmm3 + dbl_xmm1
+}
+
 // IsStock 是否是股票,示例sz000001
 func IsStock(code string) bool {
 	if len(code) != 8 {

@@ -20,5 +20,6 @@ func TestUTF8ToGBK(t *testing.T) {
 
 func Test_getVolume(t *testing.T) {
 	t.Log(getVolume(1237966432))
-	t.Log(getVolume(1237966432))
+	t.Log(getVolume2(1237966432))
+
 }

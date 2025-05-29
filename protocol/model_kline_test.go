@@ -19,7 +19,10 @@ func Test_stockKline_Decode(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	resp, err := MKline.Decode(bs, 9)
+	resp, err := MKline.Decode(bs, KlineCache{
+		Type: 9,
+		Kind: "",
+	})
 	if err != nil {
 		t.Error(err)
 		return
