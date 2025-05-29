@@ -30,8 +30,8 @@ func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 
 	//如果没有指定文件名,则使用默认
 	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
-	filename := conv.Default[string](defaultFilename, filenames...)
-	filename = conv.Select[string](filename == "", defaultFilename, filename)
+	filename := conv.Default(defaultFilename, filenames...)
+	filename = conv.Select(filename == "", defaultFilename, filename)
 
 	//如果文件夹不存在就创建
 	dir, _ := filepath.Split(filename)
@@ -121,11 +121,27 @@ func (this *Codes) GetName(code string) string {
 
 // GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
 func (this *Codes) GetStocks(limits ...int) []string {
-	limit := conv.Default[int](-1, limits...)
+	limit := conv.Default(-1, limits...)
 	ls := []string(nil)
 	for _, m := range this.list {
 		code := m.FullCode()
 		if protocol.IsStock(code) {
+			ls = append(ls, code)
+		}
+		if limit > 0 && len(ls) >= limit {
+			break
+		}
+	}
+	return ls
+}
+
+// GetETFs 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *Codes) GetETFs(limits ...int) []string {
+	limit := conv.Default(-1, limits...)
+	ls := []string(nil)
+	for _, m := range this.list {
+		code := m.FullCode()
+		if protocol.IsETF(code) {
 			ls = append(ls, code)
 		}
 		if limit > 0 && len(ls) >= limit {
