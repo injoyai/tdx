@@ -2,11 +2,9 @@ package extend
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/injoyai/conv"
-	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/protocol"
 	"io"
 	"net/http"
@@ -20,48 +18,12 @@ const (
 	THS_HFQ        uint8 = 2 //后复权
 )
 
-func NewTHSDayKline() *THSDayKline {
-	return &THSDayKline{
-		Client: http.DefaultClient,
-	}
-}
-
 /*
-THSDayKline
+GetTHSDayKline
 前复权,和通达信对的上,和东方财富对不上
 后复权,和通达信,东方财富都对不上
 */
-type THSDayKline struct {
-	Codes  []string
-	Client *http.Client
-}
-
-func (this *THSDayKline) GetName() string {
-	return "同花顺日线"
-}
-
-func (this *THSDayKline) Run(ctx context.Context, m *tdx.Manage) error {
-	codes := this.Codes
-	if len(codes) == 0 {
-		codes = m.Codes.GetStocks()
-	}
-	for _, _type := range []uint8{THS_QFQ, THS_HFQ} {
-		for _, code := range codes {
-			ls, err := this.Pull(ctx, code, _type)
-			if err != nil {
-				return err
-			}
-
-			_ = ls
-			//加入数据库
-
-			<-time.After(time.Millisecond * 300)
-		}
-	}
-	return nil
-}
-
-func (this *THSDayKline) Pull(ctx context.Context, code string, _type uint8) ([]*Kline, error) {
+func GetTHSDayKline(code string, _type uint8) ([]*Kline, error) {
 	if _type != THS_QFQ && _type != THS_HFQ {
 		return nil, fmt.Errorf("数据类型错误,例如:前复权1或后复权2")
 	}
@@ -85,7 +47,7 @@ func (this *THSDayKline) Pull(ctx context.Context, code string, _type uint8) ([]
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.54")
 	req.Header.Set("Referer", "http://stockpage.10jqka.com.cn/")
 	req.Header.Set("DNT", "1")
-	resp, err := this.Client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
