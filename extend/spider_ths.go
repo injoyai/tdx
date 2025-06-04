@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/injoyai/conv"
+	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/protocol"
 	"io"
 	"net/http"
@@ -17,6 +18,51 @@ const (
 	THS_QFQ        uint8 = 1 //前复权
 	THS_HFQ        uint8 = 2 //后复权
 )
+
+/*
+GetTHSDayKlineFull
+获取[不复权,前复权,后复权]数据,并补充成交金额数据
+前复权,和通达信对的上,和东方财富对不上
+后复权,和通达信,东方财富都对不上
+*/
+func GetTHSDayKlineFull(code string, c *tdx.Client) ([3][]*Kline, error) {
+	resp, err := c.GetKlineDayAll(code)
+	if err != nil {
+		return [3][]*Kline{}, err
+	}
+	mAmount := make(map[int64]protocol.Price)
+	bfq := []*Kline(nil)
+	for _, v := range resp.List {
+		mAmount[v.Time.Unix()] = v.Amount
+		bfq = append(bfq, &Kline{
+			Code:   code,
+			Date:   v.Time.Unix(),
+			Open:   v.Open,
+			High:   v.High,
+			Low:    v.Low,
+			Close:  v.Close,
+			Volume: v.Volume,
+			Amount: v.Amount,
+		})
+	}
+	//前复权
+	qfq, err := GetTHSDayKline(code, THS_QFQ)
+	if err != nil {
+		return [3][]*Kline{}, err
+	}
+	for i := range qfq {
+		qfq[i].Amount = mAmount[qfq[i].Date]
+	}
+	//后复权
+	hfq, err := GetTHSDayKline(code, THS_HFQ)
+	if err != nil {
+		return [3][]*Kline{}, err
+	}
+	for i := range hfq {
+		hfq[i].Amount = mAmount[hfq[i].Date]
+	}
+	return [3][]*Kline{bfq, qfq, hfq}, nil
+}
 
 /*
 GetTHSDayKline
