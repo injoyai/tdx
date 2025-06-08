@@ -4,7 +4,9 @@ import (
 	"errors"
 	_ "github.com/glebarez/go-sqlite"
 	"github.com/injoyai/base/maps"
+	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
 	"os"
 	"path/filepath"
@@ -114,6 +116,29 @@ func (this *Workday) Is(t time.Time) bool {
 // TodayIs 今天是否是工作日
 func (this *Workday) TodayIs() bool {
 	return this.Is(time.Now())
+}
+
+// RangeYear 遍历一年的所有工作日
+func (this *Workday) RangeYear(year int, f func(t time.Time) bool) {
+	this.Range(
+		time.Date(year, 1, 1, 0, 0, 0, 0, time.Local),
+		time.Date(year, 12, 31, 0, 0, 0, 0, time.Local),
+		f,
+	)
+}
+
+// Range 遍历指定范围的工作日
+func (this *Workday) Range(start, end time.Time, f func(t time.Time) bool) {
+	start = conv.Select(start.Before(protocol.ExchangeEstablish), protocol.ExchangeEstablish, start)
+	now := IntegerDay(time.Now())
+	end = conv.Select(end.After(now), now, end).Add(1)
+	for ; start.Before(end); start = start.Add(time.Hour * 24) {
+		if this.Is(start) {
+			if !f(start) {
+				return
+			}
+		}
+	}
 }
 
 // RangeDesc 倒序遍历工作日,从今天-1990年12月19日(上海交易所成立时间)
