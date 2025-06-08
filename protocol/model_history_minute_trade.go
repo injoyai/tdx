@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/injoyai/conv"
+	"time"
 )
 
 // HistoryMinuteTradeResp 历史分时交易比实时少了单量
 type HistoryMinuteTradeResp struct {
 	Count uint16
-	List  []*HistoryMinuteTrade
+	List  HistoryMinuteTrades
+	//List  []*HistoryMinuteTrade
 }
 
 type HistoryMinuteTrade struct {
@@ -91,4 +93,50 @@ func (historyMinuteTrade) Decode(bs []byte, code string) (*HistoryMinuteTradeRes
 	}
 
 	return resp, nil
+}
+
+type HistoryMinuteTrades []*HistoryMinuteTrade
+
+func (this HistoryMinuteTrades) Kline(date string) (k *Kline, err error) {
+	k = &Kline{}
+	for i, v := range this {
+		switch i {
+		case 0:
+			k.Time, err = time.Parse("2006010215:04", date+v.Time)
+			if err != nil {
+				return
+			}
+			k.Open = v.Price
+			k.High = v.Price
+			k.Low = v.Price
+			k.Close = v.Price
+		case len(this) - 1:
+			k.Close = v.Price
+		}
+		k.High = conv.Select(v.Price > k.High, v.Price, k.High)
+		k.Low = conv.Select(v.Price < k.Low, v.Price, k.Low)
+		k.Volume += int64(v.Volume)
+		k.Amount += v.Amount()
+	}
+	return
+}
+
+// MinuteKline 分时K线
+func (this HistoryMinuteTrades) MinuteKline(date string) (Klines, error) {
+	m := make(map[string]HistoryMinuteTrades)
+	for _, v := range this {
+		v.Time = conv.Select(v.Time > "09:00", v.Time, "09:00")
+		m[v.Time] = append(m[v.Time], v)
+	}
+
+	ls := Klines(nil)
+	for _, v := range m {
+		k, err := v.Kline(date)
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, k)
+	}
+	ls.Sort()
+	return ls, nil
 }

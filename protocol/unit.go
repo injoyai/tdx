@@ -271,15 +271,24 @@ func IsETF(code string) bool {
 	return false
 }
 
-// AddPrefix 添加股票代码前缀,针对股票生效,例如000001,会增加前缀sz000001(平安银行),而不是sh000001(上证指数)
+// AddPrefix 添加股票/基金代码前缀,针对股票/基金生效,例如000001,会增加前缀sz000001(平安银行),而不是sh000001(上证指数)
 func AddPrefix(code string) string {
 	if len(code) == 6 {
 		switch {
 		case code[:1] == "6":
+			//上海股票
 			code = ExchangeSH.String() + code
 		case code[:1] == "0":
+			//深圳股票
 			code = ExchangeSZ.String() + code
 		case code[:2] == "30":
+			//深圳股票
+			code = ExchangeSZ.String() + code
+		case code[:3] == "510" || code[:3] == "511" || code[:3] == "512" || code[:3] == "513" || code[:3] == "515":
+			//上海基金
+			code = ExchangeSH.String() + code
+		case code[:3] == "159":
+			//深圳基金
 			code = ExchangeSZ.String() + code
 		}
 	}

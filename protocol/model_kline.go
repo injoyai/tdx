@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
+	"sort"
 	"time"
 )
 
@@ -205,6 +206,69 @@ func FixKlineTime(ks []*Kline) []*Kline {
 	for i, v := range ls {
 		if v.Time.Unix() == node1.Unix() {
 			ls[i].Time = time.Date(now.Year(), now.Month(), now.Day(), 11, 30, 0, 0, now.Location())
+		}
+	}
+	return ks
+}
+
+type Klines []*Kline
+
+func (this Klines) Len() int {
+	return len(this)
+}
+
+func (this Klines) Swap(i, j int) {
+	this[i], this[j] = this[j], this[i]
+}
+
+func (this Klines) Less(i, j int) bool {
+	return this[i].Time.Before(this[j].Time)
+}
+
+func (this Klines) Sort() {
+	sort.Sort(this)
+}
+
+// Kline 计算多个K线,成一个K线
+func (this Klines) Kline() *Kline {
+	if this == nil {
+		return new(Kline)
+	}
+	k := new(Kline)
+	for i, v := range this {
+		switch i {
+		case 0:
+			k.Open = v.Open
+			k.High = v.High
+			k.Low = v.Low
+			k.Close = v.Close
+		case len(this) - 1:
+			k.Close = v.Close
+			k.Time = v.Time
+		}
+		if v.High > k.High {
+			k.High = v.High
+		}
+		if v.Low < k.Low {
+			k.Low = v.Low
+		}
+		k.Volume += v.Volume
+		k.Amount += v.Amount
+	}
+	return k
+}
+
+// Merge 合并K线,1分钟转成5,15,30分钟等
+func (this Klines) Merge(n int) Klines {
+	if this == nil {
+		return nil
+	}
+	ks := []*Kline(nil)
+	for i := 0; i < len(this); i += n {
+		if i+n > len(this) {
+			ks = append(ks, this[i:].Kline())
+		} else {
+			ks = append(ks, this[i:i+n].Kline())
 		}
 	}
 	return ks
