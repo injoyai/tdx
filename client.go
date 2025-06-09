@@ -157,10 +157,10 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 		resp, err = protocol.MHistoryMinute.Decode(f.Data)
 
 	case protocol.TypeMinuteTrade:
-		resp, err = protocol.MMinuteTrade.Decode(f.Data, conv.String(val))
+		resp, err = protocol.MTrade.Decode(f.Data, val.(protocol.TradeCache))
 
 	case protocol.TypeHistoryMinuteTrade:
-		resp, err = protocol.MHistoryMinuteTrade.Decode(f.Data, conv.String(val))
+		resp, err = protocol.MHistoryTrade.Decode(f.Data, val.(protocol.TradeCache))
 
 	case protocol.TypeKline:
 		resp, err = protocol.MKline.Decode(f.Data, val.(protocol.KlineCache))
@@ -316,23 +316,34 @@ func (this *Client) GetHistoryMinute(date, code string) (*protocol.MinuteResp, e
 	return result.(*protocol.MinuteResp), nil
 }
 
+func (this *Client) GetTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
+	return this.GetMinuteTrade(code, start, count)
+}
+
 // GetMinuteTrade 获取分时交易详情,服务器最多返回1800条,count-start<=1800
-func (this *Client) GetMinuteTrade(code string, start, count uint16) (*protocol.MinuteTradeResp, error) {
+func (this *Client) GetMinuteTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
-	f, err := protocol.MMinuteTrade.Frame(code, start, count)
+	f, err := protocol.MTrade.Frame(code, start, count)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, code)
+	result, err := this.SendFrame(f, protocol.TradeCache{
+		Date: time.Now().Format("20060102"),
+		Code: code,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.MinuteTradeResp), nil
+	return result.(*protocol.TradeResp), nil
+}
+
+func (this *Client) GetTradeAll(code string) (*protocol.TradeResp, error) {
+	return this.GetMinuteTradeAll(code)
 }
 
 // GetMinuteTradeAll 获取分时全部交易详情,todo 只做参考 因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
-func (this *Client) GetMinuteTradeAll(code string) (*protocol.MinuteTradeResp, error) {
-	resp := &protocol.MinuteTradeResp{}
+func (this *Client) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) {
+	resp := &protocol.TradeResp{}
 	size := uint16(1800)
 	for start := uint16(0); ; start += size {
 		r, err := this.GetMinuteTrade(code, start, size)
@@ -349,26 +360,37 @@ func (this *Client) GetMinuteTradeAll(code string) (*protocol.MinuteTradeResp, e
 	return resp, nil
 }
 
+func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.HistoryTradeResp, error) {
+	return this.GetHistoryMinuteTrade(date, code, start, count)
+}
+
 // GetHistoryMinuteTrade 获取历史分时交易
 // 只能获取昨天及之前的数据,服务器最多返回2000条,count-start<=2000,如果日期输入错误,则返回0
 // 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
-func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.HistoryMinuteTradeResp, error) {
+func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.HistoryTradeResp, error) {
 	code = protocol.AddPrefix(code)
-	f, err := protocol.MHistoryMinuteTrade.Frame(date, code, start, count)
+	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, code)
+	result, err := this.SendFrame(f, protocol.TradeCache{
+		Date: date,
+		Code: code,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.HistoryMinuteTradeResp), nil
+	return result.(*protocol.HistoryTradeResp), nil
+}
+
+func (this *Client) GetHistoryTradeAll(date, code string) (*protocol.HistoryTradeResp, error) {
+	return this.GetHistoryMinuteTradeAll(date, code)
 }
 
 // GetHistoryMinuteTradeAll 获取历史分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
 // 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
-func (this *Client) GetHistoryMinuteTradeAll(date, code string) (*protocol.HistoryMinuteTradeResp, error) {
-	resp := &protocol.HistoryMinuteTradeResp{}
+func (this *Client) GetHistoryMinuteTradeAll(date, code string) (*protocol.HistoryTradeResp, error) {
+	resp := &protocol.HistoryTradeResp{}
 	size := uint16(2000)
 	for start := uint16(0); ; start += size {
 		r, err := this.GetHistoryMinuteTrade(date, code, start, size)
