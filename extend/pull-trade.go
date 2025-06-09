@@ -21,7 +21,7 @@ type PullTrade struct {
 
 func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 
-	tss := protocol.HistoryMinuteTrades{}
+	tss := protocol.Trades{}
 	kss1 := protocol.Klines(nil)
 	kss5 := protocol.Klines(nil)
 	kss15 := protocol.Klines(nil)
@@ -31,9 +31,9 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 	m.Workday.RangeYear(year, func(t time.Time) bool {
 		date := t.Format("20060102")
 
-		var resp *protocol.HistoryMinuteTradeResp
+		var resp *protocol.HistoryTradeResp
 		err = m.Do(func(c *tdx.Client) error {
-			resp, err = c.GetHistoryMinuteTradeAll(date, code)
+			resp, err = c.GetHistoryTradeAll(date, code)
 			return err
 		})
 		if err != nil {
@@ -44,7 +44,7 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 		tss = append(tss, resp.List...)
 
 		//转成分时K线
-		ks, err := resp.List.MinuteKline(date)
+		ks, err := resp.List.Klines1()
 		if err != nil {
 			logs.Err(err)
 			return false
@@ -105,12 +105,8 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 	return nil
 }
 
-var (
-	TableTitles = []any{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额", "涨幅", "涨幅比"}
-)
-
 func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
-	data := [][]any{TableTitles}
+	data := [][]any{{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额", "涨幅", "涨幅比"}}
 	for _, v := range ks {
 		data = append(data, []any{
 			v.Time.Format("20060102"),
@@ -123,7 +119,7 @@ func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
 			v.Close.Float64(),
 			v.Volume,
 			v.Amount.Float64(),
-			v.RisePrice(),
+			v.RisePrice().Float64(),
 			v.RiseRate(),
 		})
 	}
@@ -136,13 +132,15 @@ func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
 	return newFile(filename, buf)
 }
 
-func TradeToCsv(filename string, ts protocol.HistoryMinuteTrades) error {
-	data := [][]any{TableTitles}
+func TradeToCsv(filename string, ts protocol.Trades) error {
+	data := [][]any{{"日期", "时间", "价格", "成交量(手)", "成交额", "买卖方向"}}
 	for _, v := range ts {
 		data = append(data, []any{
-			v.Time,
+			v.Time.Format(time.DateOnly),
+			v.Time.Format("15:04"),
 			v.Price.Float64(),
-			v.Amount(),
+			v.Volume,
+			v.Amount().Float64(),
 			v.Status,
 		})
 	}
