@@ -106,7 +106,7 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 }
 
 func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
-	data := [][]any{{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额", "涨幅", "涨幅比"}}
+	data := [][]any{{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额"}}
 	for _, v := range ks {
 		data = append(data, []any{
 			v.Time.Format("20060102"),
@@ -119,8 +119,6 @@ func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
 			v.Close.Float64(),
 			v.Volume,
 			v.Amount.Float64(),
-			v.RisePrice().Float64(),
-			v.RiseRate(),
 		})
 	}
 
@@ -133,7 +131,7 @@ func KlinesToCsv(filename string, code, name string, ks protocol.Klines) error {
 }
 
 func TradeToCsv(filename string, ts protocol.Trades) error {
-	data := [][]any{{"日期", "时间", "价格", "成交量(手)", "成交额", "买卖方向"}}
+	data := [][]any{{"日期", "时间", "价格", "成交量(手)", "成交额", "方向(0买,1卖)"}}
 	for _, v := range ts {
 		data = append(data, []any{
 			v.Time.Format(time.DateOnly),

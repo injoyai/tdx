@@ -13,7 +13,7 @@ func main() {
 	m, err := tdx.NewManage(nil)
 	logs.PanicErr(err)
 
-	err = pt.Pull(m, 2024, "sz000001")
+	err = pt.Pull(m, 2025, "sz000001")
 	logs.Err(err)
 
 }

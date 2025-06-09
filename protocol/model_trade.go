@@ -150,6 +150,10 @@ func (this Trades) Klines1() (Klines, error) {
 		if v.Time.Hour() == 9 && v.Time.Minute() < 30 {
 			v.Time = time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 9, 30, 0, 0, v.Time.Location())
 		}
+		//15:00之前和11:30之前+1
+		if (v.Time.Hour() >= 13 && v.Time.Hour() < 15) || (v.Time.Hour() == 11 && v.Time.Minute() < 30) || v.Time.Hour() < 11 {
+			v.Time = v.Time.Add(time.Minute)
+		}
 		m[v.Time.Unix()] = append(m[v.Time.Unix()], v)
 	}
 
