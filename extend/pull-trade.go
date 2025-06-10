@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"context"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
@@ -19,7 +20,21 @@ type PullTrade struct {
 	Dir string
 }
 
-func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
+func (this *PullTrade) Pull(ctx context.Context, m *tdx.Manage, code string) error {
+	for i := 2000; i <= time.Now().Year(); i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := this.PullYear(ctx, m, i, code); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (this *PullTrade) PullYear(ctx context.Context, m *tdx.Manage, year int, code string) (err error) {
 
 	tss := protocol.Trades{}
 	kss1 := protocol.Klines(nil)
@@ -29,6 +44,14 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 	kss60 := protocol.Klines(nil)
 
 	m.Workday.RangeYear(year, func(t time.Time) bool {
+
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			return false
+		default:
+		}
+
 		date := t.Format("20060102")
 
 		var resp *protocol.HistoryTradeResp
@@ -59,17 +82,16 @@ func (this *PullTrade) Pull(m *tdx.Manage, year int, code string) (err error) {
 		return true
 	})
 
-	_ = kss5
-	_ = kss15
-	_ = kss30
-	_ = kss60
+	if err != nil {
+		return
+	}
 
-	filename := filepath.Join(this.Dir, conv.String(year), "分时成交", code+".csv")
-	filename1 := filepath.Join(this.Dir, conv.String(year), "1分钟", code+".csv")
-	filename5 := filepath.Join(this.Dir, conv.String(year), "5分钟", code+".csv")
-	filename15 := filepath.Join(this.Dir, conv.String(year), "15分钟", code+".csv")
-	filename30 := filepath.Join(this.Dir, conv.String(year), "30分钟", code+".csv")
-	filename60 := filepath.Join(this.Dir, conv.String(year), "60分钟", code+".csv")
+	filename := filepath.Join(this.Dir, "分时成交", code+"-"+conv.String(year)+".csv")
+	filename1 := filepath.Join(this.Dir, "1分钟", code+"-"+conv.String(year)+".csv")
+	filename5 := filepath.Join(this.Dir, "5分钟", code+"-"+conv.String(year)+".csv")
+	filename15 := filepath.Join(this.Dir, "15分钟", code+"-"+conv.String(year)+".csv")
+	filename30 := filepath.Join(this.Dir, "30分钟", code+"-"+conv.String(year)+".csv")
+	filename60 := filepath.Join(this.Dir, "60分钟", code+"-"+conv.String(year)+".csv")
 	name := m.Codes.GetName(code)
 
 	err = TradeToCsv(filename, tss)

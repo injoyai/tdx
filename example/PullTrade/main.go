@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
@@ -13,7 +14,7 @@ func main() {
 	m, err := tdx.NewManage(nil)
 	logs.PanicErr(err)
 
-	err = pt.Pull(m, 2025, "sz000001")
+	err = pt.PullYear(context.Background(), m, 2025, "sz000001")
 	logs.Err(err)
 
 }
