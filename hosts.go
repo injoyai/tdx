@@ -77,7 +77,7 @@ var (
 	}
 )
 
-// FastHosts 通过tcp(ping不可用)的方式筛选可用的地址,并排序(有点误差)
+// FastHosts 通过tcp(ping不可用)连接速度的方式筛选排序可用的地址
 func FastHosts(hosts ...string) []DialResult {
 	wg := sync.WaitGroup{}
 	wg.Add(len(hosts))
