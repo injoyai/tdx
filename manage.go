@@ -72,6 +72,20 @@ type Manage struct {
 	Cron    *cron.Cron
 }
 
+// RangeStocks 遍历所有股票
+func (this *Manage) RangeStocks(f func(code string)) {
+	for _, v := range this.Codes.GetStocks() {
+		f(v)
+	}
+}
+
+// RangeETFs 遍历所有ETF
+func (this *Manage) RangeETFs(f func(code string)) {
+	for _, v := range this.Codes.GetETFs() {
+		f(v)
+	}
+}
+
 // AddWorkdayTask 添加工作日任务
 func (this *Manage) AddWorkdayTask(spec string, f func(m *Manage)) {
 	this.Cron.AddFunc(spec, func() {
