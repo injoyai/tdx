@@ -25,13 +25,21 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 		cfg.Dial = DialDefault
 	}
 
-	//代码
-	codesClient, err := cfg.Dial(op...)
+	//通用客户端
+	commonClient, err := cfg.Dial(op...)
 	if err != nil {
 		return nil, err
 	}
-	codesClient.Wait.SetTimeout(time.Second * 5)
-	codes, err := NewCodes(codesClient, cfg.CodesFilename)
+	commonClient.Wait.SetTimeout(time.Second * 5)
+
+	//代码管理
+	codes, err := NewCodes(commonClient, cfg.CodesFilename)
+	if err != nil {
+		return nil, err
+	}
+
+	//工作日管理
+	workday, err := NewWorkday(commonClient, cfg.WorkdayFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -40,17 +48,6 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	p, err := NewPool(func() (*Client, error) {
 		return cfg.Dial(op...)
 	}, cfg.Number)
-	if err != nil {
-		return nil, err
-	}
-
-	//工作日
-	workdayClient, err := cfg.Dial(op...)
-	if err != nil {
-		return nil, err
-	}
-	workdayClient.Wait.SetTimeout(time.Second * 5)
-	workday, err := NewWorkday(workdayClient, cfg.WorkdayFileName)
 	if err != nil {
 		return nil, err
 	}
