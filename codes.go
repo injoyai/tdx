@@ -70,7 +70,7 @@ func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 
 	{ //设置定时器,每天早上9点更新数据
 		task := cron.New(cron.WithSeconds())
-		task.AddFunc("0 0 9 * * *", func() {
+		task.AddFunc("10 0 9 * * *", func() {
 			for i := 0; i < 3; i++ {
 				if err := cc.Update(); err == nil {
 					return
