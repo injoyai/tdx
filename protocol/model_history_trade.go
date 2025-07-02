@@ -6,11 +6,8 @@ import (
 	"time"
 )
 
-// HistoryTradeResp 历史分时交易比实时少了单量
-type HistoryTradeResp struct {
-	Count uint16
-	List  Trades
-}
+// HistoryTradeResp 兼容之前的版本
+type HistoryTradeResp = TradeResp
 
 type historyTrade struct{}
 
@@ -31,7 +28,7 @@ func (historyTrade) Frame(date, code string, start, count uint16) (*Frame, error
 	}, nil
 }
 
-func (historyTrade) Decode(bs []byte, c TradeCache) (*HistoryTradeResp, error) {
+func (historyTrade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 	if len(bs) < 2 {
 		return nil, errors.New("数据长度不足")
 	}
@@ -41,7 +38,7 @@ func (historyTrade) Decode(bs []byte, c TradeCache) (*HistoryTradeResp, error) {
 		return nil, err
 	}
 
-	resp := &HistoryTradeResp{
+	resp := &TradeResp{
 		Count: Uint16(bs[:2]),
 	}
 
