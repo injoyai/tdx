@@ -233,6 +233,40 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 	return resp, nil
 }
 
+// GetStockAll 获取所有股票代码
+func (this *Client) GetStockAll() ([]string, error) {
+	ls := []string(nil)
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+		resp, err := this.GetCodeAll(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range resp.List {
+			if protocol.IsStock(v.Code) {
+				ls = append(ls, v.Code)
+			}
+		}
+	}
+	return ls, nil
+}
+
+// GetETFAll 获取所有ETF代码
+func (this *Client) GetETFAll() ([]string, error) {
+	ls := []string(nil)
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+		resp, err := this.GetCodeAll(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range resp.List {
+			if protocol.IsETF(v.Code) {
+				ls = append(ls, v.Code)
+			}
+		}
+	}
+	return ls, nil
+}
+
 // GetQuote 获取盘口五档报价
 func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
