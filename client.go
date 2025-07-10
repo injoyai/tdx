@@ -637,18 +637,32 @@ func (this *Client) GetKline30MinuteUntil(code string, f func(k *protocol.Kline)
 	return this.GetKlineUntil(protocol.TypeKline30Minute, code, f)
 }
 
+// GetKline60Minute 获取60分钟k线数据
+func (this *Client) GetKline60Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
+}
+
 // GetKlineHour 获取小时k线数据
 func (this *Client) GetKlineHour(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineHour, code, start, count)
+	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
+}
+
+// GetKline60MinuteAll 获取60分钟k线全部数据
+func (this *Client) GetKline60MinuteAll(code string) (*protocol.KlineResp, error) {
+	return this.GetKlineAll(protocol.TypeKline60Minute, code)
 }
 
 // GetKlineHourAll 获取小时k线全部数据
 func (this *Client) GetKlineHourAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineHour, code)
+	return this.GetKlineAll(protocol.TypeKline60Minute, code)
+}
+
+func (this *Client) GetKline60MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
+	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
 }
 
 func (this *Client) GetKlineHourUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineHour, code, f)
+	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
 }
 
 // GetKlineDay 获取日k线数据
