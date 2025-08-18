@@ -1,10 +1,12 @@
 package tdx
 
 import (
+	"github.com/injoyai/base/types"
 	"github.com/injoyai/logs"
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -75,12 +77,12 @@ var (
 	}
 )
 
-// FastHosts 通过tcp(ping不可用)的方式筛选可用的地址,并排序(有点误差)
-func FastHosts(hosts ...string) []string {
+// FastHosts 通过tcp(ping不可用)连接速度的方式筛选排序可用的地址
+func FastHosts(hosts ...string) []DialResult {
 	wg := sync.WaitGroup{}
 	wg.Add(len(hosts))
 	mu := sync.Mutex{}
-	ls := []string(nil)
+	ls := types.List[DialResult](nil)
 	for _, host := range hosts {
 		go func(host string) {
 			defer wg.Done()
@@ -88,17 +90,30 @@ func FastHosts(hosts ...string) []string {
 			if !strings.Contains(addr, ":") {
 				addr += ":7709"
 			}
+			now := time.Now()
 			c, err := net.Dial("tcp", addr)
 			if err != nil {
 				logs.Err(err)
 				return
 			}
-			defer c.Close()
+			spend := time.Since(now)
+			c.Close()
 			mu.Lock()
-			ls = append(ls, host)
+			ls = append(ls, DialResult{
+				Host:  host,
+				Spend: spend,
+			})
 			mu.Unlock()
 		}(host)
 	}
 	wg.Wait()
-	return ls
+	return ls.Sort(func(a, b DialResult) bool {
+		return a.Spend < b.Spend
+	})
+}
+
+// DialResult 连接结果
+type DialResult struct {
+	Host  string
+	Spend time.Duration
 }

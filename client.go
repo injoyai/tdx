@@ -233,6 +233,40 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 	return resp, nil
 }
 
+// GetStockAll 获取所有股票代码
+func (this *Client) GetStockAll() ([]string, error) {
+	ls := []string(nil)
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+		resp, err := this.GetCodeAll(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range resp.List {
+			if protocol.IsStock(v.Code) {
+				ls = append(ls, v.Code)
+			}
+		}
+	}
+	return ls, nil
+}
+
+// GetETFAll 获取所有ETF代码
+func (this *Client) GetETFAll() ([]string, error) {
+	ls := []string(nil)
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+		resp, err := this.GetCodeAll(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range resp.List {
+			if protocol.IsETF(v.Code) {
+				ls = append(ls, v.Code)
+			}
+		}
+	}
+	return ls, nil
+}
+
 // GetQuote 获取盘口五档报价
 func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
@@ -360,14 +394,14 @@ func (this *Client) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) 
 	return resp, nil
 }
 
-func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.HistoryTradeResp, error) {
+func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	return this.GetHistoryMinuteTrade(date, code, start, count)
 }
 
 // GetHistoryMinuteTrade 获取历史分时交易
 // 只能获取昨天及之前的数据,服务器最多返回2000条,count-start<=2000,如果日期输入错误,则返回0
 // 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
-func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.HistoryTradeResp, error) {
+func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
 	if err != nil {
@@ -380,17 +414,17 @@ func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.HistoryTradeResp), nil
+	return result.(*protocol.TradeResp), nil
 }
 
-func (this *Client) GetHistoryTradeAll(date, code string) (*protocol.HistoryTradeResp, error) {
+func (this *Client) GetHistoryTradeAll(date, code string) (*protocol.TradeResp, error) {
 	return this.GetHistoryMinuteTradeAll(date, code)
 }
 
 // GetHistoryMinuteTradeAll 获取历史分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
 // 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
-func (this *Client) GetHistoryMinuteTradeAll(date, code string) (*protocol.HistoryTradeResp, error) {
-	resp := &protocol.HistoryTradeResp{}
+func (this *Client) GetHistoryMinuteTradeAll(date, code string) (*protocol.TradeResp, error) {
+	resp := &protocol.TradeResp{}
 	size := uint16(2000)
 	for start := uint16(0); ; start += size {
 		r, err := this.GetHistoryMinuteTrade(date, code, start, size)
@@ -603,18 +637,32 @@ func (this *Client) GetKline30MinuteUntil(code string, f func(k *protocol.Kline)
 	return this.GetKlineUntil(protocol.TypeKline30Minute, code, f)
 }
 
+// GetKline60Minute 获取60分钟k线数据
+func (this *Client) GetKline60Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
+}
+
 // GetKlineHour 获取小时k线数据
 func (this *Client) GetKlineHour(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineHour, code, start, count)
+	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
+}
+
+// GetKline60MinuteAll 获取60分钟k线全部数据
+func (this *Client) GetKline60MinuteAll(code string) (*protocol.KlineResp, error) {
+	return this.GetKlineAll(protocol.TypeKline60Minute, code)
 }
 
 // GetKlineHourAll 获取小时k线全部数据
 func (this *Client) GetKlineHourAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineHour, code)
+	return this.GetKlineAll(protocol.TypeKline60Minute, code)
+}
+
+func (this *Client) GetKline60MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
+	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
 }
 
 func (this *Client) GetKlineHourUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineHour, code, f)
+	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
 }
 
 // GetKlineDay 获取日k线数据

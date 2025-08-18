@@ -54,7 +54,7 @@ func (this *PullTrade) PullYear(ctx context.Context, m *tdx.Manage, year int, co
 
 		date := t.Format("20060102")
 
-		var resp *protocol.HistoryTradeResp
+		var resp *protocol.TradeResp
 		err = m.Do(func(c *tdx.Client) error {
 			resp, err = c.GetHistoryTradeAll(date, code)
 			return err

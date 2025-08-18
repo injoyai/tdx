@@ -50,6 +50,7 @@ const (
 	TypeKline5Minute  uint8 = 0  // 5分钟K 线
 	TypeKline15Minute uint8 = 1  // 15分钟K 线
 	TypeKline30Minute uint8 = 2  // 30分钟K 线
+	TypeKline60Minute uint8 = 3  // 60分钟K 线
 	TypeKlineHour     uint8 = 3  // 1小时K 线
 	TypeKlineDay2     uint8 = 4  // 日K 线, 发现和Day的区别是这个要除以100,其他未知
 	TypeKlineWeek     uint8 = 5  // 周K 线

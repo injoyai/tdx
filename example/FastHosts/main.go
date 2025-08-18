@@ -8,7 +8,7 @@ import (
 func main() {
 	ls := tdx.FastHosts(tdx.Hosts...)
 	for _, v := range ls {
-		logs.Debug(v)
+		logs.Debug(v.Host, v.Spend)
 	}
 	logs.Debug("总数量:", len(ls))
 }
