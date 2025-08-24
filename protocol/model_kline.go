@@ -86,6 +86,27 @@ func (this *Kline) RiseRate() float64 {
 
 type kline struct{}
 
+/*
+Frame
+Prefix: 0c
+MsgID: 0208d301
+Control: 01
+Length: 1c00
+Length: 1c00
+Type: 2d05
+Data: 000030303030303104000100a401a40100000000000000000000
+
+Data:
+Exchange: 00
+Unknown: 00
+Code: 303030303031
+Type: 04
+Unknown: 00
+Unknown: 0100
+Start: a401
+Count: a401
+Append: 00000000000000000000
+*/
 func (kline) Frame(Type uint8, code string, start, count uint16) (*Frame, error) {
 	if count > 800 {
 		return nil, errors.New("单次数量不能超过800")
@@ -116,7 +137,6 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 	if len(bs) < 2 {
 		return nil, errors.New("数据长度不足")
 	}
-
 	resp := &KlineResp{
 		Count: Uint16(bs[:2]),
 	}
