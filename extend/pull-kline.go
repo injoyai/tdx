@@ -105,7 +105,7 @@ func (this *PullKline) DayKlines(code string) (Klines, error) {
 }
 
 func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
-	limit := chans.NewWaitLimit(uint(this.Config.Limit))
+	limit := chans.NewWaitLimit(this.Config.Limit)
 
 	//1. 获取所有股票代码
 	codes := this.Config.Codes
