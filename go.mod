@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-sql-driver/mysql v1.7.0
-	github.com/injoyai/base v1.2.8
+	github.com/injoyai/base v1.2.17
 	github.com/injoyai/conv v1.2.5
 	github.com/injoyai/ios v0.0.10
 	github.com/injoyai/logs v1.0.9

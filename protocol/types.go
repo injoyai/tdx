@@ -43,7 +43,7 @@ func (this Exchange) Name() string {
 const (
 	ExchangeSZ Exchange = iota //深圳交易所
 	ExchangeSH                 //上海交易所
-	//ExchangeBJ                 //北京交易所
+	ExchangeBJ                 //北京交易所
 )
 
 const (
