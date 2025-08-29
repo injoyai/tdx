@@ -87,16 +87,18 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 		c.SetOption(op...)                             //自定义选项
 		c.Event.OnReadFrom = protocol.ReadFrom         //分包
 		c.Event.OnDealMessage = cli.handlerDealMessage //解析数据并处理
-		//无数据超时时间是60秒,30秒发送一个心跳包
-		c.GoTimerWriter(30*time.Second, func(w ios.MoreWriter) error {
-			bs := protocol.MHeart.Frame().Bytes()
-			_, err := w.Write(bs)
-			return err
-		})
-
-		f := protocol.MConnect.Frame()
-		if _, err = c.Write(f.Bytes()); err != nil {
-			c.Close()
+		c.Event.OnConnected = func(c *client.Client) error {
+			//无数据超时时间是60秒,30秒发送一个心跳包
+			c.GoTimerWriter(30*time.Second, func(w ios.MoreWriter) error {
+				bs := protocol.MHeart.Frame().Bytes()
+				_, err := w.Write(bs)
+				return err
+			})
+			f := protocol.MConnect.Frame()
+			if _, err = c.Write(f.Bytes()); err != nil {
+				c.Close()
+			}
+			return nil
 		}
 	})
 	if err != nil {

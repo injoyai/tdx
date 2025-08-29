@@ -39,6 +39,19 @@ type Frame struct {
 	Data    []byte  //数据
 }
 
+/*
+Bytes
+
+0c00000000011c001c002d0500003030303030310900010000000a0000000000000000000000
+
+Prefix: 0c
+MsgID: 0208d301
+Control: 01
+Length: 1c00
+Length: 1c00
+Type: 2d05
+000030303030303104000100a401a40100000000000000000000
+*/
 func (this *Frame) Bytes() types.Bytes {
 	length := uint16(len(this.Data) + 2)
 	data := make([]byte, 12+len(this.Data))

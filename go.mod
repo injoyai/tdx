@@ -5,10 +5,10 @@ go 1.20
 require (
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-sql-driver/mysql v1.7.0
-	github.com/injoyai/base v1.2.17
+	github.com/injoyai/base v1.2.15
 	github.com/injoyai/conv v1.2.5
-	github.com/injoyai/ios v0.0.10
-	github.com/injoyai/logs v1.0.9
+	github.com/injoyai/ios v1.2.2
+	github.com/injoyai/logs v1.0.12
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/text v0.16.0
 	xorm.io/core v0.7.3
@@ -17,7 +17,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fatih/color v1.14.1 // indirect
+	github.com/fatih/color v1.18.0 // indirect
 	github.com/goccy/go-json v0.8.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.5.0 // indirect
@@ -31,7 +31,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.37.6 // indirect
