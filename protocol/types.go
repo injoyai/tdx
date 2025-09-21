@@ -20,8 +20,8 @@ func (this Exchange) String() string {
 		return "sz"
 	case ExchangeSH:
 		return "sh"
-		//case ExchangeBJ:
-		//return "bj"
+	case ExchangeBJ:
+		return "bj"
 	default:
 		return "unknown"
 	}
@@ -33,8 +33,8 @@ func (this Exchange) Name() string {
 		return "上海"
 	case ExchangeSZ:
 		return "深圳"
-		//case ExchangeBJ:
-		//return "北京"
+	case ExchangeBJ:
+		return "北京"
 	default:
 		return "未知"
 	}
@@ -43,7 +43,7 @@ func (this Exchange) Name() string {
 const (
 	ExchangeSZ Exchange = iota //深圳交易所
 	ExchangeSH                 //上海交易所
-	//ExchangeBJ                 //北京交易所
+	ExchangeBJ                 //北京交易所
 )
 
 const (

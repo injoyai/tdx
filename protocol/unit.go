@@ -58,6 +58,8 @@ func DecodeCode(code string) (Exchange, string, error) {
 		return ExchangeSH, code[2:], nil
 	case ExchangeSZ.String():
 		return ExchangeSZ, code[2:], nil
+	case ExchangeBJ.String():
+		return ExchangeBJ, code[2:], nil
 	default:
 		return 0, "", fmt.Errorf("股票代码错误,例如:SZ000001")
 	}
@@ -237,20 +239,34 @@ func getVolume2(val uint32) float64 {
 
 // IsStock 是否是股票,示例sz000001
 func IsStock(code string) bool {
-	if len(code) != 8 {
-		return false
-	}
-	code = strings.ToLower(code)
-	switch {
-	case code[0:2] == ExchangeSH.String() &&
-		(code[2:3] == "6"):
-		return true
+	return IsSZStock(code) || IsSHStock(code) || IsBJStock(code)
 
-	case code[0:2] == ExchangeSZ.String() &&
-		(code[2:3] == "0" || code[2:4] == "30"):
-		return true
-	}
-	return false
+	//if len(code) != 8 {
+	//	return false
+	//}
+	//code = strings.ToLower(code)
+	//switch {
+	//case code[0:2] == ExchangeSH.String() &&
+	//	(code[2:3] == "6"):
+	//	return true
+	//
+	//case code[0:2] == ExchangeSZ.String() &&
+	//	(code[2:3] == "0" || code[2:4] == "30"):
+	//	return true
+	//}
+	//return false
+}
+
+func IsSZStock(code string) bool {
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSZ.String() && code[2:3] == "0"
+}
+
+func IsSHStock(code string) bool {
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSH.String() && code[2:3] == "6"
+}
+
+func IsBJStock(code string) bool {
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeBJ.String() && (code[2:4] == "92" || code[2:3] == "8")
 }
 
 // IsETF 是否是基金,示例sz159558
@@ -290,6 +306,9 @@ func AddPrefix(code string) string {
 		case code[:3] == "159":
 			//深圳基金
 			code = ExchangeSZ.String() + code
+		case code[:1] == "8" || code[:2] == "92":
+			//北京股票
+			code = ExchangeBJ.String() + code
 		}
 	}
 	return code
