@@ -266,7 +266,7 @@ func IsSHStock(code string) bool {
 }
 
 func IsBJStock(code string) bool {
-	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeBJ.String() && (code[2:4] == "92" || code[2:3] == "8")
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeBJ.String() && (code[2:4] == "92" || code[2:4] == "43" || code[2:3] == "8")
 }
 
 // IsETF 是否是基金,示例sz159558
@@ -306,7 +306,7 @@ func AddPrefix(code string) string {
 		case code[:3] == "159":
 			//深圳基金
 			code = ExchangeSZ.String() + code
-		case code[:1] == "8" || code[:2] == "92":
+		case code[:1] == "8" || code[:2] == "92" || code[:2] == "43":
 			//北京股票
 			code = ExchangeBJ.String() + code
 		}
