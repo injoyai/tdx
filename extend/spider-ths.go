@@ -15,9 +15,35 @@ import (
 
 const (
 	UrlTHSDayKline       = "http://d.10jqka.com.cn/v6/line/hs_%s/0%d/all.js"
+	THS_BFQ        uint8 = 0 //不复权
 	THS_QFQ        uint8 = 1 //前复权
 	THS_HFQ        uint8 = 2 //后复权
 )
+
+// GetTHSDayKlineFactorFull 增加计算复权因子
+func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3][]*Kline, []*THSFactor, error) {
+	ks, err := GetTHSDayKlineFull(code, c)
+	if err != nil {
+		return [3][]*Kline{}, nil, err
+	}
+	mQPrice := make(map[int64]float64)
+	for _, v := range ks[1] {
+		mQPrice[v.Date] = v.Close.Float64()
+	}
+	mHPrice := make(map[int64]float64)
+	for _, v := range ks[2] {
+		mHPrice[v.Date] = v.Close.Float64()
+	}
+	fs := make([]*THSFactor, 0, len(ks[0]))
+	for _, v := range ks[0] {
+		fs = append(fs, &THSFactor{
+			Date:    v.Date,
+			QFactor: mQPrice[v.Date] / v.Close.Float64(),
+			HFactor: mHPrice[v.Date] / v.Close.Float64(),
+		})
+	}
+	return ks, fs, nil
+}
 
 /*
 GetTHSDayKlineFull
@@ -70,8 +96,8 @@ GetTHSDayKline
 后复权,和通达信,东方财富都对不上
 */
 func GetTHSDayKline(code string, _type uint8) ([]*Kline, error) {
-	if _type != THS_QFQ && _type != THS_HFQ {
-		return nil, fmt.Errorf("数据类型错误,例如:前复权1或后复权2")
+	if _type != THS_BFQ && _type != THS_QFQ && _type != THS_HFQ {
+		return nil, fmt.Errorf("数据类型错误,例如:不复权0或前复权1或后复权2")
 	}
 
 	code = protocol.AddPrefix(code)
