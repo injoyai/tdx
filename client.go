@@ -220,6 +220,26 @@ func (this *Client) GetCode(exchange protocol.Exchange, start uint16) (*protocol
 // GetCodeAll 通过多次请求的方式获取全部证券代码
 func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
 	resp := &protocol.CodeResp{}
+
+	//通达信没有北交所代码列表,通过爬虫的方式从北交所官网获取,放在这里是为了方便业务逻辑
+	//不放在extend包时防止循环引用
+	//todo 这是临时方案,等通达信有北交所代码列表时再改
+	if exchange == protocol.ExchangeBJ {
+		codes, err := GetBjCodes()
+		if err != nil {
+			return nil, err
+		}
+		resp.Count = uint16(len(codes))
+		for _, v := range codes {
+			resp.List = append(resp.List, &protocol.Code{
+				Code:      v.Code,
+				Name:      v.Name,
+				LastPrice: v.Last,
+			})
+		}
+		return resp, nil
+	}
+
 	size := uint16(1000)
 	for start := uint16(0); ; start += size {
 		r, err := this.GetCode(exchange, start)
@@ -238,7 +258,7 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 // GetStockAll 获取所有股票代码
 func (this *Client) GetStockAll() ([]string, error) {
 	ls := []string(nil)
-	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
 		resp, err := this.GetCodeAll(ex)
 		if err != nil {
 			return nil, err

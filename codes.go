@@ -155,52 +155,53 @@ func (this *Codes) Get(code string) *CodeModel {
 	return this.Map[code]
 }
 
-// GetExchange 获取股票交易所,这里的参数不需要带前缀
-func (this *Codes) GetExchange(code string) protocol.Exchange {
-	if len(code) == 6 {
-		switch {
-		case code[:1] == "6":
-			return protocol.ExchangeSH
-		case code[:1] == "0":
-			return protocol.ExchangeSZ
-		case code[:2] == "30":
-			return protocol.ExchangeSZ
-		}
-	}
-	var exchange string
-	exchanges := this.exchanges[code]
-	if len(exchanges) >= 1 {
-		exchange = exchanges[0]
-	}
-	if len(code) == 8 {
-		exchange = code[0:2]
-	}
-	switch exchange {
-	case protocol.ExchangeSH.String():
-		return protocol.ExchangeSH
-	case protocol.ExchangeSZ.String():
-		return protocol.ExchangeSZ
-	default:
-		return protocol.ExchangeSH
-	}
-}
+//// GetExchange 获取股票交易所,这里的参数不需要带前缀
+//func (this *Codes) GetExchange(code string) protocol.Exchange {
+//	if len(code) == 6 {
+//		switch {
+//		case code[:1] == "6":
+//			return protocol.ExchangeSH
+//		case code[:1] == "0":
+//			return protocol.ExchangeSZ
+//		case code[:2] == "30":
+//			return protocol.ExchangeSZ
+//		}
+//	}
+//	var exchange string
+//	exchanges := this.exchanges[code]
+//	if len(exchanges) >= 1 {
+//		exchange = exchanges[0]
+//	}
+//	if len(code) == 8 {
+//		exchange = code[0:2]
+//	}
+//	switch exchange {
+//	case protocol.ExchangeSH.String():
+//		return protocol.ExchangeSH
+//	case protocol.ExchangeSZ.String():
+//		return protocol.ExchangeSZ
+//	default:
+//		return protocol.ExchangeSH
+//	}
+//}
 
 func (this *Codes) AddExchange(code string) string {
-	if exchanges := this.exchanges[code]; len(exchanges) == 1 {
-		return exchanges[0] + code
-	}
-	if len(code) == 6 {
-		switch {
-		case code[:1] == "6":
-			return protocol.ExchangeSH.String() + code
-		case code[:1] == "0":
-			return protocol.ExchangeSZ.String() + code
-		case code[:2] == "30":
-			return protocol.ExchangeSZ.String() + code
-		}
-		return this.GetExchange(code).String() + code
-	}
-	return code
+	return protocol.AddPrefix(code)
+	//if exchanges := this.exchanges[code]; len(exchanges) == 1 {
+	//	return exchanges[0] + code
+	//}
+	//if len(code) == 6 {
+	//	switch {
+	//	case code[:1] == "6":
+	//		return protocol.ExchangeSH.String() + code
+	//	case code[:1] == "0":
+	//		return protocol.ExchangeSZ.String() + code
+	//	case code[:2] == "30":
+	//		return protocol.ExchangeSZ.String() + code
+	//	}
+	//	return this.GetExchange(code).String() + code
+	//}
+	//return code
 }
 
 // Update 更新数据,从服务器或者数据库
@@ -249,7 +250,7 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 	//3. 从服务器获取所有股票代码
 	insert := []*CodeModel(nil)
 	update := []*CodeModel(nil)
-	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
 		resp, err := this.Client.GetCodeAll(exchange)
 		if err != nil {
 			return nil, err
@@ -334,7 +335,7 @@ func (this *CodeModel) FullCode() string {
 
 func (this *CodeModel) Price(p protocol.Price) protocol.Price {
 	return protocol.Price(float64(p) * math.Pow10(int(2-this.Decimal)))
-	return p * protocol.Price(math.Pow10(int(2-this.Decimal)))
+	//return p * protocol.Price(math.Pow10(int(2-this.Decimal)))
 }
 
 func NewSessionFunc(db *xorm.Engine, fn func(session *xorm.Session) error) error {
