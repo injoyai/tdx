@@ -127,11 +127,15 @@ func GetTime(bs [4]byte, Type uint8) time.Time {
 }
 
 func basePrice(code string) Price {
-	if len(code) == 0 {
+	if len(code) < 2 {
+		return 1
+	}
+	switch code[:1] {
+	case "8":
 		return 1
 	}
 	switch code[:2] {
-	case "60", "30", "68", "00":
+	case "60", "30", "68", "00", "92", "43":
 		return 1
 	default:
 		return 10
