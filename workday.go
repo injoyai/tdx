@@ -15,7 +15,10 @@ import (
 	"xorm.io/xorm"
 )
 
-func NewWorkday(c *Client, filename string) (*Workday, error) {
+func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
+
+	defaultFilename := filepath.Join(DefaultDatabaseDir, "workday.db")
+	filename := conv.Default(defaultFilename, filenames...)
 
 	//如果文件夹不存在就创建
 	dir, _ := filepath.Split(filename)
