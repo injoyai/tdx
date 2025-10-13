@@ -257,12 +257,16 @@ func (this Klines) Sort() {
 	sort.Sort(this)
 }
 
-// Kline 计算多个K线,成一个K线
-func (this Klines) Kline() *Kline {
-	if this == nil {
-		return new(Kline)
+func (this Klines) Kline(t time.Time, last Price) *Kline {
+	k := &Kline{
+		Time:   t,
+		Open:   last,
+		High:   last,
+		Low:    last,
+		Close:  last,
+		Volume: 0,
+		Amount: 0,
 	}
-	k := new(Kline)
 	for i, v := range this {
 		switch i {
 		case 0:
@@ -270,34 +274,87 @@ func (this Klines) Kline() *Kline {
 			k.High = v.High
 			k.Low = v.Low
 			k.Close = v.Close
-		case len(this) - 1:
-			k.Close = v.Close
-			k.Time = v.Time
+		default:
+			if k.Open == 0 {
+				k.Open = v.Open
+			}
+			k.High = conv.Select(k.High < v.High, v.High, k.High)
+			k.Low = conv.Select(k.Low > v.Low, v.Low, k.Low)
 		}
-		if v.High > k.High {
-			k.High = v.High
-		}
-		if v.Low < k.Low {
-			k.Low = v.Low
-		}
+		k.Close = v.Close
 		k.Volume += v.Volume
 		k.Amount += v.Amount
 	}
 	return k
 }
 
-// Merge 合并K线,1分钟转成5,15,30分钟等
+// Merge 合并成其他类型的K线
 func (this Klines) Merge(n int) Klines {
-	if this == nil {
-		return nil
+	if n <= 1 {
+		return this
 	}
-	ks := []*Kline(nil)
-	for i := 0; i < len(this); i += n {
-		if i+n > len(this) {
-			ks = append(ks, this[i:].Kline())
-		} else {
-			ks = append(ks, this[i:i+n].Kline())
+	ks := Klines(nil)
+	ls := Klines(nil)
+	for i := 0; ; i++ {
+		if len(this) <= i*n {
+			break
 		}
+		if len(this) < (i+1)*n {
+			ls = this[i*n:]
+		} else {
+			ls = this[i*n : (i+1)*n]
+		}
+		if len(ls) == 0 {
+			break
+		}
+		last := ls[len(ls)-1]
+		k := ls.Kline(last.Time, ls[0].Open)
+		ks = append(ks, k)
 	}
 	return ks
 }
+
+//// Kline 计算多个K线,成一个K线
+//func (this Klines) Kline() *Kline {
+//	if this == nil {
+//		return new(Kline)
+//	}
+//	k := new(Kline)
+//	for i, v := range this {
+//		switch i {
+//		case 0:
+//			k.Open = v.Open
+//			k.High = v.High
+//			k.Low = v.Low
+//			k.Close = v.Close
+//		case len(this) - 1:
+//			k.Close = v.Close
+//			k.Time = v.Time
+//		}
+//		if v.High > k.High {
+//			k.High = v.High
+//		}
+//		if v.Low < k.Low {
+//			k.Low = v.Low
+//		}
+//		k.Volume += v.Volume
+//		k.Amount += v.Amount
+//	}
+//	return k
+//}
+
+//// Merge 合并K线,1分钟转成5,15,30分钟等
+//func (this Klines) Merge(n int) Klines {
+//	if this == nil {
+//		return nil
+//	}
+//	ks := []*Kline(nil)
+//	for i := 0; i < len(this); i += n {
+//		if i+n > len(this) {
+//			ks = append(ks, this[i:].Kline())
+//		} else {
+//			ks = append(ks, this[i:i+n].Kline())
+//		}
+//	}
+//	return ks
+//}
