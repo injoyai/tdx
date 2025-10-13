@@ -317,3 +317,7 @@ func AddPrefix(code string) string {
 	}
 	return code
 }
+
+func minutes(t time.Time) int {
+	return t.Hour()*60 + t.Minute()
+}

@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
 	"time"
 )
@@ -121,52 +122,108 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 
 type Trades []*Trade
 
-func (this Trades) Kline() (k *Kline, err error) {
-	k = &Kline{}
-	for i, v := range this {
-		switch i {
+// Klines 合并分时成交成k线
+func (this Trades) Klines() Klines {
+	//按天分割
+	m := make(types.SortMap[int64, Trades])
+	for _, v := range this {
+		//获取当天零点的时间戳
+		unix := time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 0, 0, 0, 0, v.Time.Location()).Unix()
+		m[unix] = append(m[unix], v)
+	}
+
+	//按天排序
+	mKline := types.SortMap[int64, Klines]{}
+	for date, v := range m {
+		//生成一分钟k线
+		t := time.Unix(date, 0)
+		mKline[date] = v.klinesForDay(t)
+	}
+	//按时间排序
+	lss := mKline.Sort()
+	ls := Klines{}
+	for _, v := range lss {
+		ls = append(ls, v...)
+	}
+	return ls
+}
+
+// Kline 合并分时成交成1个k线,注意分时成交时间保持一致
+func (this Trades) Kline(t time.Time, last Price) *Kline {
+	k := &Kline{
+		Time:  t,
+		Last:  last,
+		Open:  last,
+		High:  last,
+		Low:   last,
+		Close: last,
+	}
+	first := 0
+	for _, v := range this {
+		if v.Price <= 0 {
+			continue
+		}
+		switch first {
 		case 0:
-			k.Time = v.Time
 			k.Open = v.Price
 			k.High = v.Price
 			k.Low = v.Price
 			k.Close = v.Price
-		case len(this) - 1:
-			k.Close = v.Price
+		default:
+			k.High = conv.Select(k.High < v.Price, v.Price, k.High)
+			k.Low = conv.Select(k.Low > v.Price, v.Price, k.Low)
 		}
-		k.High = conv.Select(v.Price > k.High, v.Price, k.High)
-		k.Low = conv.Select(v.Price < k.Low, v.Price, k.Low)
+		k.Close = v.Price
 		k.Volume += int64(v.Volume)
-		k.Amount += v.Amount()
+		k.Amount += v.Price * Price(v.Volume) * 100
+		first++
 	}
-	return
+	return k
 }
 
-// Klines1 1分K线
-func (this Trades) Klines1() (Klines, error) {
-	m := make(map[int64]Trades)
-	for _, v := range this {
-		//小于9点30的数据归类到9点30
-		if v.Time.Hour() == 9 && v.Time.Minute() < 30 {
-			v.Time = time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 9, 30, 0, 0, v.Time.Location())
-		}
-		//15:00之前和11:30之前+1
-		if (v.Time.Hour() >= 13 && v.Time.Hour() < 15) || (v.Time.Hour() == 11 && v.Time.Minute() < 30) || v.Time.Hour() < 11 {
-			v.Time = v.Time.Add(time.Minute)
-		}
-		m[v.Time.Unix()] = append(m[v.Time.Unix()], v)
+// kline1 生成一分钟k线,一天
+func (this Trades) klinesForDay(date time.Time) Klines {
+	_930 := 570  //9:30 的分钟
+	_1130 := 690 //11:30 的分钟
+	_1300 := 780 //13:00 的分钟
+	_1500 := 900 //15:00 的分钟
+	keys := []int(nil)
+	//早上
+	m := map[int]Trades{}
+	for i := 1; i <= 120; i++ {
+		keys = append(keys, _930+i)
+		m[_930+i] = []*Trade{}
 	}
-
-	ls := Klines(nil)
-	for _, v := range m {
-		k, err := v.Kline()
-		if err != nil {
-			return nil, err
+	//下午
+	for i := 1; i <= 120; i++ {
+		keys = append(keys, _1300+i)
+		m[_1300+i] = []*Trade{}
+	}
+	//获取开盘价,有可能前几分钟没有数据,先遍历一遍
+	var open Price
+	for _, v := range this {
+		if v.Price > 0 {
+			open = v.Price
+			break
 		}
+	}
+	//分组,按
+	for _, v := range this {
+		ms := minutes(v.Time)
+		t := conv.Select(ms <= _930, _930, ms)
+		t++
+		t = conv.Select(t > _1130 && t <= _1300, _1130, t)
+		t = conv.Select(t > _1500, _1500, t)
+		m[t] = append(m[t], v)
+	}
+	//合并
+	ls := []*Kline(nil)
+	for _, v := range keys {
+		k := m[v].Kline(time.Date(date.Year(), date.Month(), date.Day(), v/60, v%60, 0, 0, date.Location()), open)
+		open = k.Close
 		ls = append(ls, k)
 	}
-	ls.Sort()
-	return ls, nil
+	return ls
 }
 
 type TradeCache struct {

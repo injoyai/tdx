@@ -233,6 +233,14 @@ func FixKlineTime(ks []*Kline) []*Kline {
 
 type Klines []*Kline
 
+// LastPrice 获取最后一个K线的收盘价
+func (this Klines) LastPrice() Price {
+	if len(this) == 0 {
+		return 0
+	}
+	return this[len(this)-1].Close
+}
+
 func (this Klines) Len() int {
 	return len(this)
 }
