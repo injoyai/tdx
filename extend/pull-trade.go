@@ -67,11 +67,7 @@ func (this *PullTrade) PullYear(ctx context.Context, m *tdx.Manage, year int, co
 		tss = append(tss, resp.List...)
 
 		//转成分时K线
-		ks, err := resp.List.Klines1()
-		if err != nil {
-			logs.Err(err)
-			return false
-		}
+		ks := resp.List.Klines()
 
 		kss1 = append(kss1, ks...)
 		kss5 = append(kss5, ks.Merge(5)...)
