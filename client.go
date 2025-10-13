@@ -422,7 +422,7 @@ func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*pr
 
 // GetHistoryMinuteTrade 获取历史分时交易
 // 只能获取昨天及之前的数据,服务器最多返回2000条,count-start<=2000,如果日期输入错误,则返回0
-// 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
+// 历史数据只能查到20000609
 func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
@@ -439,13 +439,36 @@ func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16
 	return result.(*protocol.TradeResp), nil
 }
 
-func (this *Client) GetHistoryTradeAll(date, code string) (*protocol.TradeResp, error) {
-	return this.GetHistoryMinuteTradeAll(date, code)
+// GetHistoryTradeFull 获取上市至今的分时成交
+func (this *Client) GetHistoryTradeFull(code string) (protocol.Trades, error) {
+	ls := protocol.Trades(nil)
+	resp, err := this.GetKlineMonthAll(code)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.List) == 0 {
+		return nil, nil
+	}
+	start := time.Date(resp.List[0].Time.Year(), resp.List[0].Time.Month(), 1, 0, 0, 0, 0, resp.List[0].Time.Location())
+	var res *protocol.TradeResp
+	for ; start.Before(time.Now()); start = start.Add(time.Hour * 24) {
+		res, err = this.GetHistoryTradeDay(start.Format("20060102"), code)
+		if err != nil {
+			return nil, err
+		}
+		ls = append(ls, res.List...)
+	}
+	return ls, nil
 }
 
-// GetHistoryMinuteTradeAll 获取历史分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
-// 历史数据sz000001在20241116只能查到21111112,13年差几天,3141天,或者其他规则
-func (this *Client) GetHistoryMinuteTradeAll(date, code string) (*protocol.TradeResp, error) {
+// GetHistoryTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
+func (this *Client) GetHistoryTradeDay(date, code string) (*protocol.TradeResp, error) {
+	return this.GetHistoryMinuteTradeDay(date, code)
+}
+
+// GetHistoryMinuteTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
+// 历史数据只能查到20000609
+func (this *Client) GetHistoryMinuteTradeDay(date, code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
 	size := uint16(2000)
 	for start := uint16(0); ; start += size {
