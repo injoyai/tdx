@@ -262,7 +262,7 @@ func IsStock(code string) bool {
 }
 
 func IsSZStock(code string) bool {
-	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSZ.String() && code[2:3] == "0"
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSZ.String() && (code[2:3] == "0" || code[2:4] == "30")
 }
 
 func IsSHStock(code string) bool {
