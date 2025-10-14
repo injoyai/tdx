@@ -9,7 +9,7 @@ import (
 func main() {
 	common.Test(func(c *tdx.Client) {
 
-		resp, err := c.GetHistoryTradeAll("20251010", "sz000001")
+		resp, err := c.GetHistoryTradeDay("20251010", "sz000001")
 		logs.PanicErr(err)
 
 		ks := resp.List.Klines()
