@@ -74,48 +74,6 @@ func NewWorkday(c *Client, db *xorm.Engine) (*Workday, error) {
 	return w, w.Update()
 }
 
-//func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
-//
-//	defaultFilename := filepath.Join(DefaultDatabaseDir, "workday.db")
-//	filename := conv.Default(defaultFilename, filenames...)
-//
-//	//如果文件夹不存在就创建
-//	dir, _ := filepath.Split(filename)
-//	_ = os.MkdirAll(dir, 0777)
-//
-//	//连接数据库
-//	db, err := xorm.NewEngine("sqlite", filename)
-//	if err != nil {
-//		return nil, err
-//	}
-//	db.SetMapper(core.SameMapper{})
-//	db.DB().SetMaxOpenConns(1)
-//	if err := db.Sync2(new(WorkdayModel)); err != nil {
-//		return nil, err
-//	}
-//
-//	w := &Workday{
-//		Client: c,
-//		db:     db,
-//		cache:  maps.NewBit(),
-//	}
-//
-//	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
-//	task := cron.New(cron.WithSeconds())
-//	task.AddFunc("0 0 9 * * *", func() {
-//		for i := 0; i < 3; i++ {
-//			if err := w.Update(); err == nil {
-//				return
-//			}
-//			logs.Err(err)
-//			<-time.After(time.Minute * 5)
-//		}
-//	})
-//	task.Start()
-//
-//	return w, w.Update()
-//}
-
 type Workday struct {
 	*Client
 	db    *xorm.Engine
@@ -131,7 +89,7 @@ func (this *Workday) Update() error {
 
 	//获取沪市指数的日K线,用作历史是否节假日的判断依据
 	//判断日K线是否拉取过
-
+	
 	//获取全部工作日
 	all := []*WorkdayModel(nil)
 	if err := this.db.Find(&all); err != nil {
@@ -146,27 +104,26 @@ func (this *Workday) Update() error {
 	}
 
 	now := time.Now()
-	if lastWorkday == nil || lastWorkday.Unix < IntegerDay(now).Unix() {
+	if lastWorkday.Unix < IntegerDay(now).Unix() {
 		resp, err := this.Client.GetIndexDayAll("sh000001")
 		if err != nil {
 			logs.Err(err)
 			return err
 		}
 
-		return NewSessionFunc(this.db, func(session *xorm.Session) error {
-			for _, v := range resp.List {
-				if unix := v.Time.Unix(); unix > lastWorkday.Unix {
-					_, err = session.Insert(&WorkdayModel{Unix: unix, Date: v.Time.Format("20060102"), Is: true})
-					if err != nil {
-						return err
-					}
-					this.cache.Set(uint64(unix), true)
-				}
+		inserts := []any(nil)
+		for _, v := range resp.List {
+			if unix := v.Time.Unix(); unix > lastWorkday.Unix {
+				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: v.Time.Format("20060102")})
+				this.cache.Set(uint64(unix), true)
 			}
-			return nil
-		})
+		}
+
+		_, err = this.db.Insert(inserts)
+		return err
 
 	}
+
 	return nil
 }
 
@@ -220,7 +177,6 @@ type WorkdayModel struct {
 	ID   int64  `json:"id"`   //主键
 	Unix int64  `json:"unix"` //时间戳
 	Date string `json:"date"` //日期
-	Is   bool   `json:"is"`   //是否是工作日
 }
 
 func (this *WorkdayModel) TableName() string {

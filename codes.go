@@ -71,7 +71,7 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 
 	update := new(UpdateModel)
 	{ //查询或者插入一条数据
-		has, err := db.Where("Key=?", "codes").Get(update)
+		has, err := db.Where("`Key`=?", "codes").Get(update)
 		if err != nil {
 			return nil, err
 		} else if !has {
@@ -122,83 +122,6 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 	//从缓存中加载
 	return cc, cc.Update(true)
 }
-
-//func NewCodes(c *Client, filenames ...string) (*Codes, error) {
-//
-//	//如果没有指定文件名,则使用默认
-//	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
-//	filename := conv.Default(defaultFilename, filenames...)
-//	filename = conv.Select(filename == "", defaultFilename, filename)
-//
-//	//如果文件夹不存在就创建
-//	dir, _ := filepath.Split(filename)
-//	_ = os.MkdirAll(dir, 0777)
-//
-//	//连接数据库
-//	db, err := xorm.NewEngine("sqlite", filename)
-//	if err != nil {
-//		return nil, err
-//	}
-//	db.SetMapper(core.SameMapper{})
-//	db.DB().SetMaxOpenConns(1)
-//	if err := db.Sync2(new(CodeModel)); err != nil {
-//		return nil, err
-//	}
-//	if err := db.Sync2(new(UpdateModel)); err != nil {
-//		return nil, err
-//	}
-//
-//	update := new(UpdateModel)
-//	{ //查询或者插入一条数据
-//		has, err := db.Get(update)
-//		if err != nil {
-//			return nil, err
-//		} else if !has {
-//			if _, err := db.Insert(update); err != nil {
-//				return nil, err
-//			}
-//		}
-//	}
-//
-//	cc := &Codes{
-//		Client: c,
-//		db:     db,
-//	}
-//
-//	{ //设置定时器,每天早上9点更新数据
-//		task := cron.New(cron.WithSeconds())
-//		task.AddFunc("10 0 9 * * *", func() {
-//			for i := 0; i < 3; i++ {
-//				if err := cc.Update(); err == nil {
-//					return
-//				}
-//				logs.Err(err)
-//				<-time.After(time.Minute * 5)
-//			}
-//		})
-//		task.Start()
-//	}
-//
-//	{ //判断是否更新过,更新过则不更新
-//		now := time.Now()
-//		node := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
-//		updateTime := time.Unix(update.Time, 0)
-//		if now.Sub(node) > 0 {
-//			//当前时间在9点之后,且更新时间在9点之前,需要更新
-//			if updateTime.Sub(node) < 0 {
-//				return cc, cc.Update()
-//			}
-//		} else {
-//			//当前时间在9点之前,且更新时间在上个节点之前
-//			if updateTime.Sub(node.Add(time.Hour*24)) < 0 {
-//				return cc, cc.Update()
-//			}
-//		}
-//	}
-//
-//	//从缓存中加载
-//	return cc, cc.Update(true)
-//}
 
 type Codes struct {
 	*Client                         //客户端
@@ -272,7 +195,7 @@ func (this *Codes) Update(byDB ...bool) error {
 	this.list = codes
 	this.exchanges = exchanges
 	//更新时间
-	_, err = this.db.Where("Key=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
+	_, err = this.db.Where("`Key`=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
 	return err
 }
 
@@ -335,26 +258,48 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 		}
 	}
 
-	//4. 插入或者更新数据库
-	err := NewSessionFunc(this.db, func(session *xorm.Session) error {
-		for _, v := range insert {
-			if _, err := session.Insert(v); err != nil {
-				return err
+	switch this.db.Dialect().URI().DBType {
+	case "mysql":
+		// 1️⃣ 清空
+		if _, err := this.db.Exec("TRUNCATE TABLE codes"); err != nil {
+			return nil, err
+		}
+
+		data := append(insert, update...)
+		// 2️⃣ 直接批量插入
+		batchSize := 3000 // 8000(2m16s) 5000(43s) 3000(11s) 1000(59s)
+		for i := 0; i < len(data); i += batchSize {
+			end := i + batchSize
+			if end > len(data) {
+				end = len(data)
+			}
+
+			slice := conv.Array(data[i:end])
+			if _, err := this.db.Insert(slice); err != nil {
+				return nil, err
 			}
 		}
-		for _, v := range update {
-			if _, err := session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Cols("Name,LastPrice").Update(v); err != nil {
-				return err
+	case "sqlite3":
+		//4. 插入或者更新数据库
+		err := NewSessionFunc(this.db, func(session *xorm.Session) error {
+			for _, v := range insert {
+				if _, err := session.Insert(v); err != nil {
+					return err
+				}
 			}
+			for _, v := range update {
+				if _, err := session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Cols("Name,LastPrice").Update(v); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	return list, nil
-
 }
 
 type UpdateModel struct {
