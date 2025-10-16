@@ -71,10 +71,11 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 
 	update := new(UpdateModel)
 	{ //查询或者插入一条数据
-		has, err := db.Get(update)
+		has, err := db.Where("Key=?", "codes").Get(update)
 		if err != nil {
 			return nil, err
 		} else if !has {
+			update.Key = "codes"
 			if _, err := db.Insert(update); err != nil {
 				return nil, err
 			}
@@ -271,7 +272,7 @@ func (this *Codes) Update(byDB ...bool) error {
 	this.list = codes
 	this.exchanges = exchanges
 	//更新时间
-	_, err = this.db.Update(&UpdateModel{Time: time.Now().Unix()})
+	_, err = this.db.Where("Key=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
 	return err
 }
 
@@ -357,11 +358,12 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 }
 
 type UpdateModel struct {
+	Key  string
 	Time int64 //更新时间
 }
 
 func (*UpdateModel) TableName() string {
-	return "codes_update"
+	return "update"
 }
 
 type CodeModel struct {
