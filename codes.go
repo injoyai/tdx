@@ -34,12 +34,6 @@ func NewCodesMysql(c *Client, dsn string) (*Codes, error) {
 		return nil, err
 	}
 	db.SetMapper(core.SameMapper{})
-	if err := db.Sync2(new(CodeModel)); err != nil {
-		return nil, err
-	}
-	if err := db.Sync2(new(UpdateModel)); err != nil {
-		return nil, err
-	}
 
 	return NewCodes(c, db)
 }
@@ -62,17 +56,18 @@ func NewCodesSqlite(c *Client, filenames ...string) (*Codes, error) {
 	}
 	db.SetMapper(core.SameMapper{})
 	db.DB().SetMaxOpenConns(1)
+
+	return NewCodes(c, db)
+}
+
+func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
+
 	if err := db.Sync2(new(CodeModel)); err != nil {
 		return nil, err
 	}
 	if err := db.Sync2(new(UpdateModel)); err != nil {
 		return nil, err
 	}
-
-	return NewCodes(c, db)
-}
-
-func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 
 	update := new(UpdateModel)
 	{ //查询或者插入一条数据
@@ -366,7 +361,7 @@ type UpdateModel struct {
 }
 
 func (*UpdateModel) TableName() string {
-	return "update"
+	return "codes_update"
 }
 
 type CodeModel struct {

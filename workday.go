@@ -24,9 +24,6 @@ func NewWorkdayMysql(c *Client, dsn string) (*Workday, error) {
 		return nil, err
 	}
 	db.SetMapper(core.SameMapper{})
-	if err := db.Sync2(new(WorkdayModel)); err != nil {
-		return nil, err
-	}
 
 	return NewWorkday(c, db)
 }
@@ -47,14 +44,15 @@ func NewWorkdaySqlite(c *Client, filenames ...string) (*Workday, error) {
 	}
 	db.SetMapper(core.SameMapper{})
 	db.DB().SetMaxOpenConns(1)
-	if err := db.Sync2(new(WorkdayModel)); err != nil {
-		return nil, err
-	}
 
 	return NewWorkday(c, db)
 }
 
 func NewWorkday(c *Client, db *xorm.Engine) (*Workday, error) {
+	if err := db.Sync2(new(WorkdayModel)); err != nil {
+		return nil, err
+	}
+
 	w := &Workday{
 		Client: c,
 		db:     db,
