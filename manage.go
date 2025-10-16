@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"errors"
 	"github.com/injoyai/ios/client"
 	"github.com/robfig/cron/v3"
 	"time"
@@ -9,6 +10,57 @@ import (
 const (
 	DefaultDatabaseDir = "./data/database"
 )
+
+func NewManageMysql(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
+	//初始化配置
+	if cfg == nil {
+		cfg = &ManageConfig{}
+	}
+	if cfg.CodesFilename == "" {
+		return nil, errors.New("未配置Codes的数据库")
+	}
+	if cfg.WorkdayFileName == "" {
+		return nil, errors.New("未配置Workday的数据库")
+	}
+	if cfg.Dial == nil {
+		cfg.Dial = DialDefault
+	}
+
+	//通用客户端
+	commonClient, err := cfg.Dial(op...)
+	if err != nil {
+		return nil, err
+	}
+	commonClient.Wait.SetTimeout(time.Second * 5)
+
+	//代码管理
+	codes, err := NewCodesMysql(commonClient, cfg.CodesFilename)
+	if err != nil {
+		return nil, err
+	}
+
+	//工作日管理
+	workday, err := NewWorkdayMysql(commonClient, cfg.WorkdayFileName)
+	if err != nil {
+		return nil, err
+	}
+
+	//连接池
+	p, err := NewPool(func() (*Client, error) {
+		return cfg.Dial(op...)
+	}, cfg.Number)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Manage{
+		Pool:    p,
+		Config:  cfg,
+		Codes:   codes,
+		Workday: workday,
+		Cron:    cron.New(cron.WithSeconds()),
+	}, nil
+}
 
 func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	//初始化配置
