@@ -23,10 +23,28 @@ func DialCodes(filename string, op ...client.Option) (*Codes, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewCodes(c, filename)
+	return NewCodesSqlite(c, filename)
 }
 
-func NewCodes(c *Client, filenames ...string) (*Codes, error) {
+func NewCodesMysql(c *Client, dsn string) (*Codes, error) {
+
+	//连接数据库
+	db, err := xorm.NewEngine("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMapper(core.SameMapper{})
+	if err := db.Sync2(new(CodeModel)); err != nil {
+		return nil, err
+	}
+	if err := db.Sync2(new(UpdateModel)); err != nil {
+		return nil, err
+	}
+
+	return NewCodes(c, db)
+}
+
+func NewCodesSqlite(c *Client, filenames ...string) (*Codes, error) {
 
 	//如果没有指定文件名,则使用默认
 	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
@@ -51,6 +69,11 @@ func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 		return nil, err
 	}
 
+	return NewCodes(c, db)
+}
+
+func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
+
 	update := new(UpdateModel)
 	{ //查询或者插入一条数据
 		has, err := db.Get(update)
@@ -72,7 +95,8 @@ func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 		task := cron.New(cron.WithSeconds())
 		task.AddFunc("10 0 9 * * *", func() {
 			for i := 0; i < 3; i++ {
-				if err := cc.Update(); err == nil {
+				err := cc.Update()
+				if err == nil {
 					return
 				}
 				logs.Err(err)
@@ -102,6 +126,83 @@ func NewCodes(c *Client, filenames ...string) (*Codes, error) {
 	//从缓存中加载
 	return cc, cc.Update(true)
 }
+
+//func NewCodes(c *Client, filenames ...string) (*Codes, error) {
+//
+//	//如果没有指定文件名,则使用默认
+//	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
+//	filename := conv.Default(defaultFilename, filenames...)
+//	filename = conv.Select(filename == "", defaultFilename, filename)
+//
+//	//如果文件夹不存在就创建
+//	dir, _ := filepath.Split(filename)
+//	_ = os.MkdirAll(dir, 0777)
+//
+//	//连接数据库
+//	db, err := xorm.NewEngine("sqlite", filename)
+//	if err != nil {
+//		return nil, err
+//	}
+//	db.SetMapper(core.SameMapper{})
+//	db.DB().SetMaxOpenConns(1)
+//	if err := db.Sync2(new(CodeModel)); err != nil {
+//		return nil, err
+//	}
+//	if err := db.Sync2(new(UpdateModel)); err != nil {
+//		return nil, err
+//	}
+//
+//	update := new(UpdateModel)
+//	{ //查询或者插入一条数据
+//		has, err := db.Get(update)
+//		if err != nil {
+//			return nil, err
+//		} else if !has {
+//			if _, err := db.Insert(update); err != nil {
+//				return nil, err
+//			}
+//		}
+//	}
+//
+//	cc := &Codes{
+//		Client: c,
+//		db:     db,
+//	}
+//
+//	{ //设置定时器,每天早上9点更新数据
+//		task := cron.New(cron.WithSeconds())
+//		task.AddFunc("10 0 9 * * *", func() {
+//			for i := 0; i < 3; i++ {
+//				if err := cc.Update(); err == nil {
+//					return
+//				}
+//				logs.Err(err)
+//				<-time.After(time.Minute * 5)
+//			}
+//		})
+//		task.Start()
+//	}
+//
+//	{ //判断是否更新过,更新过则不更新
+//		now := time.Now()
+//		node := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
+//		updateTime := time.Unix(update.Time, 0)
+//		if now.Sub(node) > 0 {
+//			//当前时间在9点之后,且更新时间在9点之前,需要更新
+//			if updateTime.Sub(node) < 0 {
+//				return cc, cc.Update()
+//			}
+//		} else {
+//			//当前时间在9点之前,且更新时间在上个节点之前
+//			if updateTime.Sub(node.Add(time.Hour*24)) < 0 {
+//				return cc, cc.Update()
+//			}
+//		}
+//	}
+//
+//	//从缓存中加载
+//	return cc, cc.Update(true)
+//}
 
 type Codes struct {
 	*Client                         //客户端
@@ -155,53 +256,8 @@ func (this *Codes) Get(code string) *CodeModel {
 	return this.Map[code]
 }
 
-//// GetExchange 获取股票交易所,这里的参数不需要带前缀
-//func (this *Codes) GetExchange(code string) protocol.Exchange {
-//	if len(code) == 6 {
-//		switch {
-//		case code[:1] == "6":
-//			return protocol.ExchangeSH
-//		case code[:1] == "0":
-//			return protocol.ExchangeSZ
-//		case code[:2] == "30":
-//			return protocol.ExchangeSZ
-//		}
-//	}
-//	var exchange string
-//	exchanges := this.exchanges[code]
-//	if len(exchanges) >= 1 {
-//		exchange = exchanges[0]
-//	}
-//	if len(code) == 8 {
-//		exchange = code[0:2]
-//	}
-//	switch exchange {
-//	case protocol.ExchangeSH.String():
-//		return protocol.ExchangeSH
-//	case protocol.ExchangeSZ.String():
-//		return protocol.ExchangeSZ
-//	default:
-//		return protocol.ExchangeSH
-//	}
-//}
-
 func (this *Codes) AddExchange(code string) string {
 	return protocol.AddPrefix(code)
-	//if exchanges := this.exchanges[code]; len(exchanges) == 1 {
-	//	return exchanges[0] + code
-	//}
-	//if len(code) == 6 {
-	//	switch {
-	//	case code[:1] == "6":
-	//		return protocol.ExchangeSH.String() + code
-	//	case code[:1] == "0":
-	//		return protocol.ExchangeSZ.String() + code
-	//	case code[:2] == "30":
-	//		return protocol.ExchangeSZ.String() + code
-	//	}
-	//	return this.GetExchange(code).String() + code
-	//}
-	//return code
 }
 
 // Update 更新数据,从服务器或者数据库

@@ -3,6 +3,7 @@ package tdx
 import (
 	"errors"
 	_ "github.com/glebarez/go-sqlite"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
@@ -15,7 +16,22 @@ import (
 	"xorm.io/xorm"
 )
 
-func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
+func NewWorkdayMysql(c *Client, dsn string) (*Workday, error) {
+
+	//连接数据库
+	db, err := xorm.NewEngine("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMapper(core.SameMapper{})
+	if err := db.Sync2(new(WorkdayModel)); err != nil {
+		return nil, err
+	}
+
+	return NewWorkday(c, db)
+}
+
+func NewWorkdaySqlite(c *Client, filenames ...string) (*Workday, error) {
 
 	defaultFilename := filepath.Join(DefaultDatabaseDir, "workday.db")
 	filename := conv.Default(defaultFilename, filenames...)
@@ -35,17 +51,21 @@ func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
 		return nil, err
 	}
 
+	return NewWorkday(c, db)
+}
+
+func NewWorkday(c *Client, db *xorm.Engine) (*Workday, error) {
 	w := &Workday{
 		Client: c,
 		db:     db,
 		cache:  maps.NewBit(),
 	}
-
 	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
 	task := cron.New(cron.WithSeconds())
 	task.AddFunc("0 0 9 * * *", func() {
 		for i := 0; i < 3; i++ {
-			if err := w.Update(); err == nil {
+			err := w.Update()
+			if err == nil {
 				return
 			}
 			logs.Err(err)
@@ -53,9 +73,50 @@ func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
 		}
 	})
 	task.Start()
-
 	return w, w.Update()
 }
+
+//func NewWorkday(c *Client, filenames ...string) (*Workday, error) {
+//
+//	defaultFilename := filepath.Join(DefaultDatabaseDir, "workday.db")
+//	filename := conv.Default(defaultFilename, filenames...)
+//
+//	//如果文件夹不存在就创建
+//	dir, _ := filepath.Split(filename)
+//	_ = os.MkdirAll(dir, 0777)
+//
+//	//连接数据库
+//	db, err := xorm.NewEngine("sqlite", filename)
+//	if err != nil {
+//		return nil, err
+//	}
+//	db.SetMapper(core.SameMapper{})
+//	db.DB().SetMaxOpenConns(1)
+//	if err := db.Sync2(new(WorkdayModel)); err != nil {
+//		return nil, err
+//	}
+//
+//	w := &Workday{
+//		Client: c,
+//		db:     db,
+//		cache:  maps.NewBit(),
+//	}
+//
+//	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
+//	task := cron.New(cron.WithSeconds())
+//	task.AddFunc("0 0 9 * * *", func() {
+//		for i := 0; i < 3; i++ {
+//			if err := w.Update(); err == nil {
+//				return
+//			}
+//			logs.Err(err)
+//			<-time.After(time.Minute * 5)
+//		}
+//	})
+//	task.Start()
+//
+//	return w, w.Update()
+//}
 
 type Workday struct {
 	*Client

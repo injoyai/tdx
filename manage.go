@@ -33,13 +33,13 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 	commonClient.Wait.SetTimeout(time.Second * 5)
 
 	//代码管理
-	codes, err := NewCodes(commonClient, cfg.CodesFilename)
+	codes, err := NewCodesSqlite(commonClient, cfg.CodesFilename)
 	if err != nil {
 		return nil, err
 	}
 
 	//工作日管理
-	workday, err := NewWorkday(commonClient, cfg.WorkdayFileName)
+	workday, err := NewWorkdaySqlite(commonClient, cfg.WorkdayFileName)
 	if err != nil {
 		return nil, err
 	}
