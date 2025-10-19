@@ -89,7 +89,7 @@ func (this *Workday) Update() error {
 
 	//获取沪市指数的日K线,用作历史是否节假日的判断依据
 	//判断日K线是否拉取过
-	
+
 	//获取全部工作日
 	all := []*WorkdayModel(nil)
 	if err := this.db.Find(&all); err != nil {
@@ -117,6 +117,10 @@ func (this *Workday) Update() error {
 				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: v.Time.Format("20060102")})
 				this.cache.Set(uint64(unix), true)
 			}
+		}
+
+		if len(inserts) == 0 {
+			return nil
 		}
 
 		_, err = this.db.Insert(inserts)
