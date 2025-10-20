@@ -441,6 +441,11 @@ func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16
 
 // GetHistoryTradeFull 获取上市至今的分时成交
 func (this *Client) GetHistoryTradeFull(code string, w *Workday) (protocol.Trades, error) {
+	return this.GetHistoryTradeBefore(code, w, time.Now())
+}
+
+// GetHistoryTradeBefore 获取上市至今的分时成交
+func (this *Client) GetHistoryTradeBefore(code string, w *Workday, before time.Time) (protocol.Trades, error) {
 	ls := protocol.Trades(nil)
 	resp, err := this.GetKlineMonthAll(code)
 	if err != nil {
@@ -451,7 +456,7 @@ func (this *Client) GetHistoryTradeFull(code string, w *Workday) (protocol.Trade
 	}
 	start := time.Date(resp.List[0].Time.Year(), resp.List[0].Time.Month(), 1, 0, 0, 0, 0, resp.List[0].Time.Location())
 	var res *protocol.TradeResp
-	w.Range(start, time.Now(), func(t time.Time) bool {
+	w.Range(start, before, func(t time.Time) bool {
 		res, err = this.GetHistoryTradeDay(start.Format("20060102"), code)
 		if err != nil {
 			return false
