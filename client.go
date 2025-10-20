@@ -440,7 +440,7 @@ func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16
 }
 
 // GetHistoryTradeFull 获取上市至今的分时成交
-func (this *Client) GetHistoryTradeFull(code string) (protocol.Trades, error) {
+func (this *Client) GetHistoryTradeFull(code string, w *Workday) (protocol.Trades, error) {
 	ls := protocol.Trades(nil)
 	resp, err := this.GetKlineMonthAll(code)
 	if err != nil {
@@ -451,14 +451,15 @@ func (this *Client) GetHistoryTradeFull(code string) (protocol.Trades, error) {
 	}
 	start := time.Date(resp.List[0].Time.Year(), resp.List[0].Time.Month(), 1, 0, 0, 0, 0, resp.List[0].Time.Location())
 	var res *protocol.TradeResp
-	for ; start.Before(time.Now()); start = start.Add(time.Hour * 24) {
+	w.Range(start, time.Now(), func(t time.Time) bool {
 		res, err = this.GetHistoryTradeDay(start.Format("20060102"), code)
 		if err != nil {
-			return nil, err
+			return false
 		}
 		ls = append(ls, res.List...)
-	}
-	return ls, nil
+		return true
+	})
+	return ls, err
 }
 
 // GetHistoryTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
