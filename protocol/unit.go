@@ -135,10 +135,10 @@ func basePrice(code string) Price {
 		return 1
 	}
 	switch code[:2] {
-	case "60", "30", "68", "00", "92", "43":
+	case "60", "30", "68", "00", "92", "43", "39":
 		return 1
 	default:
-		return 10
+		return 1
 	}
 }
 
