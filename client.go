@@ -181,6 +181,11 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 
 }
 
+// SetTimeout 设置超时时间
+func (this *Client) SetTimeout(t time.Duration) {
+	this.Wait.SetTimeout(t)
+}
+
 // SendFrame 发送数据,并等待响应
 func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	f.MsgID = atomic.AddUint32(&this.msgID, 1)
