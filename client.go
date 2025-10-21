@@ -457,7 +457,12 @@ func (this *Client) GetHistoryTradeBefore(code string, w *Workday, before time.T
 	start := time.Date(resp.List[0].Time.Year(), resp.List[0].Time.Month(), 1, 0, 0, 0, 0, resp.List[0].Time.Location())
 	var res *protocol.TradeResp
 	w.Range(start, before, func(t time.Time) bool {
-		res, err = this.GetHistoryTradeDay(t.Format("20060102"), code)
+		for i := 0; i < 3; i++ {
+			res, err = this.GetHistoryTradeDay(t.Format("20060102"), code)
+			if err == nil {
+				break
+			}
+		}
 		if err != nil {
 			return false
 		}
