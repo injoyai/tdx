@@ -293,7 +293,14 @@ func (this Klines) Merge(n int) Klines {
 	if n <= 1 {
 		return this
 	}
+
 	ks := Klines(nil)
+
+	if this[0].Time.Hour() == 9 && this[0].Time.Minute() == 30 {
+		ks = append(ks, this[0])
+		this = this[1:]
+	}
+
 	ls := Klines(nil)
 	for i := 0; ; i++ {
 		if len(this) <= i*n {
