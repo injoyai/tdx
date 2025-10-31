@@ -6,6 +6,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
+	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
@@ -15,6 +16,14 @@ import (
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
+
+func DialWorkday(op ...client.Option) (*Workday, error) {
+	c, err := DialDefault(op...)
+	if err != nil {
+		return nil, err
+	}
+	return NewWorkdaySqlite(c)
+}
 
 func NewWorkdayMysql(c *Client, dsn string) (*Workday, error) {
 
