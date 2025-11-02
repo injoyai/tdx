@@ -6,6 +6,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
+	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
@@ -15,6 +16,14 @@ import (
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
+
+func DialWorkday(op ...client.Option) (*Workday, error) {
+	c, err := DialDefault(op...)
+	if err != nil {
+		return nil, err
+	}
+	return NewWorkdaySqlite(c)
+}
 
 func NewWorkdayMysql(c *Client, dsn string) (*Workday, error) {
 
@@ -150,11 +159,11 @@ func (this *Workday) RangeYear(year int, f func(t time.Time) bool) {
 	)
 }
 
-// Range 遍历指定范围的工作日
+// Range 遍历指定范围的工作日,推荐start带上时间15:00,这样当天小于15点不会触发
 func (this *Workday) Range(start, end time.Time, f func(t time.Time) bool) {
 	start = conv.Select(start.Before(protocol.ExchangeEstablish), protocol.ExchangeEstablish, start)
-	now := IntegerDay(time.Now())
-	end = conv.Select(end.After(now), now, end).Add(1)
+	//now := IntegerDay(time.Now())
+	//end = conv.Select(end.After(now), now, end).Add(1)
 	for ; start.Before(end); start = start.Add(time.Hour * 24) {
 		if this.Is(start) {
 			if !f(start) {

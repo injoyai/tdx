@@ -293,6 +293,7 @@ func (this Klines) Merge(n int) Klines {
 	if n <= 1 {
 		return this
 	}
+
 	ks := Klines(nil)
 	ls := Klines(nil)
 	for i := 0; ; i++ {

@@ -210,7 +210,7 @@ func (this Trades) klinesForDay(date time.Time) Klines {
 	//分组,按
 	for _, v := range this {
 		ms := minutes(v.Time)
-		t := conv.Select(ms <= _930, _930, ms)
+		t := conv.Select(ms < _930, _930, ms)
 		t++
 		t = conv.Select(t > _1130 && t <= _1300, _1130, t)
 		t = conv.Select(t > _1500, _1500, t)
