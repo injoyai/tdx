@@ -281,11 +281,11 @@ func IsETF(code string) bool {
 	code = strings.ToLower(code)
 	switch {
 	case code[0:2] == ExchangeSH.String() &&
-		(code[2:5] == "510" || code[2:5] == "511" || code[2:5] == "512" || code[2:5] == "513" || code[2:5] == "515"):
+		(code[2:4] == "51" || code[2:4] == "56" || code[2:4] == "58"):
 		return true
 
 	case code[0:2] == ExchangeSZ.String() &&
-		(code[2:5] == "159"):
+		(code[2:4] == "15" || code[2:4] == "16"):
 		return true
 	}
 	return false
