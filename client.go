@@ -10,6 +10,7 @@ import (
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/internal/bse"
 	"github.com/injoyai/tdx/protocol"
 	"runtime/debug"
 	"sync/atomic"
@@ -230,7 +231,7 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 	//不放在extend包时防止循环引用
 	//todo 这是临时方案,等通达信有北交所代码列表时再改
 	if exchange == protocol.ExchangeBJ {
-		codes, err := GetBjCodes()
+		codes, err := bse.GetCodes()
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +305,8 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 				return nil, errors.New("DefaultCodes未初始化")
 			}
 			//不是股票代码的话，根据codes的信息加上前缀
-			codes[i] = DefaultCodes.AddExchange(codes[i])
+			//codes[i] = DefaultCodes.AddExchange(codes[i])
+			codes[i] = protocol.AddPrefix(codes[i])
 		}
 	}
 

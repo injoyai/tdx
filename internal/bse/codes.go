@@ -1,4 +1,4 @@
-package tdx
+package bse
 
 import (
 	"bytes"
@@ -13,15 +13,15 @@ import (
 )
 
 const (
-	// UrlBjCodes 最后跟的是时间戳(ms),但是随便什么时间戳都能请求成功
-	UrlBjCodes = "https://www.bse.cn/nqhqController/nqhq_en.do?callback=jQuery3710848510589806625_%d"
+	// UrlCodes 最后跟的是时间戳(ms),但是随便什么时间戳都能请求成功
+	UrlCodes = "https://www.bse.cn/nqhqController/nqhq_en.do?callback=jQuery3710848510589806625_%d"
 )
 
-func GetBjCodes() ([]*BjCode, error) {
-	list := []*BjCode(nil)
+func GetCodes() ([]*Code, error) {
+	list := []*Code(nil)
 	//这个200预防下bug,除非北京上市公司有4000个
 	for page := 0; page < 200; page++ {
-		ls, done, err := getBjCodes(page)
+		ls, done, err := getCodes(page)
 		if err != nil {
 			return nil, err
 		}
@@ -35,9 +35,9 @@ func GetBjCodes() ([]*BjCode, error) {
 	return list, nil
 }
 
-func getBjCodes(page int) (_ []*BjCode, last bool, err error) {
+func getCodes(page int) (_ []*Code, last bool, err error) {
 
-	url := fmt.Sprintf(UrlBjCodes, time.Now().UnixMilli())
+	url := fmt.Sprintf(UrlCodes, time.Now().UnixMilli())
 
 	bodyStr := "page=" + conv.String(page) + "&type_en=%5B%22B%22%5D&sortfield=hqcjsl&sorttype=desc&xxfcbj_en=%5B2%5D&zqdm="
 
@@ -68,7 +68,7 @@ func getBjCodes(page int) (_ []*BjCode, last bool, err error) {
 
 	bs = bs[i+1 : len(bs)-1]
 
-	ls := []*BjCodes(nil)
+	ls := []*Codes(nil)
 	err = json.Unmarshal(bs, &ls)
 	if err != nil {
 		return nil, false, err
@@ -81,14 +81,14 @@ func getBjCodes(page int) (_ []*BjCode, last bool, err error) {
 	return ls[0].Data, ls[0].LastPage, nil
 }
 
-type BjCodes struct {
-	Data        []*BjCode `json:"content"`
-	TotalNumber int       `json:"totalElements"`
-	TotalPage   int       `json:"totalPages"`
-	LastPage    bool      `json:"lastPage"`
+type Codes struct {
+	Data        []*Code `json:"content"`
+	TotalNumber int     `json:"totalElements"`
+	TotalPage   int     `json:"totalPages"`
+	LastPage    bool    `json:"lastPage"`
 }
 
-type BjCode struct {
+type Code struct {
 	Date      string  `json:"hqjsrq"` //日期
 	Code      string  `json:"hqzqdm"` //代码
 	Name      string  `json:"hqzqjc"` //名称

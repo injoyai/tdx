@@ -1,11 +1,11 @@
 package extend
 
 import (
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/internal/bse"
 )
 
 func GetBjCodes() ([]string, error) {
-	cs, err := tdx.GetBjCodes()
+	cs, err := bse.GetCodes()
 	if err != nil {
 		return nil, err
 	}

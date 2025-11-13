@@ -8,7 +8,7 @@ import (
 
 func main() {
 	common.Test(func(c *tdx.Client) {
-		resp, err := c.GetHistoryMinuteTradeDay("20251010", "sh000001")
+		resp, err := c.GetHistoryMinuteTradeDay("20170704", "sh000001")
 		logs.PanicErr(err)
 
 		for _, v := range resp.List {
