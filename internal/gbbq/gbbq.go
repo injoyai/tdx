@@ -26,7 +26,7 @@ var HexKeys = "38 A7 C2 1D E0 6A 17 E2 D1 39 A2 40 9C BA 46 AF 42 C6 FF 05 74 EA
 
 const ZipURL = "http://www.tdx.com.cn/products/data/data/dbf/gbbq.zip"
 
-func DownloadAndDecode(dir string) ([]Stock, error) {
+func DownloadAndDecode(dir string) (Stocks, error) {
 	filename, err := Download(dir)
 	if err != nil {
 		return nil, err
@@ -57,11 +57,13 @@ func Download(dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = zip.Decode(zipFilename, dir)
+	decodeDir := filepath.Join(dir, "gbbq")
+	os.MkdirAll(decodeDir, 0777)
+	err = zip.Decode(zipFilename, decodeDir)
 	return filepath.Join(dir, "gbbq", "gbbq"), err
 }
 
-func Decode(content []byte) ([]Stock, error) {
+func Decode(content []byte) (Stocks, error) {
 	hexStr := strings.ReplaceAll(HexKeys, " ", "")
 	keys, err := hex.DecodeString(hexStr)
 	if err != nil {
@@ -173,6 +175,7 @@ type Stock struct {
 
 type Stocks []Stock
 
+// GetStock 输入920000,返回流通股本
 func (this Stocks) GetStock(code string) (float float64, total float64) {
 	ls := types.List[Stock](this)
 	ls = ls.Where(func(i int, v Stock) bool {
@@ -183,10 +186,12 @@ func (this Stocks) GetStock(code string) (float float64, total float64) {
 		return false
 	})
 	ls = ls.Sort(func(a, b Stock) bool {
-		return a.Date.Unix() < b.Date.Unix()
+		return a.Date.Unix() > b.Date.Unix()
 	})
-	if len(ls) > 0 {
-		return ls[0].Float, ls[0].Total
+	for _, v := range ls {
+		if v.Float > 0 && v.Total > 0 {
+			return v.Float, v.Total
+		}
 	}
 	return 0, 0
 }
