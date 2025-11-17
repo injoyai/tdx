@@ -175,14 +175,14 @@ type Manage struct {
 // RangeStocks 遍历所有股票
 func (this *Manage) RangeStocks(f func(code string)) {
 	for _, v := range this.Codes.GetStocks() {
-		f(v)
+		f(v.FullCode())
 	}
 }
 
 // RangeETFs 遍历所有ETF
 func (this *Manage) RangeETFs(f func(code string)) {
 	for _, v := range this.Codes.GetETFs() {
-		f(v)
+		f(v.FullCode())
 	}
 }
 

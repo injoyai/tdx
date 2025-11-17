@@ -10,7 +10,7 @@ func main() {
 	m, err := tdx.NewManage(nil)
 	logs.PanicErr(err)
 
-	codes := m.Codes.GetStocks()
+	codes := m.Codes.GetStocks().Codes()
 	//codes = []string{
 	//	"sz000001",
 	//	"sz000002",

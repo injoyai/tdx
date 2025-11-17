@@ -48,7 +48,7 @@ func (this *PullKlineMysql) Run(ctx context.Context, m *tdx.Manage) error {
 	//1. 获取所有股票代码
 	codes := this.Config.Codes
 	if len(codes) == 0 {
-		codes = m.Codes.GetStocks()
+		codes = m.Codes.GetStockCodes()
 	}
 
 	for _, v := range codes {
