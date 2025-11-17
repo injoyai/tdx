@@ -20,7 +20,6 @@ type ICodes interface {
 	GetName(code string) string
 	GetStocks(limit ...int) []string
 	GetETFs(limit ...int) []string
-	Update() error
 }
 
 // DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
