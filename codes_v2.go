@@ -12,6 +12,7 @@ import (
 	"github.com/injoyai/tdx/internal/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
+	"iter"
 	"os"
 	"path/filepath"
 	"time"
@@ -150,14 +151,25 @@ type Codes2 struct {
 
 	c      *Client                           //
 	db     *xorms.Engine                     //
-	stocks types.List[string]                //缓存
-	etfs   types.List[string]                //缓存
+	stocks types.List[*CodeModel]            //缓存
+	etfs   types.List[*CodeModel]            //缓存
+	all    types.List[*CodeModel]            //缓存
 	m      *maps.Generic[string, *CodeModel] //缓存
 }
 
 func (this *Codes2) Get(code string) *CodeModel {
 	v, _ := this.m.Get(code)
 	return v
+}
+
+func (this *Codes2) Iter() iter.Seq2[string, *CodeModel] {
+	return func(yield func(string, *CodeModel) bool) {
+		for _, code := range this.all {
+			if !yield(code.FullCode(), code) {
+				break
+			}
+		}
+	}
 }
 
 func (this *Codes2) GetName(code string) string {
@@ -168,14 +180,22 @@ func (this *Codes2) GetName(code string) string {
 	return v.Name
 }
 
-func (this *Codes2) GetStocks(limit ...int) []string {
+func (this *Codes2) GetStocks(limit ...int) CodeModels {
 	size := conv.Default(this.stocks.Len(), limit...)
-	return this.stocks.Limit(size)
+	return CodeModels(this.stocks.Limit(size))
 }
 
-func (this *Codes2) GetETFs(limit ...int) []string {
+func (this *Codes2) GetStockCodes(limit ...int) []string {
+	return this.GetStocks(limit...).Codes()
+}
+
+func (this *Codes2) GetETFs(limit ...int) CodeModels {
 	size := conv.Default(this.etfs.Len(), limit...)
-	return this.etfs.Limit(size)
+	return CodeModels(this.etfs.Limit(size))
+}
+
+func (this *Codes2) GetETFCodes(limit ...int) []string {
+	return this.GetETFs(limit...).Codes()
 }
 
 func (this *Codes2) updated() (bool, error) {
@@ -218,21 +238,22 @@ func (this *Codes2) Update() error {
 		return err
 	}
 
-	stocks := []string(nil)
-	etfs := []string(nil)
+	stocks := []*CodeModel(nil)
+	etfs := []*CodeModel(nil)
 	for _, v := range codes {
 		fullCode := v.FullCode()
 		this.m.Set(fullCode, v)
 		switch {
 		case protocol.IsStock(fullCode):
-			stocks = append(stocks, fullCode)
+			stocks = append(stocks, v)
 		case protocol.IsETF(fullCode):
-			etfs = append(etfs, fullCode)
+			etfs = append(etfs, v)
 		}
 	}
 
 	this.stocks = stocks
 	this.etfs = etfs
+	this.all = codes
 
 	return nil
 }

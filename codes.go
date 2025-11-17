@@ -7,6 +7,7 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
+	"iter"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,10 +17,13 @@ import (
 )
 
 type ICodes interface {
+	Iter() iter.Seq2[string, *CodeModel]
 	Get(code string) *CodeModel
 	GetName(code string) string
-	GetStocks(limit ...int) []string
-	GetETFs(limit ...int) []string
+	GetStocks(limit ...int) CodeModels
+	GetStockCodes(limit ...int) []string
+	GetETFs(limit ...int) CodeModels
+	GetETFCodes(limit ...int) []string
 }
 
 // DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
@@ -138,6 +142,20 @@ type Codes struct {
 	exchanges map[string][]string   //交易所缓存
 }
 
+func (this *Codes) Get(code string) *CodeModel {
+	return this.Map[code]
+}
+
+func (this *Codes) Iter() iter.Seq2[string, *CodeModel] {
+	return func(yield func(string, *CodeModel) bool) {
+		for _, code := range this.list {
+			if !yield(code.FullCode(), code) {
+				break
+			}
+		}
+	}
+}
+
 // GetName 获取股票名称
 func (this *Codes) GetName(code string) string {
 	if v, ok := this.Map[code]; ok {
@@ -147,29 +165,33 @@ func (this *Codes) GetName(code string) string {
 }
 
 // GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
-func (this *Codes) GetStocks(limits ...int) []string {
+func (this *Codes) GetStocks(limits ...int) CodeModels {
 	limit := conv.Default(-1, limits...)
-	ls := []string(nil)
+	ls := []*CodeModel(nil)
 	for _, m := range this.list {
 		code := m.FullCode()
 		if protocol.IsStock(code) {
-			ls = append(ls, code)
+			ls = append(ls, m)
 		}
 		if limit > 0 && len(ls) >= limit {
 			break
 		}
 	}
 	return ls
+}
+
+func (this *Codes) GetStockCodes(limits ...int) []string {
+	return this.GetStocks(limits...).Codes()
 }
 
 // GetETFs 获取基金代码,sz159xxx,sh510xxx,sh511xxx
-func (this *Codes) GetETFs(limits ...int) []string {
+func (this *Codes) GetETFs(limits ...int) CodeModels {
 	limit := conv.Default(-1, limits...)
-	ls := []string(nil)
+	ls := []*CodeModel(nil)
 	for _, m := range this.list {
 		code := m.FullCode()
 		if protocol.IsETF(code) {
-			ls = append(ls, code)
+			ls = append(ls, m)
 		}
 		if limit > 0 && len(ls) >= limit {
 			break
@@ -178,8 +200,9 @@ func (this *Codes) GetETFs(limits ...int) []string {
 	return ls
 }
 
-func (this *Codes) Get(code string) *CodeModel {
-	return this.Map[code]
+// GetETFCodes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *Codes) GetETFCodes(limits ...int) []string {
+	return this.GetETFs(limits...).Codes()
 }
 
 func (this *Codes) AddExchange(code string) string {
@@ -366,4 +389,14 @@ func NewSessionFunc(db *xorm.Engine, fn func(session *xorm.Session) error) error
 		return err
 	}
 	return nil
+}
+
+type CodeModels []*CodeModel
+
+func (this CodeModels) Codes() []string {
+	codes := make([]string, len(this))
+	for i, v := range this {
+		codes[i] = v.FullCode()
+	}
+	return codes
 }
