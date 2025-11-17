@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	DefaultDataDir     = "./data"
 	DefaultDatabaseDir = "./data/database"
 )
 
@@ -116,7 +117,7 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 type Manage struct {
 	*Pool
 	Config  *ManageConfig
-	Codes   *Codes
+	Codes   ICodes
 	Workday *Workday
 	Cron    *cron.Cron
 }
