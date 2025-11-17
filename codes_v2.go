@@ -50,6 +50,12 @@ func WithRetry(retry int) Codes2Option {
 	}
 }
 
+func WithClient(c *Client) Codes2Option {
+	return func(cs *Codes2) {
+		cs.c = c
+	}
+}
+
 func WithDial(dial ios.DialFunc, op ...client.Option) Codes2Option {
 	return func(c *Codes2) {
 		c.dial = dial
@@ -84,9 +90,11 @@ func NewCodes2(op ...Codes2Option) (*Codes2, error) {
 	var err error
 
 	// 初始化连接
-	cs.c, err = DialWith(cs.dial, cs.dialOption...)
-	if err != nil {
-		return nil, err
+	if cs.c == nil {
+		cs.c, err = DialWith(cs.dial, cs.dialOption...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 初始化数据库

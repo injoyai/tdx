@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/injoyai/ios/client"
 	"github.com/robfig/cron/v3"
+	"sync"
 	"time"
 )
 
@@ -59,7 +60,6 @@ func NewManageMysql(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 		Config:  cfg,
 		Codes:   codes,
 		Workday: workday,
-		Cron:    cron.New(cron.WithSeconds()),
 	}, nil
 }
 
@@ -110,7 +110,56 @@ func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
 		Config:  cfg,
 		Codes:   codes,
 		Workday: workday,
-		Cron:    cron.New(cron.WithSeconds()),
+	}, nil
+}
+
+func NewManage2(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
+	//初始化配置
+	if cfg == nil {
+		cfg = &ManageConfig{}
+	}
+	if cfg.CodesFilename == "" {
+		cfg.CodesFilename = DefaultDatabaseDir + "/codes2.db"
+	}
+	if cfg.WorkdayFileName == "" {
+		cfg.WorkdayFileName = DefaultDatabaseDir + "/workday.db"
+	}
+	if cfg.Dial == nil {
+		cfg.Dial = DialDefault
+	}
+
+	//通用客户端
+	commonClient, err := cfg.Dial(op...)
+	if err != nil {
+		return nil, err
+	}
+	commonClient.Wait.SetTimeout(time.Second * 5)
+
+	//代码管理
+	codes, err := NewCodes2(WithClient(commonClient), WithDBFilename(cfg.CodesFilename))
+	if err != nil {
+		return nil, err
+	}
+
+	//工作日管理
+	workday, err := NewWorkdaySqlite(commonClient, cfg.WorkdayFileName)
+	if err != nil {
+		return nil, err
+	}
+
+	//连接池
+	p, err := NewPool(func() (*Client, error) {
+		return cfg.Dial(op...)
+	}, cfg.Number)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Manage{
+		Pool:    p,
+		Config:  cfg,
+		Codes:   codes,
+		Workday: workday,
 	}, nil
 }
 
@@ -119,7 +168,8 @@ type Manage struct {
 	Config  *ManageConfig
 	Codes   ICodes
 	Workday *Workday
-	Cron    *cron.Cron
+	cron    *cron.Cron
+	once    sync.Once
 }
 
 // RangeStocks 遍历所有股票
@@ -138,7 +188,11 @@ func (this *Manage) RangeETFs(f func(code string)) {
 
 // AddWorkdayTask 添加工作日任务
 func (this *Manage) AddWorkdayTask(spec string, f func(m *Manage)) {
-	this.Cron.AddFunc(spec, func() {
+	this.once.Do(func() {
+		this.cron = cron.New(cron.WithSeconds())
+		this.cron.Start()
+	})
+	this.cron.AddFunc(spec, func() {
 		if this.Workday.TodayIs() {
 			f(this)
 		}
