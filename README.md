@@ -1,9 +1,8 @@
 ### 说明
 
-* 参考golang库 [`https://github.com/bensema/gotdx`](https://github.com/bensema/gotdx)
-* 参考python库 [`https://github.com/mootdx/mootdx`](https://github.com/mootdx/mootdx)
-
-* 数据入库示例(开发中) [`https://github.com/injoyai/stock`](https://github.com/injoyai/stock)
+* 参考 [`https://github.com/bensema/gotdx`](https://github.com/bensema/gotdx)
+* 参考 [`https://github.com/mootdx/mootdx`](https://github.com/mootdx/mootdx)
+* 参考 [`https://github.com/jing2uo/tdx2db`](https://github.com/jing2uo/tdx2db)
 
 ### 如何使用
 
