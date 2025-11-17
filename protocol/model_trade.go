@@ -175,6 +175,7 @@ func (this Trades) Kline(t time.Time, last Price) *Kline {
 		}
 		k.Close = v.Price
 		k.Volume += int64(v.Volume)
+		k.Order += v.Number
 		k.Amount += v.Price * Price(v.Volume) * 100
 		first++
 	}
