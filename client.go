@@ -3,6 +3,10 @@ package tdx
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
+	"sync/atomic"
+	"time"
+
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/base/maps/wait"
 	"github.com/injoyai/conv"
@@ -12,9 +16,6 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/internal/bse"
 	"github.com/injoyai/tdx/protocol"
-	"runtime/debug"
-	"sync/atomic"
-	"time"
 )
 
 const (
@@ -558,6 +559,26 @@ func (this *Client) GetIndexUntil(Type uint8, code string, f func(k *protocol.Kl
 // GetIndexAll 获取全部k线数据
 func (this *Client) GetIndexAll(Type uint8, code string) (*protocol.KlineResp, error) {
 	return this.GetIndexUntil(Type, code, func(k *protocol.Kline) bool { return false })
+}
+
+func (this *Client) GetIndexMinute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetIndex(protocol.TypeKlineMinute, code, start, count)
+}
+
+func (this *Client) GetIndex5Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetIndex(protocol.TypeKline5Minute, code, start, count)
+}
+
+func (this *Client) GetIndex15Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetIndex(protocol.TypeKline15Minute, code, start, count)
+}
+
+func (this *Client) GetIndex30Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetIndex(protocol.TypeKline30Minute, code, start, count)
+}
+
+func (this *Client) GetIndex60Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
+	return this.GetIndex(protocol.TypeKline60Minute, code, start, count)
 }
 
 func (this *Client) GetIndexDay(code string, start, count uint16) (*protocol.KlineResp, error) {
