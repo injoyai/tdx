@@ -292,7 +292,7 @@ func IsETF(code string) bool {
 	return false
 }
 
-// IsIndex 是否是指数,sh000001,sz399001
+// IsIndex 是否是指数,sh000001,sz399001,bj899100
 func IsIndex(code string) bool {
 	if len(code) != 8 {
 		return false
@@ -302,6 +302,7 @@ func IsIndex(code string) bool {
 	case code[0:2] == ExchangeSH.String() && code[2:5] == "000":
 		return true
 	case code[0:2] == ExchangeSZ.String() && code[2:5] == "399":
+	case code[0:2] == ExchangeBJ.String() && code[2:5] == "899":
 	}
 	return false
 }
