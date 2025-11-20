@@ -286,7 +286,7 @@ func IsETF(code string) bool {
 		return true
 
 	case code[0:2] == ExchangeSZ.String() &&
-		(code[2:4] == "15" || code[2:4] == "16"):
+		(code[2:4] == "15"):
 		return true
 	}
 	return false
