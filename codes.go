@@ -2,16 +2,17 @@ package tdx
 
 import (
 	"errors"
-	"github.com/injoyai/conv"
-	"github.com/injoyai/ios/client"
-	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/protocol"
-	"github.com/robfig/cron/v3"
 	"iter"
 	"math"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/injoyai/conv"
+	"github.com/injoyai/ios/client"
+	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/protocol"
+	"github.com/robfig/cron/v3"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
@@ -24,6 +25,8 @@ type ICodes interface {
 	GetStockCodes(limit ...int) []string
 	GetETFs(limit ...int) CodeModels
 	GetETFCodes(limit ...int) []string
+	GetIndexes(limits ...int) CodeModels
+	GetIndexCodes(limits ...int) []string
 }
 
 // DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
@@ -134,6 +137,8 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 	return cc, cc.Update(true)
 }
 
+var _ ICodes = &Codes{}
+
 type Codes struct {
 	*Client                         //客户端
 	db        *xorm.Engine          //数据库实例
@@ -203,6 +208,26 @@ func (this *Codes) GetETFs(limits ...int) CodeModels {
 // GetETFCodes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
 func (this *Codes) GetETFCodes(limits ...int) []string {
 	return this.GetETFs(limits...).Codes()
+}
+
+// GetIndexes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *Codes) GetIndexes(limits ...int) CodeModels {
+	limit := conv.Default(-1, limits...)
+	ls := []*CodeModel(nil)
+	for _, m := range this.list {
+		code := m.FullCode()
+		if protocol.IsIndex(code) {
+			ls = append(ls, m)
+		}
+		if limit > 0 && len(ls) >= limit {
+			break
+		}
+	}
+	return ls
+}
+
+func (this *Codes) GetIndexCodes(limits ...int) []string {
+	return this.GetIndexes(limits...).Codes()
 }
 
 func (this *Codes) AddExchange(code string) string {

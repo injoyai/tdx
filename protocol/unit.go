@@ -3,13 +3,14 @@ package protocol
 import (
 	"bytes"
 	"fmt"
-	"github.com/injoyai/conv"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 	"io"
 	"math"
 	"strings"
 	"time"
+
+	"github.com/injoyai/conv"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 // String 字节先转小端,再转字符
@@ -287,6 +288,20 @@ func IsETF(code string) bool {
 	case code[0:2] == ExchangeSZ.String() &&
 		(code[2:4] == "15" || code[2:4] == "16"):
 		return true
+	}
+	return false
+}
+
+// IsIndex 是否是指数,sh000001,sz399001
+func IsIndex(code string) bool {
+	if len(code) != 8 {
+		return false
+	}
+	code = strings.ToLower(code)
+	switch {
+	case code[0:2] == ExchangeSH.String() && code[2:5] == "000":
+		return true
+	case code[0:2] == ExchangeSZ.String() && code[2:5] == "399":
 	}
 	return false
 }

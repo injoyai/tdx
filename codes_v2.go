@@ -2,6 +2,11 @@ package tdx
 
 import (
 	"errors"
+	"iter"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
@@ -12,10 +17,6 @@ import (
 	"github.com/injoyai/tdx/internal/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
-	"iter"
-	"os"
-	"path/filepath"
-	"time"
 	"xorm.io/xorm"
 )
 
@@ -149,12 +150,13 @@ type Codes2 struct {
 		内部字段
 	*/
 
-	c      *Client                           //
-	db     *xorms.Engine                     //
-	stocks types.List[*CodeModel]            //缓存
-	etfs   types.List[*CodeModel]            //缓存
-	all    types.List[*CodeModel]            //缓存
-	m      *maps.Generic[string, *CodeModel] //缓存
+	c       *Client                           //
+	db      *xorms.Engine                     //
+	stocks  types.List[*CodeModel]            //股票缓存
+	etfs    types.List[*CodeModel]            //etf缓存
+	indexes types.List[*CodeModel]            //指数缓存
+	all     types.List[*CodeModel]            //全部缓存
+	m       *maps.Generic[string, *CodeModel] //缓存
 }
 
 func (this *Codes2) Get(code string) *CodeModel {
@@ -196,6 +198,15 @@ func (this *Codes2) GetETFs(limit ...int) CodeModels {
 
 func (this *Codes2) GetETFCodes(limit ...int) []string {
 	return this.GetETFs(limit...).Codes()
+}
+
+func (this *Codes2) GetIndexes(limit ...int) CodeModels {
+	size := conv.Default(this.etfs.Len(), limit...)
+	return CodeModels(this.indexes.Limit(size))
+}
+
+func (this *Codes2) GetIndexCodes(limit ...int) []string {
+	return this.GetIndexes(limit...).Codes()
 }
 
 func (this *Codes2) updated() (bool, error) {
@@ -240,6 +251,7 @@ func (this *Codes2) Update() error {
 
 	stocks := []*CodeModel(nil)
 	etfs := []*CodeModel(nil)
+	indexes := []*CodeModel(nil)
 	for _, v := range codes {
 		fullCode := v.FullCode()
 		this.m.Set(fullCode, v)
@@ -248,11 +260,14 @@ func (this *Codes2) Update() error {
 			stocks = append(stocks, v)
 		case protocol.IsETF(fullCode):
 			etfs = append(etfs, v)
+		case protocol.IsIndex(fullCode):
+			indexes = append(indexes, v)
 		}
 	}
 
 	this.stocks = stocks
 	this.etfs = etfs
+	this.indexes = indexes
 	this.all = codes
 
 	return nil
