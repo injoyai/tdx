@@ -11,6 +11,7 @@ import (
 
 const (
 	DefaultClients     = 1
+	DefaultRetry       = 3
 	DefaultDataDir     = "./data"
 	DefaultDatabaseDir = "./data/database"
 )

@@ -77,7 +77,7 @@ func NewCodes2(op ...Codes2Option) (*Codes2, error) {
 		tempDir:    filepath.Join(DefaultDataDir, "temp"),
 		spec:       "10 0 9 * * *",
 		updateKey:  "codes",
-		retry:      3,
+		retry:      DefaultRetry,
 		dial:       NewRangeDial(Hosts),
 		dialOption: nil,
 		m:          maps.NewGeneric[string, *CodeModel](),
@@ -117,7 +117,7 @@ func NewCodes2(op ...Codes2Option) (*Codes2, error) {
 	// 定时更新
 	cr := cron.New(cron.WithSeconds())
 	_, err = cr.AddFunc(cs.spec, func() {
-		for i := 0; i < 3; i++ {
+		for i := 0; i == 0 || i < cs.retry; i++ {
 			if err := cs.Update(); err != nil {
 				logs.Err(err)
 				<-time.After(time.Minute * 5)
