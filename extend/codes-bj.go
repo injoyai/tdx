@@ -1,7 +1,7 @@
 package extend
 
 import (
-	"github.com/injoyai/tdx/internal/bse"
+	"github.com/injoyai/tdx/lib/bse"
 )
 
 func GetBjCodes() ([]string, error) {

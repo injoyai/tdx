@@ -12,7 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/injoyai/base/types"
-	"github.com/injoyai/tdx/internal/zip"
+	"github.com/injoyai/tdx/lib/zip"
 	"io"
 	"math"
 	"net/http"

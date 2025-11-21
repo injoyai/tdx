@@ -14,7 +14,7 @@ import (
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/internal/bse"
+	"github.com/injoyai/tdx/lib/bse"
 	"github.com/injoyai/tdx/protocol"
 )
 
