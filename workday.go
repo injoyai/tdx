@@ -2,6 +2,11 @@ package tdx
 
 import (
 	"errors"
+	"iter"
+	"os"
+	"path/filepath"
+	"time"
+
 	_ "github.com/glebarez/go-sqlite"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
@@ -10,9 +15,6 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
-	"os"
-	"path/filepath"
-	"time"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
@@ -154,7 +156,7 @@ func (this *Workday) TodayIs() bool {
 func (this *Workday) RangeYear(year int, f func(t time.Time) bool) {
 	this.Range(
 		time.Date(year, 1, 1, 0, 0, 0, 0, time.Local),
-		time.Date(year, 12, 31, 0, 0, 0, 0, time.Local),
+		time.Date(year, 12, 31, 0, 0, 0, 1, time.Local),
 		f,
 	)
 }
@@ -162,8 +164,6 @@ func (this *Workday) RangeYear(year int, f func(t time.Time) bool) {
 // Range 遍历指定范围的工作日,推荐start带上时间15:00,这样当天小于15点不会触发
 func (this *Workday) Range(start, end time.Time, f func(t time.Time) bool) {
 	start = conv.Select(start.Before(protocol.ExchangeEstablish), protocol.ExchangeEstablish, start)
-	//now := IntegerDay(time.Now())
-	//end = conv.Select(end.After(now), now, end).Add(1)
 	for ; start.Before(end); start = start.Add(time.Hour * 24) {
 		if this.Is(start) {
 			if !f(start) {
@@ -173,13 +173,36 @@ func (this *Workday) Range(start, end time.Time, f func(t time.Time) bool) {
 	}
 }
 
-// RangeDesc 倒序遍历工作日,从今天-1990年12月19日(上海交易所成立时间)
-func (this *Workday) RangeDesc(f func(t time.Time) bool) {
-	t := IntegerDay(time.Now())
-	for ; t.After(time.Date(1990, 12, 18, 0, 0, 0, 0, time.Local)); t = t.Add(-time.Hour * 24) {
-		if this.Is(t) {
-			if !f(t) {
-				return
+func (this *Workday) IterYear(year int, desc ...bool) iter.Seq[time.Time] {
+	return this.Iter(
+		time.Date(year, 1, 1, 0, 0, 0, 0, time.Local),
+		time.Date(year, 12, 31, 0, 0, 0, 1, time.Local),
+		desc...,
+	)
+}
+
+// Iter 遍历指定范围的工作日,推荐start带上时间15:00,这样当天小于15点不会触发
+func (this *Workday) Iter(start, end time.Time, desc ...bool) iter.Seq[time.Time] {
+	start = conv.Select(start.Before(protocol.ExchangeEstablish), protocol.ExchangeEstablish, start)
+	if len(desc) > 0 && desc[0] {
+		//倒序遍历
+		return func(yield func(time.Time) bool) {
+			for ; end.After(start); end = end.Add(-time.Hour * 24) {
+				if this.Is(end) {
+					if !yield(end) {
+						return
+					}
+				}
+			}
+		}
+	}
+	//正序遍历
+	return func(yield func(time.Time) bool) {
+		for ; start.Before(end); start = start.Add(time.Hour * 24) {
+			if this.Is(start) {
+				if !yield(start) {
+					return
+				}
 			}
 		}
 	}
