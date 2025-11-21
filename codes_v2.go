@@ -22,50 +22,50 @@ import (
 
 type Codes2Option func(*Codes2)
 
-func WithDBFilename(filename string) Codes2Option {
+func WithCodes2Database(filename string) Codes2Option {
 	return func(c *Codes2) {
 		c.dbFilename = filename
 	}
 }
 
-func WithTempDir(dir string) Codes2Option {
+func WithCodes2TempDir(dir string) Codes2Option {
 	return func(c *Codes2) {
 		c.tempDir = dir
 	}
 }
 
-func WithSpec(spec string) Codes2Option {
+func WithCodes2Spec(spec string) Codes2Option {
 	return func(c *Codes2) {
 		c.spec = spec
 	}
 }
 
-func WithUpdateKey(key string) Codes2Option {
+func WithCodes2UpdateKey(key string) Codes2Option {
 	return func(c *Codes2) {
 		c.updateKey = key
 	}
 }
 
-func WithRetry(retry int) Codes2Option {
+func WithCodes2Retry(retry int) Codes2Option {
 	return func(c *Codes2) {
 		c.retry = retry
 	}
 }
 
-func WithClient(c *Client) Codes2Option {
+func WithCodes2Client(c *Client) Codes2Option {
 	return func(cs *Codes2) {
 		cs.c = c
 	}
 }
 
-func WithDial(dial ios.DialFunc, op ...client.Option) Codes2Option {
+func WithCodes2Dial(dial ios.DialFunc, op ...client.Option) Codes2Option {
 	return func(c *Codes2) {
 		c.dial = dial
 		c.dialOption = op
 	}
 }
 
-func WithDialOption(op ...client.Option) Codes2Option {
+func WithCodes2DialOption(op ...client.Option) Codes2Option {
 	return func(c *Codes2) {
 		c.dialOption = op
 	}
