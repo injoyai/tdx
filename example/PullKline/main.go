@@ -2,16 +2,17 @@ package main
 
 import (
 	"context"
+	"path/filepath"
+	"time"
+
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
-	"path/filepath"
-	"time"
 )
 
 func main() {
 
-	m, err := tdx.NewManage(nil)
+	m, err := tdx.NewManage()
 	logs.PanicErr(err)
 
 	err = extend.NewPullKline(extend.PullKlineConfig{

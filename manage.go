@@ -2,170 +2,223 @@ package tdx
 
 import (
 	"errors"
+	"sync"
+
+	"github.com/injoyai/conv"
 	"github.com/injoyai/ios/client"
 	"github.com/robfig/cron/v3"
-	"sync"
-	"time"
 )
 
 const (
+	DefaultClients     = 1
 	DefaultDataDir     = "./data"
 	DefaultDatabaseDir = "./data/database"
 )
 
-func NewManageMysql(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
-	//初始化配置
-	if cfg == nil {
-		cfg = &ManageConfig{}
-	}
-	if cfg.CodesFilename == "" {
-		return nil, errors.New("未配置Codes的数据库")
-	}
-	if cfg.WorkdayFileName == "" {
-		return nil, errors.New("未配置Workday的数据库")
-	}
-	if cfg.Dial == nil {
-		cfg.Dial = DialDefault
-	}
-
-	//通用客户端
-	commonClient, err := cfg.Dial(op...)
-	if err != nil {
-		return nil, err
-	}
-	commonClient.Wait.SetTimeout(time.Second * 5)
-
-	//代码管理
-	codes, err := NewCodesMysql(commonClient, cfg.CodesFilename)
-	if err != nil {
-		return nil, err
-	}
-
-	//工作日管理
-	workday, err := NewWorkdayMysql(commonClient, cfg.WorkdayFileName)
-	if err != nil {
-		return nil, err
-	}
-
-	//连接池
-	p, err := NewPool(func() (*Client, error) {
-		return cfg.Dial(op...)
-	}, cfg.Number)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Manage{
-		Pool:    p,
-		Config:  cfg,
-		Codes:   codes,
-		Workday: workday,
-	}, nil
+func NewManageMysql(op ...Option) (*Manage, error) {
+	return NewManage(
+		WithOptions(op...),
+		WithDialCodes(func(c *Client, database string) (ICodes, error) {
+			if database == "" {
+				return nil, errors.New("未配置Codes的数据库")
+			}
+			return NewCodesMysql(c, database)
+		}),
+		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
+			if database == "" {
+				return nil, errors.New("未配置Workday的数据库")
+			}
+			return NewWorkdayMysql(c, database)
+		}),
+	)
 }
 
-func NewManage(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
-	//初始化配置
-	if cfg == nil {
-		cfg = &ManageConfig{}
-	}
-	if cfg.CodesFilename == "" {
-		cfg.CodesFilename = DefaultDatabaseDir + "/codes.db"
-	}
-	if cfg.WorkdayFileName == "" {
-		cfg.WorkdayFileName = DefaultDatabaseDir + "/workday.db"
-	}
-	if cfg.Dial == nil {
-		cfg.Dial = DialDefault
-	}
-
-	//通用客户端
-	commonClient, err := cfg.Dial(op...)
-	if err != nil {
-		return nil, err
-	}
-	commonClient.Wait.SetTimeout(time.Second * 5)
-
-	//代码管理
-	codes, err := NewCodesSqlite(commonClient, cfg.CodesFilename)
-	if err != nil {
-		return nil, err
-	}
-
-	//工作日管理
-	workday, err := NewWorkdaySqlite(commonClient, cfg.WorkdayFileName)
-	if err != nil {
-		return nil, err
-	}
-
-	//连接池
-	p, err := NewPool(func() (*Client, error) {
-		return cfg.Dial(op...)
-	}, cfg.Number)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Manage{
-		Pool:    p,
-		Config:  cfg,
-		Codes:   codes,
-		Workday: workday,
-	}, nil
+func NewManageSqlite(op ...Option) (*Manage, error) {
+	return NewManage(
+		WithCodesDatabase(DefaultDatabaseDir+"/codes.db"),
+		WithWorkdayDatabase(DefaultDatabaseDir+"/workday.db"),
+		WithOptions(op...),
+		WithDialCodes(func(c *Client, database string) (ICodes, error) {
+			return NewCodesSqlite(c, database)
+		}),
+		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
+			return NewWorkdaySqlite(c, database)
+		}),
+	)
 }
 
-func NewManage2(cfg *ManageConfig, op ...client.Option) (*Manage, error) {
-	//初始化配置
-	if cfg == nil {
-		cfg = &ManageConfig{}
-	}
-	if cfg.CodesFilename == "" {
-		cfg.CodesFilename = DefaultDatabaseDir + "/codes2.db"
-	}
-	if cfg.WorkdayFileName == "" {
-		cfg.WorkdayFileName = DefaultDatabaseDir + "/workday.db"
-	}
-	if cfg.Dial == nil {
-		cfg.Dial = DialDefault
+func NewManageSqlite2(op ...Option) (*Manage, error) {
+	return NewManage(
+		WithCodesDatabase(DefaultDatabaseDir+"/codes2.db"),
+		WithWorkdayDatabase(DefaultDatabaseDir+"/workday.db"),
+		WithOptions(op...),
+		WithDialCodes(func(c *Client, database string) (ICodes, error) {
+			return NewCodes2(
+				WithCodes2Client(c),
+				WithCodes2Database(database),
+			)
+		}),
+		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
+			return NewWorkdaySqlite(c, database)
+		}),
+	)
+
+}
+
+func NewManage(op ...Option) (m *Manage, err error) {
+
+	m = &Manage{
+		clients:         DefaultClients,
+		dial:            DialDefault,
+		dialOptions:     nil,
+		dialCodes:       nil,
+		codesDatabase:   DefaultDatabaseDir + "/codes2.db",
+		dialWorkday:     nil,
+		workdayDatabase: DefaultDatabaseDir + "/workday.db",
+		Pool:            nil,
+		Codes:           nil,
+		Workday:         nil,
+		cron:            nil,
+		once:            sync.Once{},
 	}
 
-	//通用客户端
-	commonClient, err := cfg.Dial(op...)
+	for _, v := range op {
+		if v != nil {
+			v(m)
+		}
+	}
+
+	m.clients = conv.Select(m.clients <= 0, 1, m.clients)
+	m.dial = conv.Select(m.dial == nil, DialDefault, m.dial)
+
+	//连接池
+	m.Pool, err = NewPool(func() (*Client, error) { return m.dial(m.dialOptions...) }, m.clients)
 	if err != nil {
 		return nil, err
 	}
-	commonClient.Wait.SetTimeout(time.Second * 5)
 
 	//代码管理
-	codes, err := NewCodes2(WithClient(commonClient), WithDBFilename(cfg.CodesFilename))
-	if err != nil {
-		return nil, err
+	if m.Codes == nil {
+		if m.dialCodes == nil {
+			m.dialCodes = func(c *Client, database string) (ICodes, error) {
+				return NewCodes2(WithCodes2Client(c), WithCodes2Database(database))
+			}
+		}
+		err = m.Pool.Do(func(c *Client) error {
+			m.Codes, err = m.dialCodes(c, m.codesDatabase)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	//工作日管理
-	workday, err := NewWorkdaySqlite(commonClient, cfg.WorkdayFileName)
-	if err != nil {
-		return nil, err
+	if m.Workday == nil {
+		if m.dialWorkday == nil {
+			m.dialWorkday = func(c *Client, database string) (*Workday, error) {
+				return NewWorkdaySqlite(c, database)
+			}
+		}
+		err = m.Pool.Do(func(c *Client) error {
+			m.Workday, err = m.dialWorkday(c, m.workdayDatabase)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	//连接池
-	p, err := NewPool(func() (*Client, error) {
-		return cfg.Dial(op...)
-	}, cfg.Number)
-	if err != nil {
-		return nil, err
-	}
+	return
+}
 
-	return &Manage{
-		Pool:    p,
-		Config:  cfg,
-		Codes:   codes,
-		Workday: workday,
-	}, nil
+/*
+
+
+
+ */
+
+type Option func(m *Manage)
+type DialWorkdayFunc func(c *Client, database string) (*Workday, error)
+type DialCodesFunc func(c *Client, database string) (ICodes, error)
+
+func WithClients(clients int) Option {
+	return func(m *Manage) {
+		m.clients = clients
+	}
+}
+
+func WithDial(dial func(op ...client.Option) (*Client, error), op ...client.Option) Option {
+	return func(m *Manage) {
+		m.dial = dial
+		m.dialOptions = op
+	}
+}
+
+func WithDialOptions(op ...client.Option) Option {
+	return func(m *Manage) {
+		m.dialOptions = op
+	}
+}
+
+func WithCodes(codes ICodes) Option {
+	return func(m *Manage) {
+		m.Codes = codes
+	}
+}
+
+func WithDialCodes(dial DialCodesFunc) Option {
+	return func(m *Manage) {
+		m.dialCodes = dial
+	}
+}
+
+func WithCodesDatabase(database string) Option {
+	return func(m *Manage) {
+		m.codesDatabase = database
+	}
+}
+
+func WithWorkday(w *Workday) Option {
+	return func(m *Manage) {
+		m.Workday = w
+	}
+}
+
+func WithDialWorkday(dial DialWorkdayFunc) Option {
+	return func(m *Manage) {
+		m.dialWorkday = dial
+	}
+}
+
+func WithWorkdayDatabase(database string) Option {
+	return func(m *Manage) {
+		m.workdayDatabase = database
+	}
+}
+
+func WithOptions(op ...Option) Option {
+	return func(m *Manage) {
+		for _, v := range op {
+			v(m)
+		}
+	}
 }
 
 type Manage struct {
+	clients         int
+	dial            func(op ...client.Option) (cli *Client, err error)
+	dialOptions     []client.Option
+	dialCodes       func(c *Client, database string) (ICodes, error)
+	codesDatabase   string
+	dialWorkday     DialWorkdayFunc
+	workdayDatabase string
+
+	/*
+
+	 */
+
 	*Pool
-	Config  *ManageConfig
 	Codes   ICodes
 	Workday *Workday
 	cron    *cron.Cron
@@ -181,6 +234,13 @@ func (this *Manage) RangeStocks(f func(code string)) {
 
 // RangeETFs 遍历所有ETF
 func (this *Manage) RangeETFs(f func(code string)) {
+	for _, v := range this.Codes.GetETFs() {
+		f(v.FullCode())
+	}
+}
+
+// RangeIndexes 遍历所有指数
+func (this *Manage) RangeIndexes(f func(code string)) {
 	for _, v := range this.Codes.GetETFs() {
 		f(v.FullCode())
 	}

@@ -1,13 +1,14 @@
 package main
 
 import (
+	"time"
+
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
-	"time"
 )
 
 func main() {
-	m, err := tdx.NewManage(nil)
+	m, err := tdx.NewManage()
 	logs.PanicErr(err)
 
 	codes := m.Codes.GetStocks().Codes()
