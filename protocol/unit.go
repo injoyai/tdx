@@ -302,7 +302,9 @@ func IsIndex(code string) bool {
 	case code[0:2] == ExchangeSH.String() && code[2:5] == "000":
 		return true
 	case code[0:2] == ExchangeSZ.String() && code[2:5] == "399":
+		return true
 	case code[0:2] == ExchangeBJ.String() && code[2:5] == "899":
+		return true
 	}
 	return false
 }
