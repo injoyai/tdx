@@ -6,11 +6,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/injoyai/conv"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
 	"xorm.io/core"
@@ -25,8 +27,8 @@ type ICodes interface {
 	GetStockCodes(limit ...int) []string
 	GetETFs(limit ...int) CodeModels
 	GetETFCodes(limit ...int) []string
-	GetIndexes(limits ...int) CodeModels
-	GetIndexCodes(limits ...int) []string
+	GetIndexes(limit ...int) CodeModels
+	GetIndexCodes(limit ...int) []string
 }
 
 // DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
@@ -97,8 +99,9 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 	}
 
 	cc := &Codes{
-		Client: c,
-		db:     db,
+		Client:    c,
+		db:        &xorms.Engine{Engine: db},
+		CodesBase: NewCodesBase(),
 	}
 
 	{ //设置定时器,每天早上9点更新数据
@@ -140,98 +143,9 @@ func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
 var _ ICodes = &Codes{}
 
 type Codes struct {
-	*Client                         //客户端
-	db        *xorm.Engine          //数据库实例
-	Map       map[string]*CodeModel //股票缓存
-	list      []*CodeModel          //列表方式缓存
-	exchanges map[string][]string   //交易所缓存
-}
-
-func (this *Codes) Get(code string) *CodeModel {
-	return this.Map[code]
-}
-
-func (this *Codes) Iter() iter.Seq2[string, *CodeModel] {
-	return func(yield func(string, *CodeModel) bool) {
-		for _, code := range this.list {
-			if !yield(code.FullCode(), code) {
-				break
-			}
-		}
-	}
-}
-
-// GetName 获取股票名称
-func (this *Codes) GetName(code string) string {
-	if v, ok := this.Map[code]; ok {
-		return v.Name
-	}
-	return "未知"
-}
-
-// GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
-func (this *Codes) GetStocks(limits ...int) CodeModels {
-	limit := conv.Default(-1, limits...)
-	ls := []*CodeModel(nil)
-	for _, m := range this.list {
-		code := m.FullCode()
-		if protocol.IsStock(code) {
-			ls = append(ls, m)
-		}
-		if limit > 0 && len(ls) >= limit {
-			break
-		}
-	}
-	return ls
-}
-
-func (this *Codes) GetStockCodes(limits ...int) []string {
-	return this.GetStocks(limits...).Codes()
-}
-
-// GetETFs 获取基金代码,sz159xxx,sh510xxx,sh511xxx
-func (this *Codes) GetETFs(limits ...int) CodeModels {
-	limit := conv.Default(-1, limits...)
-	ls := []*CodeModel(nil)
-	for _, m := range this.list {
-		code := m.FullCode()
-		if protocol.IsETF(code) {
-			ls = append(ls, m)
-		}
-		if limit > 0 && len(ls) >= limit {
-			break
-		}
-	}
-	return ls
-}
-
-// GetETFCodes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
-func (this *Codes) GetETFCodes(limits ...int) []string {
-	return this.GetETFs(limits...).Codes()
-}
-
-// GetIndexes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
-func (this *Codes) GetIndexes(limits ...int) CodeModels {
-	limit := conv.Default(-1, limits...)
-	ls := []*CodeModel(nil)
-	for _, m := range this.list {
-		code := m.FullCode()
-		if protocol.IsIndex(code) {
-			ls = append(ls, m)
-		}
-		if limit > 0 && len(ls) >= limit {
-			break
-		}
-	}
-	return ls
-}
-
-func (this *Codes) GetIndexCodes(limits ...int) []string {
-	return this.GetIndexes(limits...).Codes()
-}
-
-func (this *Codes) AddExchange(code string) string {
-	return protocol.AddPrefix(code)
+	*Client               //客户端
+	db      *xorms.Engine //数据库实例
+	*CodesBase
 }
 
 // Update 更新数据,从服务器或者数据库
@@ -240,18 +154,8 @@ func (this *Codes) Update(byDB ...bool) error {
 	if err != nil {
 		return err
 	}
-	codeMap := make(map[string]*CodeModel)
-	exchanges := make(map[string][]string)
-	for _, code := range codes {
-		codeMap[code.Exchange+code.Code] = code
-		exchanges[code.Code] = append(exchanges[code.Code], code.Exchange)
-	}
-	this.Map = codeMap
-	this.list = codes
-	this.exchanges = exchanges
-	//更新时间
-	_, err = this.db.Where("`Key`=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
-	return err
+	this.CodesBase.Update(codes)
+	return nil
 }
 
 // GetCodes 更新股票并返回结果
@@ -336,7 +240,7 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 		}
 	case "sqlite3":
 		//4. 插入或者更新数据库
-		err := NewSessionFunc(this.db, func(session *xorm.Session) error {
+		err := this.db.SessionFunc(func(session *xorm.Session) error {
 			for _, v := range insert {
 				if _, err := session.Insert(v); err != nil {
 					return err
@@ -354,7 +258,9 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 		}
 	}
 
-	return list, nil
+	//更新时间
+	_, err := this.db.Where("`Key`=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
+	return list, err
 }
 
 type UpdateModel struct {
@@ -398,24 +304,6 @@ func (this *CodeModel) Price(p protocol.Price) protocol.Price {
 	return protocol.Price(float64(p) * math.Pow10(int(2-this.Decimal)))
 }
 
-func NewSessionFunc(db *xorm.Engine, fn func(session *xorm.Session) error) error {
-	session := db.NewSession()
-	defer session.Close()
-	if err := session.Begin(); err != nil {
-		session.Rollback()
-		return err
-	}
-	if err := fn(session); err != nil {
-		session.Rollback()
-		return err
-	}
-	if err := session.Commit(); err != nil {
-		session.Rollback()
-		return err
-	}
-	return nil
-}
-
 type CodeModels []*CodeModel
 
 func (this CodeModels) Codes() []string {
@@ -424,4 +312,122 @@ func (this CodeModels) Codes() []string {
 		codes[i] = v.FullCode()
 	}
 	return codes
+}
+
+/*
+
+
+
+ */
+
+var _ ICodes = &CodesBase{}
+
+func NewCodesBase() *CodesBase {
+	c := &CodesBase{}
+	c.Update(nil)
+	return c
+}
+
+type CodesBase struct {
+	list []*CodeModel
+	m    map[string]*CodeModel
+	mu   sync.Mutex
+}
+
+func (this *CodesBase) Update(ls []*CodeModel) {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	this.list = ls
+	this.m = make(map[string]*CodeModel)
+	for _, v := range ls {
+		this.m[v.FullCode()] = v
+	}
+}
+
+func (this *CodesBase) Iter() iter.Seq2[string, *CodeModel] {
+	return func(yield func(string, *CodeModel) bool) {
+		for _, v := range this.list {
+			if !yield(v.FullCode(), v) {
+				return
+			}
+		}
+	}
+}
+
+func (this *CodesBase) Get(code string) *CodeModel {
+	this.mu.Lock()
+	defer this.mu.Unlock()
+	return this.m[code]
+}
+
+// GetName 获取股票名称
+func (this *CodesBase) GetName(code string) string {
+	c := this.Get(code)
+	if c != nil {
+		return c.Name
+	}
+	return ""
+}
+
+// GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
+func (this *CodesBase) GetStocks(limits ...int) CodeModels {
+	limit := conv.Default(-1, limits...)
+	ls := []*CodeModel(nil)
+	for _, m := range this.list {
+		code := m.FullCode()
+		if protocol.IsStock(code) {
+			ls = append(ls, m)
+		}
+		if limit > 0 && len(ls) >= limit {
+			break
+		}
+	}
+	return ls
+}
+
+// GetStockCodes 获取股票代码,sh6xxx sz0xx sz30xx
+func (this *CodesBase) GetStockCodes(limits ...int) []string {
+	return this.GetStocks(limits...).Codes()
+}
+
+// GetETFs 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *CodesBase) GetETFs(limits ...int) CodeModels {
+	limit := conv.Default(-1, limits...)
+	ls := []*CodeModel(nil)
+	for _, m := range this.list {
+		code := m.FullCode()
+		if protocol.IsETF(code) {
+			ls = append(ls, m)
+		}
+		if limit > 0 && len(ls) >= limit {
+			break
+		}
+	}
+	return ls
+}
+
+// GetETFCodes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *CodesBase) GetETFCodes(limits ...int) []string {
+	return this.GetETFs(limits...).Codes()
+}
+
+// GetIndexes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *CodesBase) GetIndexes(limits ...int) CodeModels {
+	limit := conv.Default(-1, limits...)
+	ls := []*CodeModel(nil)
+	for _, m := range this.list {
+		code := m.FullCode()
+		if protocol.IsIndex(code) {
+			ls = append(ls, m)
+		}
+		if limit > 0 && len(ls) >= limit {
+			break
+		}
+	}
+	return ls
+}
+
+// GetIndexCodes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
+func (this *CodesBase) GetIndexCodes(limits ...int) []string {
+	return this.GetIndexes(limits...).Codes()
 }

@@ -2,14 +2,10 @@ package tdx
 
 import (
 	"errors"
-	"iter"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/injoyai/base/maps"
-	"github.com/injoyai/base/types"
-	"github.com/injoyai/conv"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
@@ -80,7 +76,7 @@ func NewCodes2(op ...Codes2Option) (*Codes2, error) {
 		retry:      DefaultRetry,
 		dial:       NewRangeDial(Hosts),
 		dialOption: nil,
-		m:          maps.NewGeneric[string, *CodeModel](),
+		CodesBase:  NewCodesBase(),
 	}
 
 	for _, o := range op {
@@ -150,63 +146,10 @@ type Codes2 struct {
 		内部字段
 	*/
 
-	c       *Client                           //
-	db      *xorms.Engine                     //
-	stocks  types.List[*CodeModel]            //股票缓存
-	etfs    types.List[*CodeModel]            //etf缓存
-	indexes types.List[*CodeModel]            //指数缓存
-	all     types.List[*CodeModel]            //全部缓存
-	m       *maps.Generic[string, *CodeModel] //缓存
-}
+	c  *Client
+	db *xorms.Engine
 
-func (this *Codes2) Get(code string) *CodeModel {
-	v, _ := this.m.Get(code)
-	return v
-}
-
-func (this *Codes2) Iter() iter.Seq2[string, *CodeModel] {
-	return func(yield func(string, *CodeModel) bool) {
-		for _, code := range this.all {
-			if !yield(code.FullCode(), code) {
-				break
-			}
-		}
-	}
-}
-
-func (this *Codes2) GetName(code string) string {
-	v, _ := this.m.Get(code)
-	if v == nil {
-		return "未知"
-	}
-	return v.Name
-}
-
-func (this *Codes2) GetStocks(limit ...int) CodeModels {
-	size := conv.Default(this.stocks.Len(), limit...)
-	return CodeModels(this.stocks.Limit(size))
-}
-
-func (this *Codes2) GetStockCodes(limit ...int) []string {
-	return this.GetStocks(limit...).Codes()
-}
-
-func (this *Codes2) GetETFs(limit ...int) CodeModels {
-	size := conv.Default(this.etfs.Len(), limit...)
-	return CodeModels(this.etfs.Limit(size))
-}
-
-func (this *Codes2) GetETFCodes(limit ...int) []string {
-	return this.GetETFs(limit...).Codes()
-}
-
-func (this *Codes2) GetIndexes(limit ...int) CodeModels {
-	size := conv.Default(this.etfs.Len(), limit...)
-	return CodeModels(this.indexes.Limit(size))
-}
-
-func (this *Codes2) GetIndexCodes(limit ...int) []string {
-	return this.GetIndexes(limit...).Codes()
+	*CodesBase
 }
 
 func (this *Codes2) updated() (bool, error) {
@@ -243,33 +186,11 @@ func (this *Codes2) updated() (bool, error) {
 }
 
 func (this *Codes2) Update() error {
-
 	codes, err := this.update()
 	if err != nil {
 		return err
 	}
-
-	stocks := []*CodeModel(nil)
-	etfs := []*CodeModel(nil)
-	indexes := []*CodeModel(nil)
-	for _, v := range codes {
-		fullCode := v.FullCode()
-		this.m.Set(fullCode, v)
-		switch {
-		case protocol.IsStock(fullCode):
-			stocks = append(stocks, v)
-		case protocol.IsETF(fullCode):
-			etfs = append(etfs, v)
-		case protocol.IsIndex(fullCode):
-			indexes = append(indexes, v)
-		}
-	}
-
-	this.stocks = stocks
-	this.etfs = etfs
-	this.indexes = indexes
-	this.all = codes
-
+	this.CodesBase.Update(codes)
 	return nil
 }
 
