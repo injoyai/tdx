@@ -2,15 +2,17 @@ package extend
 
 import (
 	"context"
-	_ "github.com/glebarez/go-sqlite"
-	"github.com/injoyai/base/chans"
-	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
+
+	_ "github.com/glebarez/go-sqlite"
+	"github.com/injoyai/base/chans"
+	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/protocol"
 	"xorm.io/core"
 	"xorm.io/xorm"
 )
@@ -127,14 +129,12 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 			_ = os.MkdirAll(this.Config.Dir, 0777)
 
 			//连接数据库
-			db, err := xorm.NewEngine("sqlite", filepath.Join(this.Config.Dir, code+".db"))
+			db, err := xorms.NewSqlite(filepath.Join(this.Config.Dir, code+".db"))
 			if err != nil {
 				logs.Err(err)
 				return
 			}
 			defer db.Close()
-			db.SetMapper(core.SameMapper{})
-			db.DB().SetMaxOpenConns(1)
 
 			for _, table := range this.tables {
 				if table == nil {
@@ -168,7 +168,7 @@ func (this *PullKline) Run(ctx context.Context, m *tdx.Manage) error {
 				}
 
 				//4. 插入数据库
-				err = tdx.NewSessionFunc(db, func(session *xorm.Session) error {
+				err = db.SessionFunc(func(session *xorm.Session) error {
 					for i, v := range insert {
 						if i == 0 {
 							if _, err := session.Table(table).Where("Date >= ?", v.Date).Delete(); err != nil {

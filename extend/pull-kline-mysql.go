@@ -2,21 +2,21 @@ package extend
 
 import (
 	"context"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/chans"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
-	"xorm.io/core"
 	"xorm.io/xorm"
 )
 
 func NewPullKlineMysql(cfg PullKlineConfig) (*PullKlineMysql, error) {
-	db, err := xorm.NewEngine("mysql", cfg.Dir)
+	db, err := xorms.NewMysql(cfg.Dir)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMapper(core.SameMapper{})
 	_tables := []*KlineTable(nil)
 	for _, v := range cfg.Tables {
 		table := KlineTableMap[v]
@@ -35,7 +35,7 @@ func NewPullKlineMysql(cfg PullKlineConfig) (*PullKlineMysql, error) {
 type PullKlineMysql struct {
 	tables []*KlineTable
 	Config PullKlineConfig
-	DB     *xorm.Engine
+	DB     *xorms.Engine
 }
 
 func (this *PullKlineMysql) Name() string {
@@ -94,7 +94,7 @@ func (this *PullKlineMysql) Run(ctx context.Context, m *tdx.Manage) error {
 				}
 
 				//4. 插入数据库
-				err = tdx.NewSessionFunc(this.DB, func(session *xorm.Session) error {
+				err = this.DB.SessionFunc(func(session *xorm.Session) error {
 					for i, v := range insert {
 						if i == 0 {
 							if _, err := session.Table(table).Where("Code=? and Date >= ?", code, v.Date).Delete(); err != nil {
