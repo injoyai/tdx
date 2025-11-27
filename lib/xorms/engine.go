@@ -1,11 +1,12 @@
 package xorms
 
 import (
-	_ "github.com/glebarez/go-sqlite"
-	_ "github.com/go-sql-driver/mysql"
 	"os"
 	"path/filepath"
 	"time"
+
+	_ "github.com/glebarez/go-sqlite"
+	_ "github.com/go-sql-driver/mysql"
 	"xorm.io/core"
 	"xorm.io/xorm"
 	"xorm.io/xorm/schemas"
