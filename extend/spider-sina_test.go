@@ -2,6 +2,7 @@ package extend
 
 import (
 	"testing"
+	"time"
 )
 
 func TestGetSinaFactor(t *testing.T) {
@@ -24,4 +25,7 @@ func TestGetSinaFactorFull(t *testing.T) {
 	for _, v := range res {
 		t.Log(v)
 	}
+	t.Log(res.Get(time.Now().Unix()))
+	t.Log(res.Get(time.Now().AddDate(-1, 0, 0).Unix()))
+	t.Log(res.Get(time.Now().AddDate(-1, -2, 0).Unix()))
 }

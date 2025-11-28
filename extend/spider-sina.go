@@ -18,7 +18,7 @@ const (
 	Sina_HFQ         = "hfq"
 )
 
-func GetSinaFactorFull(code string) ([]*Factor, error) {
+func GetSinaFactorFull(code string) (Factors, error) {
 	qfq, err := GetSinaFactor(code, Sina_QFQ)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func GetSinaFactorFull(code string) ([]*Factor, error) {
 	return hfq, nil
 }
 
-func GetSinaFactor(code string, _type string) ([]*Factor, error) {
+func GetSinaFactor(code string, _type string) (Factors, error) {
 	if _type != Sina_QFQ && _type != Sina_HFQ {
 		return nil, fmt.Errorf("must be qfq or hfq")
 	}

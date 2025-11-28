@@ -1,10 +1,11 @@
 package main
 
 import (
+	"time"
+
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
-	"time"
 )
 
 func main() {
