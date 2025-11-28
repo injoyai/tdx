@@ -15,7 +15,7 @@ func main() {
 	ks, fs, err := extend.GetTHSDayKlineFactorFull("000001", c)
 	logs.PanicErr(err)
 
-	m := map[int64]*extend.THSFactor{}
+	m := map[int64]*extend.Factor{}
 	for _, v := range fs {
 		m[v.Date] = v
 	}

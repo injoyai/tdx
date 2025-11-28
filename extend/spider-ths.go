@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/injoyai/conv"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/injoyai/conv"
+	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/protocol"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 )
 
 // GetTHSDayKlineFactorFull 增加计算复权因子
-func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3][]*Kline, []*THSFactor, error) {
+func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3][]*Kline, []*Factor, error) {
 	ks, err := GetTHSDayKlineFull(code, c)
 	if err != nil {
 		return [3][]*Kline{}, nil, err
@@ -34,9 +35,9 @@ func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3][]*Kline, []*THSFa
 	for _, v := range ks[2] {
 		mHPrice[v.Date] = v.Close.Float64()
 	}
-	fs := make([]*THSFactor, 0, len(ks[0]))
+	fs := make([]*Factor, 0, len(ks[0]))
 	for _, v := range ks[0] {
-		fs = append(fs, &THSFactor{
+		fs = append(fs, &Factor{
 			Date:    v.Date,
 			QFactor: mQPrice[v.Date] / v.Close.Float64(),
 			HFactor: mHPrice[v.Date] / v.Close.Float64(),
