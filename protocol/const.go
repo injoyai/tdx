@@ -9,6 +9,7 @@ const (
 	TypeCode               = 0x0450 //获取股票代码
 	TypeQuote              = 0x053E //行情信息
 	TypeMinute             = 0x051D //分时数据
+	TypeCallAuction        = 0x056a //集合竞价
 	TypeMinuteTrade        = 0x0FC5 //分时交易
 	TypeHistoryMinute      = 0x0FB4 //历史分时数据
 	TypeHistoryMinuteTrade = 0x0FB5 //历史分时交易
