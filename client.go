@@ -160,6 +160,9 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 	case protocol.TypeHistoryMinute:
 		resp, err = protocol.MHistoryMinute.Decode(f.Data)
 
+	case protocol.TypeCallAuction:
+		resp, err = protocol.MCallAuction.Decode(f.Data)
+
 	case protocol.TypeMinuteTrade:
 		resp, err = protocol.MTrade.Decode(f.Data, val.(protocol.TradeCache))
 
@@ -350,6 +353,18 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	}
 
 	return quotes, nil
+}
+
+func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+	f, err := protocol.MCallAuction.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	result, err := this.SendFrame(f)
+	if err != nil {
+		return nil, err
+	}
+	return result.(*protocol.CallAuctionResp), nil
 }
 
 // GetMinute 获取分时数据,todo 解析好像不对,先用历史数据
