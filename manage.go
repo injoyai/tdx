@@ -35,35 +35,20 @@ func NewManageMysql(op ...Option) (*Manage, error) {
 }
 
 func NewManageSqlite(op ...Option) (*Manage, error) {
-	return NewManage(
-		WithCodesDatabase(DefaultDatabaseDir+"/codes.db"),
-		WithWorkdayDatabase(DefaultDatabaseDir+"/workday.db"),
-		WithOptions(op...),
-		WithDialCodes(func(c *Client, database string) (ICodes, error) {
-			return NewCodesSqlite(c, database)
-		}),
-		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
-			return NewWorkdaySqlite(c, database)
-		}),
-	)
+	return NewManage(op...)
 }
 
-func NewManageSqlite2(op ...Option) (*Manage, error) {
+func NewManage2(op ...Option) (*Manage, error) {
 	return NewManage(
 		WithCodesDatabase(DefaultDatabaseDir+"/codes2.db"),
-		WithWorkdayDatabase(DefaultDatabaseDir+"/workday.db"),
-		WithOptions(op...),
 		WithDialCodes(func(c *Client, database string) (ICodes, error) {
 			return NewCodes2(
 				WithCodes2Client(c),
 				WithCodes2Database(database),
 			)
 		}),
-		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
-			return NewWorkdaySqlite(c, database)
-		}),
+		WithOptions(op...),
 	)
-
 }
 
 func NewManage(op ...Option) (m *Manage, err error) {
@@ -102,7 +87,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	if m.Codes == nil {
 		if m.dialCodes == nil {
 			m.dialCodes = func(c *Client, database string) (ICodes, error) {
-				return NewCodes2(WithCodes2Client(c), WithCodes2Database(database))
+				return NewCodesSqlite(c, database)
 			}
 		}
 		err = m.Pool.Do(func(c *Client) error {
