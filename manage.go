@@ -58,7 +58,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 		dial:            DialDefault,
 		dialOptions:     nil,
 		dialCodes:       nil,
-		codesDatabase:   DefaultDatabaseDir + "/codes2.db",
+		codesDatabase:   DefaultDatabaseDir + "/codes.db",
 		dialWorkday:     nil,
 		workdayDatabase: DefaultDatabaseDir + "/workday.db",
 		Pool:            nil,
