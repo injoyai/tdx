@@ -364,7 +364,7 @@ func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, erro
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.CallAuctionResp), nil
+	return result.(*protocol.CallAuctionResp), errors.New("未实现")
 }
 
 // GetMinute 获取分时数据,todo 解析好像不对,先用历史数据

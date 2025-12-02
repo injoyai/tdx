@@ -10,7 +10,10 @@ func main() {
 	logs.PanicErr(err)
 	defer c.Close()
 	resp, err := c.GetCallAuction("sz000001")
-	logs.PanicErr(err)
+	if err != nil && err.Error() != "未实现" {
+		logs.PanicErr(err)
+	}
+
 	for _, v := range resp.List {
 		logs.Debug(v)
 	}
