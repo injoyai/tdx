@@ -15,6 +15,6 @@ func main() {
 			logs.Debug(v)
 		}
 
-		logs.Debug("总数：", resp)
+		logs.Debug("总数：", len(resp))
 	})
 }
