@@ -265,8 +265,8 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 	return resp, nil
 }
 
-// GetStockAll 获取所有股票代码
-func (this *Client) GetStockAll() ([]string, error) {
+// GetStockCodeAll 获取所有股票代码,带前缀例sz000001
+func (this *Client) GetStockCodeAll() ([]string, error) {
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
 		resp, err := this.GetCodeAll(ex)
@@ -274,16 +274,16 @@ func (this *Client) GetStockAll() ([]string, error) {
 			return nil, err
 		}
 		for _, v := range resp.List {
-			if protocol.IsStock(protocol.AddPrefix(v.Code)) {
-				ls = append(ls, v.Code)
+			if protocol.IsStock(ex.String() + v.Code) {
+				ls = append(ls, ex.String()+v.Code)
 			}
 		}
 	}
 	return ls, nil
 }
 
-// GetETFAll 获取所有ETF代码
-func (this *Client) GetETFAll() ([]string, error) {
+// GetETFCodeAll 获取所有ETF代码,带前缀例sz159399
+func (this *Client) GetETFCodeAll() ([]string, error) {
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
 		resp, err := this.GetCodeAll(ex)
@@ -291,8 +291,25 @@ func (this *Client) GetETFAll() ([]string, error) {
 			return nil, err
 		}
 		for _, v := range resp.List {
-			if protocol.IsETF(protocol.AddPrefix(v.Code)) {
-				ls = append(ls, v.Code)
+			if protocol.IsETF(ex.String() + v.Code) {
+				ls = append(ls, ex.String()+v.Code)
+			}
+		}
+	}
+	return ls, nil
+}
+
+// GetIndexCodeAll 获取所有指数代码,带前缀例sz399001
+func (this *Client) GetIndexCodeAll() ([]string, error) {
+	ls := []string{"bj899050"}
+	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
+		resp, err := this.GetCodeAll(ex)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range resp.List {
+			if protocol.IsIndex(ex.String() + v.Code) {
+				ls = append(ls, ex.String()+v.Code)
 			}
 		}
 	}
