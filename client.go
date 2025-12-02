@@ -274,7 +274,7 @@ func (this *Client) GetStockAll() ([]string, error) {
 			return nil, err
 		}
 		for _, v := range resp.List {
-			if protocol.IsStock(v.Code) {
+			if protocol.IsStock(protocol.AddPrefix(v.Code)) {
 				ls = append(ls, v.Code)
 			}
 		}
