@@ -258,33 +258,39 @@ func getVolume2(val uint32) float64 {
 // IsStock 是否是股票,示例sz000001
 func IsStock(code string) bool {
 	return IsSZStock(code) || IsSHStock(code) || IsBJStock(code)
-
-	//if len(code) != 8 {
-	//	return false
-	//}
-	//code = strings.ToLower(code)
-	//switch {
-	//case code[0:2] == ExchangeSH.String() &&
-	//	(code[2:3] == "6"):
-	//	return true
-	//
-	//case code[0:2] == ExchangeSZ.String() &&
-	//	(code[2:3] == "0" || code[2:4] == "30"):
-	//	return true
-	//}
-	//return false
 }
 
 func IsSZStock(code string) bool {
-	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSZ.String() && (code[2:3] == "0" || code[2:4] == "30")
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSZ.String() && isSZStock(code[2:])
 }
 
 func IsSHStock(code string) bool {
-	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSH.String() && code[2:3] == "6"
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeSH.String() && isSHStock(code[2:])
 }
 
 func IsBJStock(code string) bool {
-	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeBJ.String() && (code[2:4] == "92" || code[2:4] == "43" || code[2:3] == "8")
+	return len(code) == 8 && strings.ToLower(code[0:2]) == ExchangeBJ.String() && isBJStock(code[2:])
+}
+
+func isSHStock(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:1] == "6"
+}
+
+func isSZStock(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:1] == "0" || code[:2] == "30"
+}
+
+func isBJStock(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:2] == "92"
 }
 
 // IsETF 是否是基金,示例sz159558
@@ -294,13 +300,31 @@ func IsETF(code string) bool {
 	}
 	code = strings.ToLower(code)
 	switch {
-	case code[0:2] == ExchangeSH.String() &&
-		(code[2:4] == "51" || code[2:4] == "56" || code[2:4] == "58"):
+	case code[0:2] == ExchangeSH.String() && isSHETF(code[2:]):
 		return true
+	case code[0:2] == ExchangeSZ.String() && isSZETF(code[2:]):
+		return true
+	}
+	return false
+}
 
-	case code[0:2] == ExchangeSZ.String() &&
-		(code[2:4] == "15"):
-		return true
+func isSHETF(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:2] == "51" || code[:2] == "56" || code[:2] == "58"
+}
+
+func isSZETF(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:2] == "15"
+}
+
+func isBJETF(code string) bool {
+	if len(code) != 6 {
+		return false
 	}
 	return false
 }
@@ -312,38 +336,47 @@ func IsIndex(code string) bool {
 	}
 	code = strings.ToLower(code)
 	switch {
-	case code[0:2] == ExchangeSH.String() && code[2:5] == "000":
+	case code[0:2] == ExchangeSH.String() && isSHIndex(code[2:]):
 		return true
-	case code[0:2] == ExchangeSZ.String() && code[2:5] == "399":
+	case code[0:2] == ExchangeSZ.String() && isSZIndex(code[2:]):
 		return true
-	case code[0:2] == ExchangeBJ.String() && code[2:5] == "899":
+	case code[0:2] == ExchangeBJ.String() && isBJIndex(code[2:]):
 		return true
 	}
 	return false
+}
+
+func isSHIndex(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:3] == "000" || code == "999999"
+}
+
+func isSZIndex(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:3] == "399"
+}
+
+func isBJIndex(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	return code[:3] == "899"
 }
 
 // AddPrefix 添加股票/基金代码前缀,针对股票/基金生效,例如000001,会增加前缀sz000001(平安银行),而不是sh000001(上证指数)
 func AddPrefix(code string) string {
 	if len(code) == 6 {
 		switch {
-		case code[:1] == "6":
-			//上海股票
-			code = ExchangeSH.String() + code
-		case code[:1] == "0":
-			//深圳股票
-			code = ExchangeSZ.String() + code
-		case code[:2] == "30":
-			//深圳股票
-			code = ExchangeSZ.String() + code
-		case code[:3] == "510" || code[:3] == "511" || code[:3] == "512" || code[:3] == "513" || code[:3] == "515":
-			//上海基金
-			code = ExchangeSH.String() + code
-		case code[:3] == "159":
-			//深圳基金
-			code = ExchangeSZ.String() + code
-		case code[:1] == "8" || code[:2] == "92" || code[:2] == "43":
-			//北京股票
-			code = ExchangeBJ.String() + code
+		case isSHStock(code) || isSHIndex(code) || isSHETF(code):
+			return ExchangeSH.String() + code
+		case isSZStock(code) || isSZIndex(code) || isSZETF(code):
+			return ExchangeSZ.String() + code
+		case isBJStock(code) || isBJIndex(code) || isBJETF(code):
+			return ExchangeBJ.String() + code
 		}
 	}
 	return code

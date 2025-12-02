@@ -3,9 +3,10 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
-	"time"
 )
 
 type TradeResp struct {
@@ -83,11 +84,6 @@ func (trade) Frame(code string, start, count uint16) (*Frame, error) {
 
 func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 
-	_, code, err := DecodeCode(c.Code)
-	if err != nil {
-		return nil, err
-	}
-
 	if len(bs) < 2 {
 		return nil, errors.New("数据长度不足")
 	}
@@ -109,7 +105,7 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 		var sub Price
 		bs, sub = GetPrice(bs[2:])
 		lastPrice += sub * 10 //把分转换成厘
-		mt.Price = lastPrice / basePrice(code)
+		mt.Price = lastPrice / basePrice(c.Code)
 		bs, mt.Volume = CutInt(bs)
 		bs, mt.Number = CutInt(bs)
 		bs, mt.Status = CutInt(bs)
