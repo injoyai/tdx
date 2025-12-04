@@ -273,17 +273,15 @@ func (*UpdateModel) TableName() string {
 }
 
 type CodeModel struct {
-	ID         int64   `json:"id"`                      //主键
-	Name       string  `json:"name"`                    //名称,有时候名称会变,例STxxx
-	Code       string  `json:"code" xorm:"index"`       //代码
-	Exchange   string  `json:"exchange" xorm:"index"`   //交易所
-	Multiple   uint16  `json:"multiple"`                //倍数
-	Decimal    int8    `json:"decimal"`                 //小数位
-	LastPrice  float64 `json:"lastPrice"`               //昨收价格
-	FloatStock float64 `json:"floatStock"`              //流通股
-	TotalStock float64 `json:"totalStock"`              //总股本
-	EditDate   int64   `json:"editDate" xorm:"updated"` //修改时间
-	InDate     int64   `json:"inDate" xorm:"created"`   //创建时间
+	ID        int64   `json:"id"`                      //主键
+	Name      string  `json:"name"`                    //名称,有时候名称会变,例STxxx
+	Code      string  `json:"code" xorm:"index"`       //代码
+	Exchange  string  `json:"exchange" xorm:"index"`   //交易所
+	Multiple  uint16  `json:"multiple"`                //倍数
+	Decimal   int8    `json:"decimal"`                 //小数位
+	LastPrice float64 `json:"lastPrice"`               //昨收价格
+	EditDate  int64   `json:"editDate" xorm:"updated"` //修改时间
+	InDate    int64   `json:"inDate" xorm:"created"`   //创建时间
 }
 
 func (*CodeModel) TableName() string {
@@ -293,11 +291,6 @@ func (*CodeModel) TableName() string {
 // FullCode 获取完整代码 sz000001
 func (this *CodeModel) FullCode() string {
 	return this.Exchange + this.Code
-}
-
-// Turnover 换手率
-func (this *CodeModel) Turnover(volume float64) float64 {
-	return volume / (this.FloatStock * 100)
 }
 
 func (this *CodeModel) Price(p protocol.Price) protocol.Price {
