@@ -3,7 +3,6 @@ package tdx
 import (
 	"errors"
 	"iter"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -11,68 +10,124 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
-	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
-	"xorm.io/core"
-	"xorm.io/xorm"
 )
 
-func DialWorkday(op ...client.Option) (*Workday, error) {
-	c, err := DialDefault(op...)
-	if err != nil {
-		return nil, err
+type (
+	WorkdayOption   func(w *Workday)
+	DialWorkdayFunc func(c *Client) (*Workday, error)
+)
+
+func WithWorkdaySpec(spec string) WorkdayOption {
+	return func(w *Workday) {
+		w.spec = spec
 	}
-	return NewWorkdaySqlite(c)
 }
 
-func NewWorkdayMysql(c *Client, dsn string) (*Workday, error) {
-
-	//连接数据库
-	db, err := xorm.NewEngine("mysql", dsn)
-	if err != nil {
-		return nil, err
+func WithWorkdayRetry(retry int) WorkdayOption {
+	return func(w *Workday) {
+		w.retry = retry
 	}
-	db.SetMapper(core.SameMapper{})
-
-	return NewWorkday(c, db)
 }
 
-func NewWorkdaySqlite(c *Client, filenames ...string) (*Workday, error) {
-
-	defaultFilename := filepath.Join(DefaultDatabaseDir, "workday.db")
-	filename := conv.Default(defaultFilename, filenames...)
-
-	//如果文件夹不存在就创建
-	dir, _ := filepath.Split(filename)
-	_ = os.MkdirAll(dir, 0777)
-
-	//连接数据库
-	db, err := xorm.NewEngine("sqlite", filename)
-	if err != nil {
-		return nil, err
+func WithWorkdayDB(db *xorms.Engine) WorkdayOption {
+	return func(w *Workday) {
+		w.db = db
 	}
-	db.SetMapper(core.SameMapper{})
-	db.DB().SetMaxOpenConns(1)
-
-	return NewWorkday(c, db)
 }
 
-func NewWorkday(c *Client, db *xorm.Engine) (*Workday, error) {
-	if err := db.Sync2(new(WorkdayModel)); err != nil {
-		return nil, err
+func WithWorkdayDialDB(dial func() (*xorms.Engine, error)) WorkdayOption {
+	return func(w *Workday) {
+		w.dialDB = dial
 	}
+}
+
+func WithWorkdayClient(c *Client) WorkdayOption {
+	return func(w *Workday) {
+		w.c = c
+	}
+}
+
+func WithWorkdayDialClient(dial func() (*Client, error)) WorkdayOption {
+	return func(w *Workday) {
+		w.dialClient = dial
+	}
+}
+
+func WithWorkdayOption(op ...WorkdayOption) WorkdayOption {
+	return func(w *Workday) {
+		for _, v := range op {
+			v(w)
+		}
+	}
+}
+
+func NewWorkdayMysql(dsn string, op ...WorkdayOption) (*Workday, error) {
+	return NewWorkday(
+		WithWorkdayDialDB(func() (*xorms.Engine, error) { return xorms.NewMysql(dsn) }),
+		WithWorkdayOption(op...),
+	)
+}
+
+func NewWorkdaySqlite(op ...WorkdayOption) (*Workday, error) {
+	return NewWorkday(op...)
+}
+
+func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 
 	w := &Workday{
-		Client: c,
-		db:     db,
-		cache:  maps.NewBit(),
+		spec:       "0 0 9 * * *",
+		retry:      DefaultRetry,
+		dialDB:     nil,
+		dialClient: nil,
+
+		c:     nil,
+		db:    nil,
+		cache: maps.NewBit(),
 	}
+
+	for _, v := range op {
+		v(w)
+	}
+
+	var err error
+	if w.db == nil {
+		if w.dialDB == nil {
+			w.dialDB = func() (*xorms.Engine, error) {
+				return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "workday.db"))
+			}
+		}
+		w.db, err = w.dialDB()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := w.db.Sync2(new(WorkdayModel)); err != nil {
+		return nil, err
+	}
+
+	if w.c == nil {
+		if w.dialClient == nil {
+			w.dialClient = func() (*Client, error) { return DialDefault() }
+		}
+		w.c, err = w.dialClient()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = w.Update()
+	if err != nil {
+		return nil, err
+	}
+
 	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
 	task := cron.New(cron.WithSeconds())
-	task.AddFunc("0 0 9 * * *", func() {
-		for i := 0; i < 3; i++ {
+	_, err = task.AddFunc(w.spec, func() {
+		for i := 0; i == 0 || i < w.retry; i++ {
 			err := w.Update()
 			if err == nil {
 				return
@@ -81,20 +136,30 @@ func NewWorkday(c *Client, db *xorm.Engine) (*Workday, error) {
 			<-time.After(time.Minute * 5)
 		}
 	})
+	if err != nil {
+		return nil, err
+	}
+
 	task.Start()
-	return w, w.Update()
+
+	return w, nil
 }
 
 type Workday struct {
-	*Client
-	db    *xorm.Engine
+	spec       string
+	retry      int
+	dialDB     func() (*xorms.Engine, error)
+	dialClient func() (*Client, error)
+
+	c     *Client
+	db    *xorms.Engine
 	cache maps.Bit
 }
 
 // Update 更新
 func (this *Workday) Update() error {
 
-	if this.Client == nil {
+	if this.c == nil {
 		return errors.New("client is nil")
 	}
 
@@ -116,7 +181,7 @@ func (this *Workday) Update() error {
 
 	now := time.Now()
 	if lastWorkday.Unix < IntegerDay(now).Unix() {
-		resp, err := this.Client.GetIndexDayAll("sh000001")
+		resp, err := this.c.GetIndexDayAll("sh000001")
 		if err != nil {
 			logs.Err(err)
 			return err
