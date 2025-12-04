@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	cs, err := tdx.NewCodes2()
+	cs, err := tdx.NewCodes()
 	logs.PanicErr(err)
 
 	//c := cs.Get("sz000001")

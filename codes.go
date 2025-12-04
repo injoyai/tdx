@@ -4,153 +4,172 @@ import (
 	"errors"
 	"iter"
 	"math"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
-	"xorm.io/core"
 	"xorm.io/xorm"
 )
 
-type ICodes interface {
-	Iter() iter.Seq2[string, *CodeModel]
-	Get(code string) *CodeModel
-	GetName(code string) string
-	GetStocks(limit ...int) CodeModels
-	GetStockCodes(limit ...int) []string
-	GetETFs(limit ...int) CodeModels
-	GetETFCodes(limit ...int) []string
-	GetIndexes(limit ...int) CodeModels
-	GetIndexCodes(limit ...int) []string
+type (
+	CodesOption func(*Codes)
+
+	DialCodesFunc func(c *Client) (ICodes, error)
+)
+
+func WithCodesDB(db *xorms.Engine) CodesOption {
+	return func(c *Codes) {
+		c.db = db
+	}
 }
 
-// DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
-var DefaultCodes *Codes
-
-func DialCodes(filename string, op ...client.Option) (*Codes, error) {
-	c, err := DialDefault(op...)
-	if err != nil {
-		return nil, err
+func WithCodesDialDB(dial DialDBFunc) CodesOption {
+	return func(c *Codes) {
+		c.dialDB = dial
 	}
-	return NewCodesSqlite(c, filename)
 }
 
-func NewCodesMysql(c *Client, dsn string) (*Codes, error) {
-
-	//连接数据库
-	db, err := xorm.NewEngine("mysql", dsn)
-	if err != nil {
-		return nil, err
+func WithCodesSpec(spec string) CodesOption {
+	return func(c *Codes) {
+		c.spec = spec
 	}
-	db.SetMapper(core.SameMapper{})
-
-	return NewCodes(c, db)
 }
 
-func NewCodesSqlite(c *Client, filenames ...string) (*Codes, error) {
-
-	//如果没有指定文件名,则使用默认
-	defaultFilename := filepath.Join(DefaultDatabaseDir, "codes.db")
-	filename := conv.Default(defaultFilename, filenames...)
-	filename = conv.Select(filename == "", defaultFilename, filename)
-
-	//如果文件夹不存在就创建
-	dir, _ := filepath.Split(filename)
-	_ = os.MkdirAll(dir, 0777)
-
-	//连接数据库
-	db, err := xorm.NewEngine("sqlite", filename)
-	if err != nil {
-		return nil, err
+func WithCodesRetry(retry int) CodesOption {
+	return func(c *Codes) {
+		c.retry = retry
 	}
-	db.SetMapper(core.SameMapper{})
-	db.DB().SetMaxOpenConns(1)
-
-	return NewCodes(c, db)
 }
 
-func NewCodes(c *Client, db *xorm.Engine) (*Codes, error) {
-
-	if err := db.Sync2(new(CodeModel)); err != nil {
-		return nil, err
+func WithCodesClient(c *Client) CodesOption {
+	return func(cs *Codes) {
+		cs.c = c
 	}
-	if err := db.Sync2(new(UpdateModel)); err != nil {
-		return nil, err
-	}
+}
 
-	update := new(UpdateModel)
-	{ //查询或者插入一条数据
-		has, err := db.Where("`Key`=?", "codes").Get(update)
-		if err != nil {
-			return nil, err
-		} else if !has {
-			update.Key = "codes"
-			if _, err := db.Insert(update); err != nil {
-				return nil, err
-			}
+func WithCodesDialClient(dial DialClientFunc) CodesOption {
+	return func(c *Codes) {
+		c.dialClient = dial
+	}
+}
+
+func WithCodesOption(op ...CodesOption) CodesOption {
+	return func(c *Codes) {
+		for _, v := range op {
+			v(c)
 		}
 	}
+}
 
-	cc := &Codes{
-		Client:    c,
-		db:        &xorms.Engine{Engine: db},
+func NewCodesMysql(dsn string, op ...CodesOption) (*Codes, error) {
+	return NewCodes(
+		WithCodesDialDB(func() (*xorms.Engine, error) {
+			return xorms.NewMysql(dsn)
+		}),
+		WithCodesOption(op...),
+	)
+}
+
+func NewCodesSqlite(op ...CodesOption) (*Codes, error) {
+	return NewCodes(op...)
+}
+
+func NewCodes(op ...CodesOption) (*Codes, error) {
+	cs := &Codes{
+		spec:      "0 1 9 * * *",
+		retry:     DefaultRetry,
 		CodesBase: NewCodesBase(),
 	}
 
-	{ //设置定时器,每天早上9点更新数据
-		task := cron.New(cron.WithSeconds())
-		task.AddFunc("10 0 9 * * *", func() {
-			for i := 0; i < 3; i++ {
-				err := cc.Update()
-				if err == nil {
-					return
-				}
-				logs.Err(err)
-				<-time.After(time.Minute * 5)
-			}
-		})
-		task.Start()
+	for _, o := range op {
+		o(cs)
 	}
 
-	{ //判断是否更新过,更新过则不更新
-		now := time.Now()
-		node := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
-		updateTime := time.Unix(update.Time, 0)
-		if now.Sub(node) > 0 {
-			//当前时间在9点之后,且更新时间在9点之前,需要更新
-			if updateTime.Sub(node) < 0 {
-				return cc, cc.Update()
-			}
-		} else {
-			//当前时间在9点之前,且更新时间在上个节点之前
-			if updateTime.Sub(node.Add(time.Hour*24)) < 0 {
-				return cc, cc.Update()
-			}
+	var err error
+
+	// 初始化连接
+	if cs.c == nil {
+		if cs.dialClient == nil {
+			cs.dialClient = func() (*Client, error) { return DialDefault() }
+		}
+		cs.c, err = cs.dialClient()
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	//从缓存中加载
-	return cc, cc.Update(true)
+	// 初始化数据库
+	if cs.db == nil {
+		if cs.dialDB == nil {
+			cs.dialDB = func() (*xorms.Engine, error) { return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "codes.db")) }
+		}
+		cs.db, err = cs.dialDB()
+		if err != nil {
+			return nil, err
+		}
+		if err = cs.db.Sync2(new(CodeModel)); err != nil {
+			return nil, err
+		}
+	}
+	cs.updated, err = NewUpdated("codes", cs.db.Engine)
+	if err != nil {
+		return nil, err
+	}
+
+	// 立即更新
+	err = cs.Update()
+	if err != nil {
+		return nil, err
+	}
+
+	// 定时更新
+	cr := cron.New(cron.WithSeconds())
+	_, err = cr.AddFunc(cs.spec, func() {
+		for i := 0; i == 0 || i < cs.retry; i++ {
+			if err := cs.Update(); err != nil {
+				logs.Err(err)
+				<-time.After(time.Minute * 5)
+			} else {
+				break
+			}
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cr.Start()
+
+	return cs, nil
 }
 
 var _ ICodes = &Codes{}
 
 type Codes struct {
-	*Client               //客户端
-	db      *xorms.Engine //数据库实例
+	spec  string //定时规则
+	retry int    //重试次数
+
+	dialDB     DialDBFunc
+	dialClient DialClientFunc
+
+	/*
+		内部字段
+	*/
+
+	c       *Client
+	db      *xorms.Engine
+	updated *Updated
+
 	*CodesBase
 }
 
-// Update 更新数据,从服务器或者数据库
-func (this *Codes) Update(byDB ...bool) error {
-	codes, err := this.GetCodes(len(byDB) > 0 && byDB[0])
+func (this *Codes) Update() error {
+	codes, err := this.update()
 	if err != nil {
 		return err
 	}
@@ -159,9 +178,9 @@ func (this *Codes) Update(byDB ...bool) error {
 }
 
 // GetCodes 更新股票并返回结果
-func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
+func (this *Codes) update() ([]*CodeModel, error) {
 
-	if this.Client == nil {
+	if this.c == nil {
 		return nil, errors.New("client is nil")
 	}
 
@@ -171,46 +190,40 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 		return nil, err
 	}
 
-	//如果是从缓存读取,则返回结果
-	if byDatabase {
+	//如果更新过,则不更新
+	updated, err := this.updated.Updated()
+	if err == nil && updated {
 		return list, nil
 	}
 
 	mCode := make(map[string]*CodeModel, len(list))
 	for _, v := range list {
-		mCode[v.Code] = v
+		mCode[v.FullCode()] = v
 	}
 
 	//3. 从服务器获取所有股票代码
 	insert := []*CodeModel(nil)
 	update := []*CodeModel(nil)
 	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
-		resp, err := this.Client.GetCodeAll(exchange)
+		resp, err := this.c.GetCodeAll(exchange)
 		if err != nil {
 			return nil, err
 		}
 		for _, v := range resp.List {
-			if _, ok := mCode[v.Code]; ok {
-				if mCode[v.Code].Name != v.Name {
-					mCode[v.Code].Name = v.Name
-					update = append(update, &CodeModel{
-						Name:      v.Name,
-						Code:      v.Code,
-						Exchange:  exchange.String(),
-						Multiple:  v.Multiple,
-						Decimal:   v.Decimal,
-						LastPrice: v.LastPrice,
-					})
+			code := &CodeModel{
+				Name:      v.Name,
+				Code:      v.Code,
+				Exchange:  exchange.String(),
+				Multiple:  v.Multiple,
+				Decimal:   v.Decimal,
+				LastPrice: v.LastPrice,
+			}
+			if val, ok := mCode[exchange.String()+v.Code]; ok {
+				if val.Name != v.Name {
+					update = append(update, code)
 				}
+				delete(mCode, exchange.String()+v.Code)
 			} else {
-				code := &CodeModel{
-					Name:      v.Name,
-					Code:      v.Code,
-					Exchange:  exchange.String(),
-					Multiple:  v.Multiple,
-					Decimal:   v.Decimal,
-					LastPrice: v.LastPrice,
-				}
 				insert = append(insert, code)
 				list = append(list, code)
 			}
@@ -238,16 +251,21 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 				return nil, err
 			}
 		}
-	case "sqlite3":
+	default: //"sqlite3":
 		//4. 插入或者更新数据库
-		err := this.db.SessionFunc(func(session *xorm.Session) error {
+		err = this.db.SessionFunc(func(session *xorm.Session) error {
+			for _, v := range mCode {
+				if _, err = session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Delete(v); err != nil {
+					return err
+				}
+			}
 			for _, v := range insert {
 				if _, err := session.Insert(v); err != nil {
 					return err
 				}
 			}
 			for _, v := range update {
-				if _, err := session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Cols("Name,LastPrice").Update(v); err != nil {
+				if _, err = session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Cols("Name,LastPrice").Update(v); err != nil {
 					return err
 				}
 			}
@@ -259,18 +277,15 @@ func (this *Codes) GetCodes(byDatabase bool) ([]*CodeModel, error) {
 	}
 
 	//更新时间
-	_, err := this.db.Where("`Key`=?", "codes").Update(&UpdateModel{Time: time.Now().Unix()})
+	err = this.updated.Update()
 	return list, err
 }
 
-type UpdateModel struct {
-	Key  string
-	Time int64 //更新时间
-}
+/*
 
-func (*UpdateModel) TableName() string {
-	return "update"
-}
+
+
+ */
 
 type CodeModel struct {
 	ID        int64   `json:"id"`                      //主键

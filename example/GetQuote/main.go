@@ -10,7 +10,7 @@ func main() {
 	c, err := tdx.Dial("124.71.187.122:7709", tdx.WithDebug())
 	logs.PanicErr(err)
 
-	tdx.DefaultCodes, err = tdx.NewCodesSqlite(c, "./codes.db")
+	tdx.DefaultCodes, err = tdx.NewCodesSqlite(tdx.WithCodesClient(c))
 	logs.PanicErr(err)
 
 	_ = c

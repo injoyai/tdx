@@ -9,10 +9,10 @@ import (
 func main() {
 	common.Test(func(c *tdx.Client) {
 
-		_, err := tdx.NewWorkdaySqlite(c) //"./workday.db"
+		_, err := tdx.NewWorkday(tdx.WithWorkdayClient(c))
 		logs.PanicErr(err)
 
-		_, err = tdx.NewCodesSqlite(c) //"./codes.db"
+		_, err = tdx.NewCodesSqlite(tdx.WithCodesClient(c))
 		logs.PanicErr(err)
 
 		c.Close()

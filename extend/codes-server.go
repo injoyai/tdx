@@ -12,8 +12,8 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func ListenCodesHTTP(port int, op ...tdx.Codes2Option) error {
-	code, err := tdx.NewCodes2(op...)
+func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
+	code, err := tdx.NewCodes(op...)
 	if err != nil {
 		return nil
 	}
