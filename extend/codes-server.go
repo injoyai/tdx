@@ -42,7 +42,7 @@ func ListenCodesHTTP(port int, op ...tdx.Codes2Option) error {
 }
 
 func DialCodesHTTP(address string, spec ...string) (c *CodesHTTP, err error) {
-	c = &CodesHTTP{address: address}
+	c = &CodesHTTP{address: address, CodesBase: tdx.NewCodesBase()}
 	cr := cron.New(cron.WithSeconds())
 	_spec := conv.Default("0 20 9 * * *", spec...)
 	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(c.Update()) })
