@@ -9,14 +9,16 @@ import (
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/lib/gbbq"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
 	"xorm.io/xorm"
 )
 
-type Codes2Option func(*Codes2)
+type (
+	Codes2Option  func(*Codes2)
+	DialCodesFunc func(c *Client) (ICodes, error)
+)
 
 func WithCodes2Database(filename string) Codes2Option {
 	return func(c *Codes2) {
@@ -33,12 +35,6 @@ func WithCodes2TempDir(dir string) Codes2Option {
 func WithCodes2Spec(spec string) Codes2Option {
 	return func(c *Codes2) {
 		c.spec = spec
-	}
-}
-
-func WithCodes2UpdateKey(key string) Codes2Option {
-	return func(c *Codes2) {
-		c.updateKey = key
 	}
 }
 
@@ -64,6 +60,14 @@ func WithCodes2Dial(dial ios.DialFunc, op ...client.Option) Codes2Option {
 func WithCodes2DialOption(op ...client.Option) Codes2Option {
 	return func(c *Codes2) {
 		c.dialOption = op
+	}
+}
+
+func WithCodes2Option(op ...Codes2Option) Codes2Option {
+	return func(c *Codes2) {
+		for _, v := range op {
+			v(c)
+		}
 	}
 }
 
@@ -244,31 +248,6 @@ func (this *Codes2) update() ([]*CodeModel, error) {
 				insert = append(insert, code)
 				list = append(list, code)
 			}
-		}
-	}
-
-	//4. 获取gbbq
-	ss, err := gbbq.DownloadAndDecode(this.tempDir)
-	if err != nil {
-		logs.Err(err)
-		return nil, err
-	}
-
-	mStock := map[string]gbbq.Stock{}
-	for _, v := range ss {
-		mStock[protocol.AddPrefix(v.Code)] = v
-	}
-
-	//5. 赋值流通股和总股本
-	for _, v := range insert {
-		if protocol.IsStock(v.FullCode()) {
-			v.FloatStock, v.TotalStock = ss.GetStock(v.Code)
-		}
-	}
-	for _, v := range update {
-		if stock, ok := mStock[v.FullCode()]; ok {
-			v.FloatStock = stock.Float
-			v.TotalStock = stock.Total
 		}
 	}
 
