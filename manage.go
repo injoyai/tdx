@@ -1,11 +1,8 @@
 package tdx
 
 import (
-	"errors"
 	"sync"
 
-	"github.com/injoyai/conv"
-	"github.com/injoyai/ios/client"
 	"github.com/robfig/cron/v3"
 )
 
@@ -16,36 +13,13 @@ const (
 	DefaultDatabaseDir = "./data/database"
 )
 
-func NewManageMysql(op ...Option) (*Manage, error) {
+func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
 	return NewManage(
-		WithOptions(op...),
-		WithDialCodes(func(c *Client, database string) (ICodes, error) {
-			if database == "" {
-				return nil, errors.New("未配置Codes的数据库")
-			}
-			return NewCodesMysql(c, database)
+		WithDialCodes(func(c *Client) (ICodes, error) {
+			return NewCodesMysql(c, dsn)
 		}),
-		WithDialWorkday(func(c *Client, database string) (*Workday, error) {
-			if database == "" {
-				return nil, errors.New("未配置Workday的数据库")
-			}
-			return NewWorkdayMysql(c, database)
-		}),
-	)
-}
-
-func NewManageSqlite(op ...Option) (*Manage, error) {
-	return NewManage(op...)
-}
-
-func NewManage2(op ...Option) (*Manage, error) {
-	return NewManage(
-		WithCodesDatabase(DefaultDatabaseDir+"/codes2.db"),
-		WithDialCodes(func(c *Client, database string) (ICodes, error) {
-			return NewCodes2(
-				WithCodes2Client(c),
-				WithCodes2Database(database),
-			)
+		WithDialWorkday(func(c *Client) (*Workday, error) {
+			return NewWorkdayMysql(dsn, WithWorkdayClient(c))
 		}),
 		WithOptions(op...),
 	)
@@ -53,20 +27,7 @@ func NewManage2(op ...Option) (*Manage, error) {
 
 func NewManage(op ...Option) (m *Manage, err error) {
 
-	m = &Manage{
-		clients:         DefaultClients,
-		dial:            DialDefault,
-		dialOptions:     nil,
-		dialCodes:       nil,
-		codesDatabase:   DefaultDatabaseDir + "/codes.db",
-		dialWorkday:     nil,
-		workdayDatabase: DefaultDatabaseDir + "/workday.db",
-		Pool:            nil,
-		Codes:           nil,
-		Workday:         nil,
-		cron:            nil,
-		once:            sync.Once{},
-	}
+	m = &Manage{poolClients: DefaultClients}
 
 	for _, v := range op {
 		if v != nil {
@@ -74,26 +35,32 @@ func NewManage(op ...Option) (m *Manage, err error) {
 		}
 	}
 
-	m.clients = conv.Select(m.clients <= 0, 1, m.clients)
-	m.dial = conv.Select(m.dial == nil, DialDefault, m.dial)
-
 	//连接池
-	m.Pool, err = NewPool(func() (*Client, error) { return m.dial(m.dialOptions...) }, m.clients)
+	if m.IPool == nil {
+		if m.dialPool == nil {
+			m.dialPool = func() (IPool, error) {
+				return NewPool(func() (*Client, error) { return DialDefault() }, m.poolClients)
+			}
+		}
+		m.IPool, err = m.dialPool()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	//取出一个客户端
+	c, err := m.IPool.Get()
 	if err != nil {
 		return nil, err
 	}
+	defer m.IPool.Put(c)
 
 	//代码管理
 	if m.Codes == nil {
 		if m.dialCodes == nil {
-			m.dialCodes = func(c *Client, database string) (ICodes, error) {
-				return NewCodesSqlite(c, database)
-			}
+			m.dialCodes = func(c *Client) (ICodes, error) { return NewCodes2(WithCodes2Client(c)) }
 		}
-		err = m.Pool.Do(func(c *Client) error {
-			m.Codes, err = m.dialCodes(c, m.codesDatabase)
-			return err
-		})
+		m.Codes, err = NewCodes2(WithCodes2Client(c))
 		if err != nil {
 			return nil, err
 		}
@@ -102,14 +69,20 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	//工作日管理
 	if m.Workday == nil {
 		if m.dialWorkday == nil {
-			m.dialWorkday = func(c *Client, database string) (*Workday, error) {
-				return NewWorkdaySqlite(c, database)
-			}
+			m.dialWorkday = func(c *Client) (*Workday, error) { return NewWorkday(WithWorkdayClient(c)) }
 		}
-		err = m.Pool.Do(func(c *Client) error {
-			m.Workday, err = m.dialWorkday(c, m.workdayDatabase)
-			return err
-		})
+		m.Workday, err = m.dialWorkday(c)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	//股本管理
+	if m.Equity == nil {
+		if m.dialEquity == nil {
+			m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
+		}
+		m.Equity, err = m.dialEquity(c)
 		if err != nil {
 			return nil, err
 		}
@@ -125,25 +98,22 @@ func NewManage(op ...Option) (m *Manage, err error) {
  */
 
 type Option func(m *Manage)
-type DialWorkdayFunc func(c *Client, database string) (*Workday, error)
-type DialCodesFunc func(c *Client, database string) (ICodes, error)
 
 func WithClients(clients int) Option {
 	return func(m *Manage) {
-		m.clients = clients
+		m.poolClients = clients
 	}
 }
 
-func WithDial(dial func(op ...client.Option) (*Client, error), op ...client.Option) Option {
+func WithPool(pool IPool) Option {
 	return func(m *Manage) {
-		m.dial = dial
-		m.dialOptions = op
+		m.IPool = pool
 	}
 }
 
-func WithDialOptions(op ...client.Option) Option {
+func WithDialPool(dial DialPoolFunc) Option {
 	return func(m *Manage) {
-		m.dialOptions = op
+		m.dialPool = dial
 	}
 }
 
@@ -159,12 +129,6 @@ func WithDialCodes(dial DialCodesFunc) Option {
 	}
 }
 
-func WithCodesDatabase(database string) Option {
-	return func(m *Manage) {
-		m.codesDatabase = database
-	}
-}
-
 func WithWorkday(w *Workday) Option {
 	return func(m *Manage) {
 		m.Workday = w
@@ -177,9 +141,15 @@ func WithDialWorkday(dial DialWorkdayFunc) Option {
 	}
 }
 
-func WithWorkdayDatabase(database string) Option {
+func WithEquity(equity IEquity) Option {
 	return func(m *Manage) {
-		m.workdayDatabase = database
+		m.Equity = equity
+	}
+}
+
+func WithDialEquity(dial DialEquityFunc) Option {
+	return func(m *Manage) {
+		m.dialEquity = dial
 	}
 }
 
@@ -192,23 +162,23 @@ func WithOptions(op ...Option) Option {
 }
 
 type Manage struct {
-	clients         int
-	dial            func(op ...client.Option) (cli *Client, err error)
-	dialOptions     []client.Option
-	dialCodes       func(c *Client, database string) (ICodes, error)
-	codesDatabase   string
-	dialWorkday     DialWorkdayFunc
-	workdayDatabase string
+	poolClients int
+	dialPool    DialPoolFunc
+	dialCodes   DialCodesFunc
+	dialWorkday DialWorkdayFunc
+	dialEquity  DialEquityFunc
+
+	IPool
+	Codes   ICodes
+	Workday *Workday
+	Equity  IEquity
 
 	/*
 
 	 */
 
-	*Pool
-	Codes   ICodes
-	Workday *Workday
-	cron    *cron.Cron
-	once    sync.Once
+	cron *cron.Cron
+	once sync.Once
 }
 
 // RangeStocks 遍历所有股票
@@ -233,21 +203,15 @@ func (this *Manage) RangeIndexes(f func(code string)) {
 }
 
 // AddWorkdayTask 添加工作日任务
-func (this *Manage) AddWorkdayTask(spec string, f func(m *Manage)) {
+func (this *Manage) AddWorkdayTask(spec string, f func(m *Manage)) error {
 	this.once.Do(func() {
 		this.cron = cron.New(cron.WithSeconds())
 		this.cron.Start()
 	})
-	this.cron.AddFunc(spec, func() {
+	_, err := this.cron.AddFunc(spec, func() {
 		if this.Workday.TodayIs() {
 			f(this)
 		}
 	})
-}
-
-type ManageConfig struct {
-	Number          int                                                //客户端数量
-	CodesFilename   string                                             //代码数据库位置
-	WorkdayFileName string                                             //工作日数据库位置
-	Dial            func(op ...client.Option) (cli *Client, err error) //默认连接方式
+	return err
 }

@@ -7,9 +7,8 @@ import (
 
 func main() {
 	_, err := tdx.NewManageMysql(
+		"root:root@tcp(192.168.1.105:3306)/stock?charset=utf8mb4&parseTime=True&loc=Local",
 		tdx.WithClients(2),
-		tdx.WithCodesDatabase("root:root@tcp(192.168.1.105:3306)/stock?charset=utf8mb4&parseTime=True&loc=Local"),
-		tdx.WithWorkdayDatabase("root:root@tcp(192.168.1.105:3306)/stock?charset=utf8mb4&parseTime=True&loc=Local"),
 	)
 	logs.PanicErr(err)
 	logs.Debug("done")
