@@ -2,7 +2,18 @@ package tdx
 
 import (
 	"errors"
+
 	"github.com/injoyai/base/safe"
+)
+
+type (
+	IPool interface {
+		Get() (*Client, error)
+		Put(c *Client)
+		Do(fn func(c *Client) error) error
+		Go(fn func(c *Client)) error
+	}
+	DialPoolFunc = func() (IPool, error)
 )
 
 // NewPool 简易版本的连接池
