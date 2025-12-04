@@ -49,14 +49,12 @@ func WithEquityDialDB(dial func() (*xorms.Engine, error)) EquityOption {
 
 func NewEquity(op ...EquityOption) (*Equity, error) {
 	s := &Equity{
-		spec:      "0 1 9 * * *",
+		spec:      "0 5 9 * * *",
 		retry:     DefaultRetry,
-		updateKey: "stock",
+		updateKey: "equity",
 		tempDir:   filepath.Join(DefaultDataDir, "temp"),
-		dialDB: func() (*xorms.Engine, error) {
-			return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "stock.db"))
-		},
-		m: make(map[string]gbbq.Equities),
+		dialDB:    nil,
+		m:         make(map[string]gbbq.Equities),
 	}
 
 	for _, o := range op {
@@ -68,14 +66,18 @@ func NewEquity(op ...EquityOption) (*Equity, error) {
 	// 初始化数据库
 	if s.dialDB == nil {
 		s.dialDB = func() (*xorms.Engine, error) {
-			return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "stock.db"))
+			return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "equity.db"))
 		}
 	}
 	s.db, err = s.dialDB()
 	if err != nil {
 		return nil, err
 	}
-	if err = s.db.Sync2(new(gbbq.Equity), new(UpdateModel)); err != nil {
+	if err = s.db.Sync2(new(gbbq.Equity)); err != nil {
+		return nil, err
+	}
+	s.updated, err = NewUpdated(s.updateKey, s.db.Engine)
+	if err != nil {
 		return nil, err
 	}
 
@@ -113,9 +115,10 @@ type Equity struct {
 	tempDir   string
 	dialDB    func() (*xorms.Engine, error)
 
-	db *xorms.Engine
-	m  map[string]gbbq.Equities
-	mu sync.RWMutex
+	db      *xorms.Engine
+	updated *Updated
+	m       map[string]gbbq.Equities
+	mu      sync.RWMutex
 }
 
 func (this *Equity) Get(code string, t time.Time) *gbbq.Equity {
@@ -153,7 +156,7 @@ func (this *Equity) Update() error {
 	this.m = cache
 	this.mu.Unlock()
 
-	updated, err := this.updated()
+	updated, err := this.updated.Updated()
 	if err == nil && updated {
 		return nil
 	}
@@ -176,39 +179,6 @@ func (this *Equity) sort(m map[string]gbbq.Equities) {
 			return v[i].Date.After(v[j].Date)
 		})
 	}
-}
-
-func (this *Equity) updated() (bool, error) {
-	update := new(UpdateModel)
-	{ //查询或者插入一条数据
-		has, err := this.db.Where("`Key`=?", this.updateKey).Get(update)
-		if err != nil {
-			return true, err
-		} else if !has {
-			update.Key = this.updateKey
-			if _, err = this.db.Insert(update); err != nil {
-				return true, err
-			}
-			return false, nil
-		}
-	}
-	{ //判断是否更新过,更新过则不更新
-		now := time.Now()
-		node := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
-		updateTime := time.Unix(update.Time, 0)
-		if now.Sub(node) > 0 {
-			//当前时间在9点之后,且更新时间在9点之前,需要更新
-			if updateTime.Sub(node) < 0 {
-				return false, nil
-			}
-		} else {
-			//当前时间在9点之前,且更新时间在上个节点之前
-			if updateTime.Sub(node.Add(time.Hour*24)) < 0 {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
 }
 
 func (this *Equity) loading() (gbbq.Equities, error) {
@@ -259,6 +229,6 @@ func (this *Equity) update(old gbbq.Equities) (map[string]gbbq.Equities, error) 
 		return nil, err
 	}
 
-	_, err = this.db.Where("`Key`=?", this.updateKey).Update(&UpdateModel{Time: time.Now().Unix()})
+	err = this.updated.Update()
 	return ss.GetStocks(), err
 }
