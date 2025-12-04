@@ -48,6 +48,7 @@ func DownloadAndDecode(dir string) (GBBQs, error) {
 }
 
 func Download(dir string) (string, error) {
+	os.MkdirAll(dir, 0777)
 	resp, err := http.Get(ZipURL)
 	if err != nil {
 		return "", err
