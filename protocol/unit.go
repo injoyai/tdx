@@ -371,11 +371,25 @@ func isBJIndex(code string) bool {
 func AddPrefix(code string) string {
 	if len(code) == 6 {
 		switch {
-		case isSHStock(code) || isSHIndex(code) || isSHETF(code):
+		case isSHStock(code):
 			return ExchangeSH.String() + code
-		case isSZStock(code) || isSZIndex(code) || isSZETF(code):
+		case isSZStock(code):
 			return ExchangeSZ.String() + code
-		case isBJStock(code) || isBJIndex(code) || isBJETF(code):
+		case isBJStock(code):
+			return ExchangeBJ.String() + code
+
+		case isSHETF(code):
+			return ExchangeSH.String() + code
+		case isSZETF(code):
+			return ExchangeSZ.String() + code
+		case isBJETF(code):
+			return ExchangeBJ.String() + code
+
+		case isSHIndex(code):
+			return ExchangeSH.String() + code
+		case isSZIndex(code):
+			return ExchangeSZ.String() + code
+		case isBJIndex(code):
 			return ExchangeBJ.String() + code
 		}
 	}
