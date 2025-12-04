@@ -3,6 +3,7 @@ package tdx
 import (
 	"sync"
 
+	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/robfig/cron/v3"
 )
 
@@ -16,7 +17,7 @@ const (
 func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
 	return NewManage(
 		WithDialCodes(func(c *Client) (ICodes, error) {
-			return NewCodesMysql(c, dsn)
+			return NewCodesMysql(dsn, WithCodesClient(c))
 		}),
 		WithDialWorkday(func(c *Client) (*Workday, error) {
 			return NewWorkdayMysql(dsn, WithWorkdayClient(c))
@@ -58,9 +59,9 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	//代码管理
 	if m.Codes == nil {
 		if m.dialCodes == nil {
-			m.dialCodes = func(c *Client) (ICodes, error) { return NewCodes2(WithCodes2Client(c)) }
+			m.dialCodes = func(c *Client) (ICodes, error) { return NewCodes(WithCodesClient(c)) }
 		}
-		m.Codes, err = NewCodes2(WithCodes2Client(c))
+		m.Codes, err = m.dialCodes(c)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +98,13 @@ func NewManage(op ...Option) (m *Manage, err error) {
 
  */
 
-type Option func(m *Manage)
+type (
+	Option func(m *Manage)
+
+	DialDBFunc func() (*xorms.Engine, error)
+
+	DialClientFunc func() (*Client, error)
+)
 
 func WithClients(clients int) Option {
 	return func(m *Manage) {

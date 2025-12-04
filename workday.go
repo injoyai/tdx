@@ -39,7 +39,7 @@ func WithWorkdayDB(db *xorms.Engine) WorkdayOption {
 	}
 }
 
-func WithWorkdayDialDB(dial func() (*xorms.Engine, error)) WorkdayOption {
+func WithWorkdayDialDB(dial DialDBFunc) WorkdayOption {
 	return func(w *Workday) {
 		w.dialDB = dial
 	}
@@ -51,7 +51,7 @@ func WithWorkdayClient(c *Client) WorkdayOption {
 	}
 }
 
-func WithWorkdayDialClient(dial func() (*Client, error)) WorkdayOption {
+func WithWorkdayDialClient(dial DialClientFunc) WorkdayOption {
 	return func(w *Workday) {
 		w.dialClient = dial
 	}
@@ -79,7 +79,7 @@ func NewWorkdaySqlite(op ...WorkdayOption) (*Workday, error) {
 func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 
 	w := &Workday{
-		spec:       "0 0 9 * * *",
+		spec:       "0 3 9 * * *",
 		retry:      DefaultRetry,
 		dialDB:     nil,
 		dialClient: nil,
@@ -148,8 +148,8 @@ func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 type Workday struct {
 	spec       string
 	retry      int
-	dialDB     func() (*xorms.Engine, error)
-	dialClient func() (*Client, error)
+	dialDB     DialDBFunc
+	dialClient DialClientFunc
 
 	c     *Client
 	db    *xorms.Engine
