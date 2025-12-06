@@ -22,7 +22,7 @@ func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
 		WithDialWorkday(func(c *Client) (*Workday, error) {
 			return NewWorkdayMysql(dsn, WithWorkdayClient(c))
 		}),
-		WithOptions(op...),
+		WithOption(op...),
 	)
 }
 
@@ -165,7 +165,7 @@ func WithDialEquityDefault() Option {
 	}
 }
 
-func WithOptions(op ...Option) Option {
+func WithOption(op ...Option) Option {
 	return func(m *Manage) {
 		for _, v := range op {
 			if v != nil {
