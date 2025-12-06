@@ -85,12 +85,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 			if err != nil {
 				return nil, err
 			}
-			//m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
 		}
-		//m.Equity, err = m.dialEquity(c)
-		//if err != nil {
-		//	return nil, err
-		//}
 	}
 
 	return
@@ -173,7 +168,9 @@ func WithDialEquityDefault() Option {
 func WithOptions(op ...Option) Option {
 	return func(m *Manage) {
 		for _, v := range op {
-			v(m)
+			if v != nil {
+				v(m)
+			}
 		}
 	}
 }
