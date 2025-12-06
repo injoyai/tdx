@@ -80,13 +80,17 @@ func NewManage(op ...Option) (m *Manage, err error) {
 
 	//股本管理
 	if m.Equity == nil {
-		if m.dialEquity == nil {
-			m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
+		if m.dialEquity != nil {
+			m.Equity, err = m.dialEquity(c)
+			if err != nil {
+				return nil, err
+			}
+			//m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
 		}
-		m.Equity, err = m.dialEquity(c)
-		if err != nil {
-			return nil, err
-		}
+		//m.Equity, err = m.dialEquity(c)
+		//if err != nil {
+		//	return nil, err
+		//}
 	}
 
 	return
@@ -157,6 +161,12 @@ func WithEquity(equity IEquity) Option {
 func WithDialEquity(dial DialEquityFunc) Option {
 	return func(m *Manage) {
 		m.dialEquity = dial
+	}
+}
+
+func WithDialEquityDefault() Option {
+	return func(m *Manage) {
+		m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
 	}
 }
 
