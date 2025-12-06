@@ -61,7 +61,9 @@ func WithCodesDialClient(dial DialClientFunc) CodesOption {
 func WithCodesOption(op ...CodesOption) CodesOption {
 	return func(c *Codes) {
 		for _, v := range op {
-			v(c)
+			if v != nil {
+				v(c)
+			}
 		}
 	}
 }
@@ -86,9 +88,7 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 		CodesBase: NewCodesBase(),
 	}
 
-	for _, o := range op {
-		o(cs)
-	}
+	WithCodesOption(op...)(cs)
 
 	var err error
 

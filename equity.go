@@ -47,6 +47,16 @@ func WithEquityDialDB(dial func() (*xorms.Engine, error)) EquityOption {
 	}
 }
 
+func WithEquityOption(op ...EquityOption) EquityOption {
+	return func(s *Equity) {
+		for _, o := range op {
+			if o != nil {
+				o(s)
+			}
+		}
+	}
+}
+
 func NewEquity(op ...EquityOption) (*Equity, error) {
 	s := &Equity{
 		spec:      "0 5 9 * * *",
@@ -57,9 +67,7 @@ func NewEquity(op ...EquityOption) (*Equity, error) {
 		m:         make(map[string]gbbq.Equities),
 	}
 
-	for _, o := range op {
-		o(s)
-	}
+	WithEquityOption(op...)(s)
 
 	var err error
 
@@ -119,6 +127,16 @@ type Equity struct {
 	updated *Updated
 	m       map[string]gbbq.Equities
 	mu      sync.RWMutex
+}
+
+func (this *Equity) All() map[string]gbbq.Equities {
+	m := make(map[string]gbbq.Equities)
+	this.mu.RLock()
+	defer this.mu.RUnlock()
+	for k, v := range this.m {
+		m[k] = v
+	}
+	return m
 }
 
 func (this *Equity) Get(code string, t time.Time) *gbbq.Equity {
