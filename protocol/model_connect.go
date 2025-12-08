@@ -16,6 +16,7 @@ var (
 	MTrade         = trade{}
 	MHistoryTrade  = historyTrade{}
 	MKline         = kline{}
+	MGbbq          = gbbq{}
 )
 
 type ConnectResp struct {

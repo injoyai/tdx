@@ -172,6 +172,9 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 	case protocol.TypeKline:
 		resp, err = protocol.MKline.Decode(f.Data, val.(protocol.KlineCache))
 
+	case protocol.TypeGbbq:
+		resp, err = protocol.MGbbq.Decode(f.Data)
+
 	default:
 		err = fmt.Errorf("通讯类型未解析:0x%X", f.Type)
 
@@ -382,6 +385,19 @@ func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, erro
 		return nil, err
 	}
 	return result.(*protocol.CallAuctionResp), errors.New("未实现")
+}
+
+func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
+	code = protocol.AddPrefix(code)
+	f, err := protocol.MGbbq.Frame(code)
+	if err != nil {
+		return nil, err
+	}
+	result, err := this.SendFrame(f)
+	if err != nil {
+		return nil, err
+	}
+	return result.(*protocol.GbbqResp), nil
 }
 
 // GetMinute 获取分时数据,todo 解析好像不对,先用历史数据

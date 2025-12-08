@@ -5,6 +5,7 @@ import "time"
 const (
 	TypeConnect            = 0x000D //建立连接
 	TypeHeart              = 0x0004 //心跳
+	TypeGbbq               = 0x000F //除权除息
 	TypeCount              = 0x044E //获取股票数量
 	TypeCode               = 0x0450 //获取股票代码
 	TypeQuote              = 0x053E //行情信息
