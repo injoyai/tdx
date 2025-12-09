@@ -11,7 +11,7 @@ import (
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/gbbq"
+	"github.com/injoyai/tdx/protocol"
 	"github.com/robfig/cron/v3"
 )
 
@@ -128,7 +128,7 @@ func (this *CodesHTTP) getList(path string) (tdx.CodeModels, error) {
 }
 
 func DialEquityHTTP(address string, spec ...string) (e *EquityHTTP, err error) {
-	e = &EquityHTTP{address: address, m: make(map[string]gbbq.Equities)}
+	e = &EquityHTTP{address: address, m: make(map[string][]*protocol.Equity)}
 	cr := cron.New(cron.WithSeconds())
 	_spec := conv.Default("0 20 9 * * *", spec...)
 	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(e.Update()) })
@@ -147,7 +147,7 @@ var _ tdx.IEquity = &EquityHTTP{}
 
 type EquityHTTP struct {
 	address string
-	m       map[string]gbbq.Equities
+	m       map[string][]*protocol.Equity
 	mu      sync.RWMutex
 }
 
@@ -162,7 +162,7 @@ func (this *EquityHTTP) Update() error {
 	return nil
 }
 
-func (this *EquityHTTP) Get(code string, t time.Time) *gbbq.Equity {
+func (this *EquityHTTP) Get(code string, t time.Time) *protocol.Equity {
 	if len(code) == 8 {
 		code = code[2:]
 	}
@@ -170,14 +170,14 @@ func (this *EquityHTTP) Get(code string, t time.Time) *gbbq.Equity {
 	ls := this.m[code]
 	this.mu.RUnlock()
 	for _, v := range ls {
-		if t.Unix() >= v.Date.Unix() {
+		if t.Unix() >= v.Time.Unix() {
 			return v
 		}
 	}
 	return nil
 }
 
-func (this *EquityHTTP) Turnover(code string, t time.Time, volume float64) float64 {
+func (this *EquityHTTP) Turnover(code string, t time.Time, volume int64) float64 {
 	x := this.Get(code, t)
 	if x == nil {
 		return 0
@@ -185,7 +185,7 @@ func (this *EquityHTTP) Turnover(code string, t time.Time, volume float64) float
 	return x.Turnover(volume)
 }
 
-func (this *EquityHTTP) get(path string) (map[string]gbbq.Equities, error) {
+func (this *EquityHTTP) get(path string) (map[string][]*protocol.Equity, error) {
 	resp, err := http.DefaultClient.Get(this.address + path)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (this *EquityHTTP) get(path string) (map[string]gbbq.Equities, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := map[string]gbbq.Equities{}
+	m := map[string][]*protocol.Equity{}
 	err = json.Unmarshal(bs, &m)
 	return m, err
 }
