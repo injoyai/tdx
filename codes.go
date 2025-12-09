@@ -6,13 +6,10 @@ import (
 	"math"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
-	"github.com/robfig/cron/v3"
 	"xorm.io/xorm"
 )
 
@@ -83,7 +80,7 @@ func NewCodesSqlite(op ...CodesOption) (*Codes, error) {
 
 func NewCodes(op ...CodesOption) (*Codes, error) {
 	cs := &Codes{
-		spec:      "0 1 9 * * *",
+		spec:      DefaultCodesSpec,
 		retry:     DefaultRetry,
 		CodesBase: NewCodesBase(),
 	}
@@ -121,31 +118,10 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 		return nil, err
 	}
 
-	// 立即更新
-	err = cs.Update()
-	if err != nil {
-		return nil, err
-	}
+	// 立即/定时更新
+	err = NewTimer(cs.spec, cs.retry, cs)
 
-	// 定时更新
-	cr := cron.New(cron.WithSeconds())
-	_, err = cr.AddFunc(cs.spec, func() {
-		for i := 0; i == 0 || i < cs.retry; i++ {
-			if err := cs.Update(); err != nil {
-				logs.Err(err)
-				<-time.After(time.Minute * 5)
-			} else {
-				break
-			}
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	cr.Start()
-
-	return cs, nil
+	return cs, err
 }
 
 var _ ICodes = &Codes{}

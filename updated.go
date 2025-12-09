@@ -3,8 +3,39 @@ package tdx
 import (
 	"time"
 
+	"github.com/injoyai/logs"
+	"github.com/robfig/cron/v3"
 	"xorm.io/xorm"
 )
+
+type Updater interface {
+	Update() error
+}
+
+func NewTimer(spec string, retry int, up Updater) error {
+	//立即更新
+	err := up.Update()
+	if err != nil {
+		return err
+	}
+	cr := cron.New(cron.WithSeconds())
+	// 需要每天早上9点更新数据,8点多获取不到今天的数据
+	_, err = cr.AddFunc(spec, func() {
+		for i := 0; i == 0 || i < retry; i++ {
+			if err := up.Update(); err != nil {
+				logs.Err(err)
+				<-time.After(time.Minute * 5)
+			} else {
+				break
+			}
+		}
+	})
+	if err != nil {
+		return err
+	}
+	cr.Start()
+	return nil
+}
 
 func NewUpdated(key string, db *xorm.Engine) (*Updated, error) {
 	err := db.Sync2(new(UpdateModel))

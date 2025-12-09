@@ -13,7 +13,6 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
-	"github.com/robfig/cron/v3"
 )
 
 type (
@@ -79,7 +78,7 @@ func NewWorkdaySqlite(op ...WorkdayOption) (*Workday, error) {
 func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 
 	w := &Workday{
-		spec:       "0 3 9 * * *",
+		spec:       DefaultWorkdaySpec,
 		retry:      DefaultRetry,
 		dialDB:     nil,
 		dialClient: nil,
@@ -119,30 +118,10 @@ func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 		}
 	}
 
-	err = w.Update()
-	if err != nil {
-		return nil, err
-	}
-
 	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
-	task := cron.New(cron.WithSeconds())
-	_, err = task.AddFunc(w.spec, func() {
-		for i := 0; i == 0 || i < w.retry; i++ {
-			err := w.Update()
-			if err == nil {
-				return
-			}
-			logs.Err(err)
-			<-time.After(time.Minute * 5)
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
+	err = NewTimer(w.spec, w.retry, w)
 
-	task.Start()
-
-	return w, nil
+	return w, err
 }
 
 type Workday struct {

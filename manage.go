@@ -12,6 +12,9 @@ const (
 	DefaultRetry       = 3
 	DefaultDataDir     = "./data"
 	DefaultDatabaseDir = "./data/database"
+	DefaultCodesSpec   = "0 1 9 * * *"
+	DefaultWorkdaySpec = "0 3 9 * * *"
+	DefaultEquitySpec  = "0 5 9 * * *"
 )
 
 func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
@@ -80,11 +83,12 @@ func NewManage(op ...Option) (m *Manage, err error) {
 
 	//股本管理
 	if m.Equity == nil {
-		if m.dialEquity != nil {
-			m.Equity, err = m.dialEquity(c)
-			if err != nil {
-				return nil, err
-			}
+		if m.dialEquity == nil {
+			m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity(WithEquityClient(c)) }
+		}
+		m.Equity, err = m.dialEquity(c)
+		if err != nil {
+			return nil, err
 		}
 	}
 
