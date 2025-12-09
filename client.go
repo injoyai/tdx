@@ -400,6 +400,28 @@ func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	return result.(*protocol.GbbqResp), nil
 }
 
+func (this *Client) GetGbbqAll() (protocol.Gbbqs, error) {
+	codes, err := this.GetStockCodeAll()
+	if err != nil {
+		return nil, err
+	}
+	gbbqs := protocol.Gbbqs{}
+	var resp *protocol.GbbqResp
+	for _, code := range codes {
+		for i := 0; i == 0 || i < DefaultRetry; i++ {
+			resp, err = this.GetGbbq(code)
+			if err == nil {
+				gbbqs[code] = resp.List
+				break
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return gbbqs, nil
+}
+
 // GetMinute 获取分时数据,todo 解析好像不对,先用历史数据
 func (this *Client) GetMinute(code string) (*protocol.MinuteResp, error) {
 	return this.GetHistoryMinute(time.Now().Format("20060102"), code)

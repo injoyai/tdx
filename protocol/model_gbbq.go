@@ -63,8 +63,8 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 
 	for i := uint16(0); i < _count; i++ {
 		g := &Gbbq{
-			Exchange: Exchange(bs[0]),
-			Code:     string(bs[1:7]),
+			//Exchange: Exchange(bs[0]),
+			Code:     Exchange(bs[0]).String() + string(bs[1:7]),
 			Time:     GetTime([4]byte(bs[8:12]), 100),
 			Category: int(bs[12]),
 		}
@@ -92,10 +92,10 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 			//panhouliutong = _get_v(panhouliutong_raw)
 			//qianzongguben = _get_v(qianzongguben_raw)
 			//houzongguben = _get_v(houzongguben_raw)
-			g.C1 = getVolume(Uint32(bs[0:4]))
-			g.C2 = getVolume(Uint32(bs[4:8]))
-			g.C3 = getVolume(Uint32(bs[8:12]))
-			g.C4 = getVolume(Uint32(bs[12:16]))
+			g.C1 = getVolume(Uint32(bs[0:4])) * 1e4
+			g.C2 = getVolume(Uint32(bs[4:8])) * 1e4
+			g.C3 = getVolume(Uint32(bs[8:12])) * 1e4
+			g.C4 = getVolume(Uint32(bs[12:16])) * 1e4
 
 		}
 		bs = bs[16:]
@@ -111,16 +111,50 @@ type GbbqResp struct {
 }
 
 type Gbbq struct {
-	Exchange Exchange
 	Code     string
-	Time     time.Time
-	Category int //2, 3, 5, 7, 8, 9, 10
+	Time     time.Time //15:00,注意判断逻辑
+	Category int       //2, 3, 5, 7, 8, 9, 10
 	C1       float64
 	C2       float64
 	C3       float64
 	C4       float64
 }
 
-func (this *Gbbq) FullCode() string {
-	return this.Exchange.String() + this.Code
+type Gbbqs map[string][]*Gbbq
+
+func (this Gbbqs) GetEquities() map[string][]*Equity {
+	m := map[string][]*Equity{}
+	for k, v := range this {
+		for _, vv := range v {
+			switch vv.Category {
+			case 2, 3, 5, 7, 8, 9, 10:
+				m[k] = append(m[k], &Equity{
+					Category: vv.Category,
+					Code:     vv.Code,
+					Time:     vv.Time,
+					Float:    vv.C3,
+					Total:    vv.C4,
+				})
+			}
+		}
+
+	}
+	return m
+}
+
+type Equity struct {
+	Category int       //2, 3, 5, 7, 8, 9, 10
+	Code     string    //例sh600000
+	Time     time.Time //时间
+	Float    float64   //流通股本,单位股
+	Total    float64   //总股本,单位股
+}
+
+func (this *Equity) TableName() string {
+	return "equity"
+}
+
+// Turnover 换手率,传入股
+func (this *Equity) Turnover(volume int64) float64 {
+	return (float64(volume) / this.Float) * 100
 }
