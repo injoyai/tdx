@@ -142,6 +142,26 @@ func (this Gbbqs) GetEquities() map[string][]*Equity {
 	return m
 }
 
+func (this Gbbqs) GetXRXDs() map[string][]*XRXD {
+	m := map[string][]*XRXD{}
+	for k, v := range this {
+		for _, vv := range v {
+			switch vv.Category {
+			case 1:
+				m[k] = append(m[k], &XRXD{
+					Code:        vv.Code,
+					Time:        vv.Time,
+					Fenhong:     vv.C1,
+					Peigujia:    vv.C2,
+					Songzhuangu: vv.C3,
+					Peigu:       vv.C4,
+				})
+			}
+		}
+	}
+	return m
+}
+
 type Equity struct {
 	Category int       //2, 3, 5, 7, 8, 9, 10
 	Code     string    //例sh600000
@@ -157,4 +177,27 @@ func (this *Equity) TableName() string {
 // Turnover 换手率,传入股
 func (this *Equity) Turnover(volume int64) float64 {
 	return (float64(volume) / this.Float) * 100
+}
+
+/*
+XRXD
+除权 ex-rights
+除息 ex-dividend
+*/
+type XRXD struct {
+	Code        string    //例sh600000
+	Time        time.Time //时间
+	Fenhong     float64   //分红
+	Peigujia    float64   //配股价
+	Songzhuangu float64   //送转股
+	Peigu       float64   //配股
+}
+
+func (this *XRXD) FQ(p Price) Price {
+	numerator := (p.Float64()*10 - this.Fenhong) + (this.Peigu * this.Peigujia)
+	denominator := 10 + this.Peigu + this.Songzhuangu
+	if denominator == 0 {
+		return p
+	}
+	return Price((numerator / denominator) * 1000)
 }

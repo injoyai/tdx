@@ -19,6 +19,10 @@ func (this Price) String() string {
 	return fmt.Sprintf("%s元", FloatUnitString(this.Float64()))
 }
 
+func Yuan(f float64) Price {
+	return Price(f * 1000)
+}
+
 type PriceLevel struct {
 	Buy    bool  //买卖
 	Price  Price //价 想买卖的价格

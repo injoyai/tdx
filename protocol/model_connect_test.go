@@ -35,11 +35,6 @@ func Test_securityQuote_Decode(t *testing.T) {
 
 }
 
-func Test_getPrice(t *testing.T) {
-	t.Log(getPrice([]byte{0x7f, 0x3f, 0x40, 0x3f, 0x01})) //预期-63
-	t.Log(getPrice([]byte{0x2f, 0x3f, 0x40, 0x3f, 0x01})) //预期47
-}
-
 /*
 0c000000000106000600500400000000
 0c020000000106000600500400000000
