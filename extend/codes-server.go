@@ -15,12 +15,12 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func ListenCodesAndEquityHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.EquityOption) error {
+func ListenCodesAndEquityHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.GbbqOption) error {
 	code, err := tdx.NewCodes(codesOption...)
 	if err != nil {
 		return nil
 	}
-	equity, err := tdx.NewEquity(equityOption...)
+	equity, err := tdx.NewGbbq(equityOption...)
 	if err != nil {
 		return nil
 	}
@@ -128,7 +128,7 @@ func (this *CodesHTTP) getList(path string) (tdx.CodeModels, error) {
 }
 
 func DialEquityHTTP(address string, spec ...string) (e *EquityHTTP, err error) {
-	e = &EquityHTTP{address: address, m: make(map[string][]*protocol.Equity)}
+	e = &EquityHTTP{address: address, m: make(map[string][]*protocol.Gbbq)}
 	cr := cron.New(cron.WithSeconds())
 	_spec := conv.Default("0 20 9 * * *", spec...)
 	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(e.Update()) })
@@ -143,11 +143,11 @@ func DialEquityHTTP(address string, spec ...string) (e *EquityHTTP, err error) {
 	return e, nil
 }
 
-var _ tdx.IEquity = &EquityHTTP{}
+var _ tdx.IGbbq = &EquityHTTP{}
 
 type EquityHTTP struct {
 	address string
-	m       map[string][]*protocol.Equity
+	m       map[string][]*protocol.Gbbq
 	mu      sync.RWMutex
 }
 
@@ -162,7 +162,7 @@ func (this *EquityHTTP) Update() error {
 	return nil
 }
 
-func (this *EquityHTTP) Get(code string, t time.Time) *protocol.Equity {
+func (this *EquityHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	if len(code) == 8 {
 		code = code[2:]
 	}
@@ -170,22 +170,22 @@ func (this *EquityHTTP) Get(code string, t time.Time) *protocol.Equity {
 	ls := this.m[code]
 	this.mu.RUnlock()
 	for _, v := range ls {
-		if t.Unix() >= v.Time.Unix() {
-			return v
+		if v.IsEquity() && v.IsEquity() && t.Unix() >= v.Time.Unix() {
+			return v.Equity()
 		}
 	}
 	return nil
 }
 
 func (this *EquityHTTP) Turnover(code string, t time.Time, volume int64) float64 {
-	x := this.Get(code, t)
+	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0
 	}
 	return x.Turnover(volume)
 }
 
-func (this *EquityHTTP) get(path string) (map[string][]*protocol.Equity, error) {
+func (this *EquityHTTP) get(path string) (map[string][]*protocol.Gbbq, error) {
 	resp, err := http.DefaultClient.Get(this.address + path)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (this *EquityHTTP) get(path string) (map[string][]*protocol.Equity, error) 
 	if err != nil {
 		return nil, err
 	}
-	m := map[string][]*protocol.Equity{}
+	m := map[string][]*protocol.Gbbq{}
 	err = json.Unmarshal(bs, &m)
 	return m, err
 }

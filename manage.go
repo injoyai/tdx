@@ -82,11 +82,11 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	}
 
 	//股本管理
-	if m.Equity == nil {
-		if m.dialEquity == nil {
-			m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity(WithEquityClient(c)) }
+	if m.Gbbq == nil {
+		if m.dialGbbq == nil {
+			m.dialGbbq = func(c *Client) (IGbbq, error) { return NewGbbq(WithGbbqClient(c)) }
 		}
-		m.Equity, err = m.dialEquity(c)
+		m.Gbbq, err = m.dialGbbq(c)
 		if err != nil {
 			return nil, err
 		}
@@ -151,21 +151,21 @@ func WithDialWorkday(dial DialWorkdayFunc) Option {
 	}
 }
 
-func WithEquity(equity IEquity) Option {
+func WithGbbq(gbbq IGbbq) Option {
 	return func(m *Manage) {
-		m.Equity = equity
+		m.Gbbq = gbbq
 	}
 }
 
-func WithDialEquity(dial DialEquityFunc) Option {
+func WithDialGbbq(dial DialGbbqFunc) Option {
 	return func(m *Manage) {
-		m.dialEquity = dial
+		m.dialGbbq = dial
 	}
 }
 
-func WithDialEquityDefault() Option {
+func WithDialGbbqDefault() Option {
 	return func(m *Manage) {
-		m.dialEquity = func(c *Client) (IEquity, error) { return NewEquity() }
+		m.dialGbbq = func(c *Client) (IGbbq, error) { return NewGbbq() }
 	}
 }
 
@@ -184,12 +184,12 @@ type Manage struct {
 	dialPool    DialPoolFunc
 	dialCodes   DialCodesFunc
 	dialWorkday DialWorkdayFunc
-	dialEquity  DialEquityFunc
+	dialGbbq    DialGbbqFunc
 
 	IPool
 	Codes   ICodes
 	Workday *Workday
-	Equity  IEquity
+	Gbbq    IGbbq
 
 	/*
 

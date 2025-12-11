@@ -11,7 +11,7 @@ func main() {
 	m, err := tdx.NewManage()
 	logs.PanicErr(err)
 
-	logs.Debug(m.Equity.Get("sz000001", time.Now()))
+	logs.Debug(m.Gbbq.GetEquity("sz000001", time.Now()))
 
 	err = m.Do(func(c *tdx.Client) error {
 		resp, err := c.GetIndexDay("sh000001", 0, 20)

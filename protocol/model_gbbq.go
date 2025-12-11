@@ -8,7 +8,7 @@ import (
 )
 
 /*
-根据官网的名称来,gb应该是股本,bq不知道啥意思
+根据官网的名称来,gbbq股本变迁
 
 XDXR_CATEGORY_MAPPING = {
     1 : "除权除息",
@@ -120,6 +120,28 @@ type Gbbq struct {
 	C4       float64
 }
 
+func (this *Gbbq) TableName() string {
+	return "gbbq"
+}
+
+func (this *Gbbq) IsEquity() bool {
+	switch this.Category {
+	case 2, 3, 5, 7, 8, 9, 10:
+		return true
+	}
+	return false
+}
+
+func (this *Gbbq) Equity() *Equity {
+	return &Equity{
+		Category: this.Category,
+		Code:     this.Code,
+		Time:     this.Time,
+		Float:    this.C3,
+		Total:    this.C4,
+	}
+}
+
 type Gbbqs map[string][]*Gbbq
 
 func (this Gbbqs) GetEquities() map[string][]*Equity {
@@ -187,17 +209,66 @@ XRXD
 type XRXD struct {
 	Code        string    //例sh600000
 	Time        time.Time //时间
-	Fenhong     float64   //分红
+	Fenhong     float64   //分红,10股分n元
 	Peigujia    float64   //配股价
 	Songzhuangu float64   //送转股
 	Peigu       float64   //配股
 }
 
-func (this *XRXD) FQ(p Price) Price {
+// Pre 计算除权除息之后的价格,10元,10股分5元->9.5元
+func (this *XRXD) Pre(p Price) Price {
+	if this == nil {
+		return p
+	}
 	numerator := (p.Float64()*10 - this.Fenhong) + (this.Peigu * this.Peigujia)
 	denominator := 10 + this.Peigu + this.Songzhuangu
 	if denominator == 0 {
 		return p
 	}
 	return Price((numerator / denominator) * 1000)
+}
+
+type XRXDs []*XRXD
+
+func (this XRXDs) Pre(ks []*Kline) []*PreKline {
+	m := make(map[string]*XRXD)
+	for _, v := range this {
+		m[v.Time.Format(time.DateOnly)] = v
+	}
+	ls := make([]*PreKline, len(ks))
+	for i, k := range ks {
+		x := m[k.Time.Format(time.DateOnly)]
+		ls[i] = &PreKline{
+			Kline:   k,
+			PreLast: x.Pre(k.Last),
+		}
+	}
+	return ls
+}
+
+type PreKline struct {
+	*Kline
+	PreLast Price
+}
+
+func (this *PreKline) QFQ() float64 {
+	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
+		return 1
+	}
+	return this.PreLast.Float64() / this.Last.Float64()
+}
+
+func (this *PreKline) HFQ() float64 {
+	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
+		return 1
+	}
+	return this.Last.Float64() / this.PreLast.Float64()
+}
+
+type FQ struct {
+	Time     time.Time //时间
+	Close    Price     //收盘价
+	PreClose Price     //前一天收盘价除权除息后
+	QFQ      float64
+	HFQ      float64
 }

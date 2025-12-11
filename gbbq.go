@@ -11,53 +11,54 @@ import (
 	"xorm.io/xorm"
 )
 
-type IEquity interface {
-	Get(code string, t time.Time) *protocol.Equity
+type IGbbq interface {
+	GetEquity(code string, t time.Time) *protocol.Equity
 	Turnover(code string, t time.Time, volume int64) float64
 }
 
 type (
-	EquityOption   func(e *Equity)
-	DialEquityFunc func(c *Client) (IEquity, error)
+	GbbqOption func(e *Equity)
+
+	DialGbbqFunc func(c *Client) (IGbbq, error)
 )
 
-func WithEquityRetry(retry int) EquityOption {
+func WithGbbqRetry(retry int) GbbqOption {
 	return func(s *Equity) {
 		s.retry = retry
 	}
 }
 
-func WithEquitySpec(spec string) EquityOption {
+func WithGbbqSpec(spec string) GbbqOption {
 	return func(s *Equity) {
 		s.spec = spec
 	}
 }
 
-func WithEquityDB(db *xorms.Engine) EquityOption {
+func WithGbbqDB(db *xorms.Engine) GbbqOption {
 	return func(s *Equity) {
 		s.db = db
 	}
 }
 
-func WithEquityDialDB(dial func() (*xorms.Engine, error)) EquityOption {
+func WithGbbqDialDB(dial func() (*xorms.Engine, error)) GbbqOption {
 	return func(s *Equity) {
 		s.dialDB = dial
 	}
 }
 
-func WithEquityClient(c *Client) EquityOption {
+func WithGbbqClient(c *Client) GbbqOption {
 	return func(s *Equity) {
 		s.c = c
 	}
 }
 
-func WithEquityDialClient(dial DialClientFunc) EquityOption {
+func WithGbbqDialClient(dial DialClientFunc) GbbqOption {
 	return func(s *Equity) {
 		s.dialClient = dial
 	}
 }
 
-func WithEquityOption(op ...EquityOption) EquityOption {
+func WithGbbqOption(op ...GbbqOption) GbbqOption {
 	return func(s *Equity) {
 		for _, o := range op {
 			if o != nil {
@@ -67,16 +68,16 @@ func WithEquityOption(op ...EquityOption) EquityOption {
 	}
 }
 
-func NewEquity(op ...EquityOption) (*Equity, error) {
+func NewGbbq(op ...GbbqOption) (*Equity, error) {
 	s := &Equity{
 		spec:      DefaultEquitySpec,
 		retry:     DefaultRetry,
 		updateKey: "equity",
 		dialDB:    nil,
-		m:         make(map[string][]*protocol.Equity),
+		m:         make(map[string][]*protocol.Gbbq),
 	}
 
-	WithEquityOption(op...)(s)
+	WithGbbqOption(op...)(s)
 
 	var err error
 
@@ -103,7 +104,7 @@ func NewEquity(op ...EquityOption) (*Equity, error) {
 			return nil, err
 		}
 	}
-	if err = s.db.Sync2(new(protocol.Equity)); err != nil {
+	if err = s.db.Sync2(new(protocol.Gbbq)); err != nil {
 		return nil, err
 	}
 	s.updated, err = NewUpdated(s.updateKey, s.db.Engine)
@@ -127,12 +128,12 @@ type Equity struct {
 	c       *Client
 	db      *xorms.Engine
 	updated *Updated
-	m       map[string][]*protocol.Equity
+	m       map[string][]*protocol.Gbbq
 	mu      sync.RWMutex
 }
 
-func (this *Equity) All() map[string][]*protocol.Equity {
-	m := make(map[string][]*protocol.Equity)
+func (this *Equity) All() map[string][]*protocol.Gbbq {
+	m := make(map[string][]*protocol.Gbbq)
 	this.mu.RLock()
 	defer this.mu.RUnlock()
 	for k, v := range this.m {
@@ -141,21 +142,21 @@ func (this *Equity) All() map[string][]*protocol.Equity {
 	return m
 }
 
-func (this *Equity) Get(code string, t time.Time) *protocol.Equity {
+func (this *Equity) GetEquity(code string, t time.Time) *protocol.Equity {
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
 	for _, v := range ls {
 		//读取过来的是15:00,但是今天就生效了,把小时归零,方便判断
-		if t.Unix() >= IntegerDay(v.Time).Unix() {
-			return v
+		if v.IsEquity() && t.Unix() >= IntegerDay(v.Time).Unix() {
+			return v.Equity()
 		}
 	}
 	return nil
 }
 
 func (this *Equity) Turnover(code string, t time.Time, volume int64) float64 {
-	x := this.Get(code, t)
+	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0
 	}
@@ -190,7 +191,7 @@ func (this *Equity) Update() error {
 	return nil
 }
 
-func (this *Equity) sort(m map[string][]*protocol.Equity) {
+func (this *Equity) sort(m map[string][]*protocol.Gbbq) {
 	for _, v := range m {
 		sort.Slice(v, func(i, j int) bool {
 			return v[i].Time.After(v[j].Time)
@@ -198,30 +199,30 @@ func (this *Equity) sort(m map[string][]*protocol.Equity) {
 	}
 }
 
-func (this *Equity) loading() (map[string][]*protocol.Equity, error) {
-	list := []*protocol.Equity(nil)
+func (this *Equity) loading() (map[string][]*protocol.Gbbq, error) {
+	list := []*protocol.Gbbq(nil)
 	if err := this.db.Desc("Time").Find(&list); err != nil {
 		return nil, err
 	}
-	m := map[string][]*protocol.Equity{}
+	m := map[string][]*protocol.Gbbq{}
 	for _, v := range list {
 		m[v.Code] = append(m[v.Code], v)
 	}
 	return m, nil
 }
 
-func (this *Equity) update() (map[string][]*protocol.Equity, error) {
+func (this *Equity) update() (map[string][]*protocol.Gbbq, error) {
 	gbbqs, err := this.c.GetGbbqAll()
 	if err != nil {
 		return nil, err
 	}
 
-	m := gbbqs.GetEquities()
+	//m := gbbqs.GetEquities()
 	err = this.db.SessionFunc(func(session *xorm.Session) error {
-		if _, err = session.Where("1=1").Delete(new(protocol.Equity)); err != nil {
+		if _, err = session.Where("1=1").Delete(new(protocol.Gbbq)); err != nil {
 			return err
 		}
-		for _, ls := range m {
+		for _, ls := range gbbqs {
 			for _, v := range ls {
 				if _, err = session.Insert(v); err != nil {
 					return err
@@ -234,5 +235,5 @@ func (this *Equity) update() (map[string][]*protocol.Equity, error) {
 		return nil, err
 	}
 	err = this.updated.Update()
-	return m, err
+	return gbbqs, err
 }

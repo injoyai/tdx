@@ -14,7 +14,7 @@ func main() {
 	c, err := tdx.DialDefault()
 	logs.PanicErr(err)
 
-	e, err := tdx.NewEquity(tdx.WithEquityClient(c))
+	e, err := tdx.NewGbbq(tdx.WithGbbqClient(c))
 	logs.PanicErr(err)
 
 	resp, err := c.GetKlineDay(code, 0, 1)
