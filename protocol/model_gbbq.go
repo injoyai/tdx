@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sort"
 	"time"
 )
 
@@ -132,6 +133,14 @@ func (this *Gbbq) IsEquity() bool {
 	return false
 }
 
+func (this *Gbbq) IsXRXD() bool {
+	switch this.Category {
+	case 1:
+		return true
+	}
+	return false
+}
+
 func (this *Gbbq) Equity() *Equity {
 	return &Equity{
 		Category: this.Category,
@@ -142,21 +151,25 @@ func (this *Gbbq) Equity() *Equity {
 	}
 }
 
+func (this *Gbbq) XRXD() *XRXD {
+	return &XRXD{
+		Code:        this.Code,
+		Time:        this.Time,
+		Fenhong:     this.C1,
+		Peigujia:    this.C2,
+		Songzhuangu: this.C3,
+		Peigu:       this.C4,
+	}
+}
+
 type Gbbqs map[string][]*Gbbq
 
 func (this Gbbqs) GetEquities() map[string][]*Equity {
 	m := map[string][]*Equity{}
 	for k, v := range this {
 		for _, vv := range v {
-			switch vv.Category {
-			case 2, 3, 5, 7, 8, 9, 10:
-				m[k] = append(m[k], &Equity{
-					Category: vv.Category,
-					Code:     vv.Code,
-					Time:     vv.Time,
-					Float:    vv.C3,
-					Total:    vv.C4,
-				})
+			if vv.IsEquity() {
+				m[k] = append(m[k], vv.Equity())
 			}
 		}
 
@@ -168,16 +181,8 @@ func (this Gbbqs) GetXRXDs() map[string][]*XRXD {
 	m := map[string][]*XRXD{}
 	for k, v := range this {
 		for _, vv := range v {
-			switch vv.Category {
-			case 1:
-				m[k] = append(m[k], &XRXD{
-					Code:        vv.Code,
-					Time:        vv.Time,
-					Fenhong:     vv.C1,
-					Peigujia:    vv.C2,
-					Songzhuangu: vv.C3,
-					Peigu:       vv.C4,
-				})
+			if vv.IsXRXD() {
+				m[k] = append(m[k], vv.XRXD())
 			}
 		}
 	}
@@ -192,11 +197,7 @@ type Equity struct {
 	Total    float64   //总股本,单位股
 }
 
-func (this *Equity) TableName() string {
-	return "equity"
-}
-
-// Turnover 换手率,传入股
+// Turnover 换手率,传入股,通达信获取的一般是手,注意
 func (this *Equity) Turnover(volume int64) float64 {
 	return (float64(volume) / this.Float) * 100
 }
@@ -230,12 +231,12 @@ func (this *XRXD) Pre(p Price) Price {
 
 type XRXDs []*XRXD
 
-func (this XRXDs) Pre(ks []*Kline) []*PreKline {
+func (this XRXDs) Pre(ks []*Kline) PreKlines {
 	m := make(map[string]*XRXD)
 	for _, v := range this {
 		m[v.Time.Format(time.DateOnly)] = v
 	}
-	ls := make([]*PreKline, len(ks))
+	ls := make(PreKlines, len(ks))
 	for i, k := range ks {
 		x := m[k.Time.Format(time.DateOnly)]
 		ls[i] = &PreKline{
@@ -251,24 +252,97 @@ type PreKline struct {
 	PreLast Price
 }
 
-func (this *PreKline) QFQ() float64 {
+func (this *PreKline) QFQFactor() float64 {
 	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
 		return 1
 	}
 	return this.PreLast.Float64() / this.Last.Float64()
 }
 
-func (this *PreKline) HFQ() float64 {
+func (this *PreKline) QFQ() *Kline {
+	f := this.QFQFactor()
+	return this.FQ(f)
+}
+
+func (this *PreKline) HFQFactor() float64 {
 	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
 		return 1
 	}
 	return this.Last.Float64() / this.PreLast.Float64()
 }
 
-type FQ struct {
-	Time     time.Time //时间
-	Close    Price     //收盘价
-	PreClose Price     //前一天收盘价除权除息后
-	QFQ      float64
-	HFQ      float64
+func (this *PreKline) HFQ() *Kline {
+	f := this.HFQFactor()
+	return this.FQ(f)
+}
+
+func (this *PreKline) FQ(f float64) *Kline {
+	base := Price(100)
+	return &Kline{
+		Last:      (this.Last * Price(f*float64(base))) / base,
+		Open:      (this.Open * Price(f*float64(base))) / base,
+		High:      (this.High * Price(f*float64(base))) / base,
+		Low:       (this.Low * Price(f*float64(base))) / base,
+		Close:     (this.Close * Price(f*float64(base))) / base,
+		Order:     this.Order,
+		Volume:    this.Volume,
+		Amount:    this.Amount,
+		Time:      this.Time,
+		UpCount:   this.UpCount,
+		DownCount: this.DownCount,
+	}
+}
+
+type PreKlines []*PreKline
+
+func (this PreKlines) FactorMap(startTime time.Time) map[string]*Factor {
+	m := make(map[string]*Factor)
+	for _, v := range this.Factor(startTime) {
+		m[v.Time.Format(time.DateOnly)] = v
+	}
+	return m
+}
+
+func (this PreKlines) Factor(startTime time.Time) []*Factor {
+	ls := make([]*Factor, 0, len(this))
+	sort.Slice(this, func(i, j int) bool {
+		return this[i].Time.Before(this[i].Time)
+	})
+	lastHFQ := 1.0
+	for _, v := range this {
+		if v.Time.Before(startTime) {
+			continue
+		}
+		lastHFQ *= v.HFQFactor()
+		ls = append(ls, &Factor{
+			Time:    v.Time,
+			Last:    v.Last,
+			PreLast: v.PreLast,
+			HFQ:     lastHFQ,
+		})
+	}
+
+	sort.Slice(this, func(i, j int) bool {
+		return this[i].Time.After(this[i].Time)
+	})
+
+	lastQFQ := 1.0
+	for i := len(this) - 1; i >= 0; i-- {
+		v := this[i]
+		if v.Time.Before(startTime) {
+			continue
+		}
+		lastHFQ *= v.QFQFactor()
+		ls[i].QFQ = lastQFQ
+	}
+
+	return ls
+}
+
+type Factor struct {
+	Time    time.Time
+	Last    Price
+	PreLast Price
+	QFQ     float64
+	HFQ     float64
 }

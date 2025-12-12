@@ -72,7 +72,7 @@ func NewGbbq(op ...GbbqOption) (*Equity, error) {
 	s := &Equity{
 		spec:      DefaultEquitySpec,
 		retry:     DefaultRetry,
-		updateKey: "equity",
+		updateKey: "gbbq",
 		dialDB:    nil,
 		m:         make(map[string][]*protocol.Gbbq),
 	}
@@ -96,7 +96,7 @@ func NewGbbq(op ...GbbqOption) (*Equity, error) {
 	if s.db == nil {
 		if s.dialDB == nil {
 			s.dialDB = func() (*xorms.Engine, error) {
-				return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "equity.db"))
+				return xorms.NewSqlite(filepath.Join(DefaultDatabaseDir, "gbbq.db"))
 			}
 		}
 		s.db, err = s.dialDB()
@@ -155,6 +155,19 @@ func (this *Equity) GetEquity(code string, t time.Time) *protocol.Equity {
 	return nil
 }
 
+func (this *Equity) GetXRXDs(code string) protocol.XRXDs {
+	this.mu.RLock()
+	ls := this.m[code]
+	this.mu.RUnlock()
+	res := protocol.XRXDs{}
+	for _, v := range ls {
+		if v.IsXRXD() {
+			res = append(res, v.XRXD())
+		}
+	}
+	return res
+}
+
 func (this *Equity) Turnover(code string, t time.Time, volume int64) float64 {
 	x := this.GetEquity(code, t)
 	if x == nil {
@@ -194,14 +207,14 @@ func (this *Equity) Update() error {
 func (this *Equity) sort(m map[string][]*protocol.Gbbq) {
 	for _, v := range m {
 		sort.Slice(v, func(i, j int) bool {
-			return v[i].Time.After(v[j].Time)
+			return v[i].Time.Before(v[j].Time)
 		})
 	}
 }
 
 func (this *Equity) loading() (map[string][]*protocol.Gbbq, error) {
 	list := []*protocol.Gbbq(nil)
-	if err := this.db.Desc("Time").Find(&list); err != nil {
+	if err := this.db.Asc("Time").Find(&list); err != nil {
 		return nil, err
 	}
 	m := map[string][]*protocol.Gbbq{}
