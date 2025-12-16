@@ -156,6 +156,7 @@ func (this *Equity) GetEquity(code string, t time.Time) *protocol.Equity {
 }
 
 func (this *Equity) GetXRXDs(code string) protocol.XRXDs {
+	code = protocol.AddPrefix(code)
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()

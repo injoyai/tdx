@@ -152,13 +152,14 @@ func (this *Gbbq) Equity() *Equity {
 }
 
 func (this *Gbbq) XRXD() *XRXD {
+	base := 100. //保留2位小数
 	return &XRXD{
 		Code:        this.Code,
 		Time:        this.Time,
-		Fenhong:     this.C1,
-		Peigujia:    this.C2,
-		Songzhuangu: this.C3,
-		Peigu:       this.C4,
+		Fenhong:     float64(int64(this.C1*base+0.5)) / base,
+		Peigujia:    float64(int64(this.C2*base+0.5)) / base,
+		Songzhuangu: float64(int64(this.C3*base+0.5)) / base,
+		Peigu:       float64(int64(this.C4*base+0.5)) / base,
 	}
 }
 
@@ -222,7 +223,7 @@ func (this *XRXD) Pre(p Price) Price {
 		return p
 	}
 	numerator := (p.Float64()*10 - this.Fenhong) + (this.Peigu * this.Peigujia)
-	denominator := 10 + this.Peigu + this.Songzhuangu
+	denominator := 10 + this.Songzhuangu + this.Peigu
 	if denominator == 0 {
 		return p
 	}
