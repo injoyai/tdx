@@ -296,31 +296,28 @@ func (this *PreKline) FQ(f float64) *Kline {
 
 type PreKlines []*PreKline
 
-func (this PreKlines) FactorMap(startTime time.Time) map[string]*Factor {
+func (this PreKlines) FactorMap() map[string]*Factor {
 	m := make(map[string]*Factor)
-	for _, v := range this.Factor(startTime) {
+	for _, v := range this.Factor() {
 		m[v.Time.Format(time.DateOnly)] = v
 	}
 	return m
 }
 
-func (this PreKlines) Factor(startTime time.Time) []*Factor {
-	ls := make([]*Factor, 0, len(this))
+func (this PreKlines) Factor() []*Factor {
+	ls := make([]*Factor, len(this))
 	sort.Slice(this, func(i, j int) bool {
 		return this[i].Time.Before(this[i].Time)
 	})
 	lastHFQ := 1.0
-	for _, v := range this {
-		if v.Time.Before(startTime) {
-			continue
-		}
+	for i, v := range this {
 		lastHFQ *= v.HFQFactor()
-		ls = append(ls, &Factor{
+		ls[i] = &Factor{
 			Time:    v.Time,
 			Last:    v.Last,
 			PreLast: v.PreLast,
 			HFQ:     lastHFQ,
-		})
+		}
 	}
 
 	sort.Slice(this, func(i, j int) bool {
@@ -330,15 +327,48 @@ func (this PreKlines) Factor(startTime time.Time) []*Factor {
 	lastQFQ := 1.0
 	for i := len(this) - 1; i >= 0; i-- {
 		v := this[i]
-		if v.Time.Before(startTime) {
-			continue
-		}
 		lastHFQ *= v.QFQFactor()
 		ls[i].QFQ = lastQFQ
 	}
 
 	return ls
 }
+
+//func (this PreKlines) Factor(startTime time.Time) []*Factor {
+//	ls := make([]*Factor, 0, len(this))
+//	sort.Slice(this, func(i, j int) bool {
+//		return this[i].Time.Before(this[i].Time)
+//	})
+//	lastHFQ := 1.0
+//	for _, v := range this {
+//		if v.Time.Before(startTime) {
+//			//continue
+//		}
+//		lastHFQ *= v.HFQFactor()
+//		ls = append(ls, &Factor{
+//			Time:    v.Time,
+//			Last:    v.Last,
+//			PreLast: v.PreLast,
+//			HFQ:     lastHFQ,
+//		})
+//	}
+//
+//	sort.Slice(this, func(i, j int) bool {
+//		return this[i].Time.After(this[i].Time)
+//	})
+//
+//	lastQFQ := 1.0
+//	for i := len(this) - 1; i >= 0; i-- {
+//		v := this[i]
+//		if v.Time.Before(startTime) {
+//			//continue
+//		}
+//		lastHFQ *= v.QFQFactor()
+//		ls[i].QFQ = lastQFQ
+//	}
+//
+//	return ls
+//}
 
 type Factor struct {
 	Time    time.Time

@@ -9,6 +9,10 @@ import (
 
 func main() {
 
+	/*
+		sz000001 308.14547
+
+	*/
 	code := "sz000001"
 
 	c, err := tdx.DialDefault()
@@ -29,13 +33,13 @@ func main() {
 
 	ks := xs.Pre(resp.List)
 
-	for _, v := range ks.Factor(resp.List[0].Time) {
+	for _, v := range ks.Factor() {
 		logs.Debug(v)
 	}
 
 	return
 
-	m := ks.FactorMap(resp.List[0].Time)
+	m := ks.FactorMap()
 
 	for i := range ks {
 		ks[i].Kline = ks[i].FQ(m[ks[i].Time.Format(time.DateOnly)].HFQ)
