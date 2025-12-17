@@ -233,6 +233,8 @@ func (this *XRXD) Pre(p Price) Price {
 type XRXDs []*XRXD
 
 func (this XRXDs) Pre(ks []*Kline) PreKlines {
+	return this.Pre2(ks)
+
 	m := make(map[string]*XRXD)
 	for _, v := range this {
 		m[v.Time.Format(time.DateOnly)] = v
@@ -244,6 +246,32 @@ func (this XRXDs) Pre(ks []*Kline) PreKlines {
 			Kline:   k,
 			PreLast: x.Pre(k.Last),
 		}
+	}
+	return ls
+}
+
+func (this XRXDs) Pre2(ks []*Kline) PreKlines {
+	if len(ks) == 0 {
+		return PreKlines{}
+	}
+	//ks[0].Last = ks[0].Open
+
+	m := make(map[string]*Kline)
+	for _, v := range ks {
+		m[v.Time.Format(time.DateOnly)] = v
+	}
+	ls := make(PreKlines, len(this))
+	last := ks[0]
+	for i, v := range this {
+		k := m[v.Time.Format(time.DateOnly)]
+		if k == nil {
+			k = last
+		}
+		ls[i] = &PreKline{
+			Kline:   k,
+			PreLast: v.Pre(k.Last),
+		}
+		last = k
 	}
 	return ls
 }
@@ -327,7 +355,7 @@ func (this PreKlines) Factor() []*Factor {
 	lastQFQ := 1.0
 	for i := len(this) - 1; i >= 0; i-- {
 		v := this[i]
-		lastHFQ *= v.QFQFactor()
+		lastQFQ *= v.QFQFactor()
 		ls[i].QFQ = lastQFQ
 	}
 
