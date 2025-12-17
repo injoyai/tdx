@@ -233,8 +233,6 @@ func (this *XRXD) Pre(p Price) Price {
 type XRXDs []*XRXD
 
 func (this XRXDs) Pre(ks []*Kline) PreKlines {
-	return this.Pre2(ks)
-
 	m := make(map[string]*XRXD)
 	for _, v := range this {
 		m[v.Time.Format(time.DateOnly)] = v
@@ -334,27 +332,41 @@ func (this PreKlines) FactorMap() map[string]*Factor {
 
 func (this PreKlines) Factor() []*Factor {
 	ls := make([]*Factor, len(this))
-	sort.Slice(this, func(i, j int) bool {
-		return this[i].Time.Before(this[i].Time)
+
+	asc := make(PreKlines, len(this))
+	desc := make(PreKlines, len(this))
+	copy(asc, this)
+	copy(desc, this)
+
+	sort.Slice(asc, func(i, j int) bool {
+		return asc[i].Time.Before(asc[j].Time)
+	})
+	sort.Slice(desc, func(i, j int) bool {
+		return desc[i].Time.After(desc[j].Time)
+	})
+
+	sort.Slice(asc, func(i, j int) bool {
+		return asc[i].Time.Before(asc[j].Time)
 	})
 	lastHFQ := 1.0
-	for i, v := range this {
+	for i, v := range asc {
 		lastHFQ *= v.HFQFactor()
 		ls[i] = &Factor{
 			Time:    v.Time,
 			Last:    v.Last,
+			Close:   (v.Close * Price(lastHFQ*1000)) / 1000,
 			PreLast: v.PreLast,
 			HFQ:     lastHFQ,
 		}
 	}
 
-	sort.Slice(this, func(i, j int) bool {
-		return this[i].Time.After(this[i].Time)
+	sort.Slice(desc, func(i, j int) bool {
+		return desc[i].Time.After(desc[j].Time)
 	})
 
 	lastQFQ := 1.0
-	for i := len(this) - 1; i >= 0; i-- {
-		v := this[i]
+	for i := len(desc) - 1; i >= 0; i-- {
+		v := desc[i]
 		lastQFQ *= v.QFQFactor()
 		ls[i].QFQ = lastQFQ
 	}
@@ -402,6 +414,7 @@ type Factor struct {
 	Time    time.Time
 	Last    Price
 	PreLast Price
+	Close   Price
 	QFQ     float64
 	HFQ     float64
 }

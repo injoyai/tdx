@@ -10,10 +10,12 @@ import (
 func main() {
 
 	/*
-		sz000001 308.14547
+		sz000001 307.86
 		sh600887
+		sh603156 3.53956
+		sh600887 91.3258
 	*/
-	code := "sz000001"
+	code := "sh600887"
 
 	c, err := tdx.DialDefault()
 	logs.PanicErr(err)
