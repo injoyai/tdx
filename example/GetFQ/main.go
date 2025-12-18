@@ -15,7 +15,7 @@ func main() {
 		sh603156 3.53956
 		sh600887 91.3258
 	*/
-	code := "sh600887"
+	code := "sz000001"
 
 	c, err := tdx.DialDefault()
 	logs.PanicErr(err)
@@ -33,7 +33,7 @@ func main() {
 	resp, err := c.GetKlineDayAll(code)
 	logs.PanicErr(err)
 
-	ks := xs.Pre2(resp.List)
+	ks := xs.Pre(resp.List)
 
 	for _, v := range ks.Factor() {
 		logs.Debug(v)

@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -232,45 +233,46 @@ func (this *XRXD) Pre(p Price) Price {
 
 type XRXDs []*XRXD
 
+// Pre ks需要按时间从小到大
 func (this XRXDs) Pre(ks []*Kline) PreKlines {
+	if len(ks) == 0 {
+		return PreKlines{}
+	}
+
+	//排序
+	sort.Slice(this, func(i, j int) bool {
+		return this[i].Time.Before(this[j].Time)
+	})
+	sort.Slice(ks, func(i, j int) bool {
+		return ks[i].Time.Before(ks[j].Time)
+	})
+
 	m := make(map[string]*XRXD)
 	for _, v := range this {
 		m[v.Time.Format(time.DateOnly)] = v
 	}
+
 	ls := make(PreKlines, len(ks))
 	for i, k := range ks {
-		x := m[k.Time.Format(time.DateOnly)]
+		key := k.Time.Format(time.DateOnly)
+		x := m[key]
+		delete(m, key)
 		ls[i] = &PreKline{
 			Kline:   k,
 			PreLast: x.Pre(k.Last),
 		}
 	}
-	return ls
-}
 
-func (this XRXDs) Pre2(ks []*Kline) PreKlines {
-	if len(ks) == 0 {
-		return PreKlines{}
+	//不在工作日的数据
+	for _, x := range m {
+		for _, k := range ls {
+			if k.Time.Unix() >= x.Time.Unix() {
+				k.PreLast = x.Pre(k.Last)
+				break
+			}
+		}
 	}
-	//ks[0].Last = ks[0].Open
 
-	m := make(map[string]*Kline)
-	for _, v := range ks {
-		m[v.Time.Format(time.DateOnly)] = v
-	}
-	ls := make(PreKlines, len(this))
-	last := ks[0]
-	for i, v := range this {
-		k := m[v.Time.Format(time.DateOnly)]
-		if k == nil {
-			k = last
-		}
-		ls[i] = &PreKline{
-			Kline:   k,
-			PreLast: v.Pre(k.Last),
-		}
-		last = k
-	}
 	return ls
 }
 
@@ -338,32 +340,19 @@ func (this PreKlines) Factor() []*Factor {
 	copy(asc, this)
 	copy(desc, this)
 
-	sort.Slice(asc, func(i, j int) bool {
-		return asc[i].Time.Before(asc[j].Time)
-	})
-	sort.Slice(desc, func(i, j int) bool {
-		return desc[i].Time.After(desc[j].Time)
-	})
-
-	sort.Slice(asc, func(i, j int) bool {
-		return asc[i].Time.Before(asc[j].Time)
-	})
+	sort.Slice(asc, func(i, j int) bool { return asc[i].Time.Before(asc[j].Time) })
 	lastHFQ := 1.0
 	for i, v := range asc {
 		lastHFQ *= v.HFQFactor()
 		ls[i] = &Factor{
 			Time:    v.Time,
 			Last:    v.Last,
-			Close:   (v.Close * Price(lastHFQ*1000)) / 1000,
 			PreLast: v.PreLast,
 			HFQ:     lastHFQ,
 		}
 	}
 
-	sort.Slice(desc, func(i, j int) bool {
-		return desc[i].Time.After(desc[j].Time)
-	})
-
+	sort.Slice(desc, func(i, j int) bool { return desc[i].Time.After(desc[j].Time) })
 	lastQFQ := 1.0
 	for i := len(desc) - 1; i >= 0; i-- {
 		v := desc[i]
@@ -414,7 +403,10 @@ type Factor struct {
 	Time    time.Time
 	Last    Price
 	PreLast Price
-	Close   Price
 	QFQ     float64
 	HFQ     float64
+}
+
+func (this *Factor) String() string {
+	return fmt.Sprintf("%s  %.3f  %.3f", this.Time.Format(time.DateOnly), this.QFQ, this.HFQ)
 }
