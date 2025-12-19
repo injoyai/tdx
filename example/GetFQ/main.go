@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 )
@@ -10,10 +8,9 @@ import (
 func main() {
 
 	/*
-		sz000001 307.86
-		sh600887
-		sh603156 3.53956
-		sh600887 91.3258
+		sz000001 145.9241463590320800
+		sh603156 3.8565034624713000
+		sh600887 105.5060784942809000
 	*/
 	code := "sz000001"
 
@@ -36,19 +33,10 @@ func main() {
 	ks := xs.Pre(resp.List)
 
 	for _, v := range ks.Factor() {
+		if v.Last == v.PreLast {
+			//continue
+		}
 		logs.Debug(v)
-	}
-
-	return
-
-	m := ks.FactorMap()
-
-	for i := range ks {
-		ks[i].Kline = ks[i].FQ(m[ks[i].Time.Format(time.DateOnly)].HFQ)
-	}
-
-	for _, v := range ks {
-		logs.Debug(v.Kline)
 	}
 
 }

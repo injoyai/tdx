@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -288,38 +287,11 @@ func (this *PreKline) QFQFactor() float64 {
 	return this.PreLast.Float64() / this.Last.Float64()
 }
 
-func (this *PreKline) QFQ() *Kline {
-	f := this.QFQFactor()
-	return this.FQ(f)
-}
-
 func (this *PreKline) HFQFactor() float64 {
 	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
 		return 1
 	}
 	return this.Last.Float64() / this.PreLast.Float64()
-}
-
-func (this *PreKline) HFQ() *Kline {
-	f := this.HFQFactor()
-	return this.FQ(f)
-}
-
-func (this *PreKline) FQ(f float64) *Kline {
-	base := Price(100)
-	return &Kline{
-		Last:      (this.Last * Price(f*float64(base))) / base,
-		Open:      (this.Open * Price(f*float64(base))) / base,
-		High:      (this.High * Price(f*float64(base))) / base,
-		Low:       (this.Low * Price(f*float64(base))) / base,
-		Close:     (this.Close * Price(f*float64(base))) / base,
-		Order:     this.Order,
-		Volume:    this.Volume,
-		Amount:    this.Amount,
-		Time:      this.Time,
-		UpCount:   this.UpCount,
-		DownCount: this.DownCount,
-	}
 }
 
 type PreKlines []*PreKline
@@ -335,14 +307,10 @@ func (this PreKlines) FactorMap() map[string]*Factor {
 func (this PreKlines) Factor() []*Factor {
 	ls := make([]*Factor, len(this))
 
-	asc := make(PreKlines, len(this))
-	desc := make(PreKlines, len(this))
-	copy(asc, this)
-	copy(desc, this)
+	sort.Slice(this, func(i, j int) bool { return this[i].Time.Before(this[j].Time) })
 
-	sort.Slice(asc, func(i, j int) bool { return asc[i].Time.Before(asc[j].Time) })
 	lastHFQ := 1.0
-	for i, v := range asc {
+	for i, v := range this {
 		lastHFQ *= v.HFQFactor()
 		ls[i] = &Factor{
 			Time:    v.Time,
@@ -352,52 +320,16 @@ func (this PreKlines) Factor() []*Factor {
 		}
 	}
 
-	sort.Slice(desc, func(i, j int) bool { return desc[i].Time.After(desc[j].Time) })
 	lastQFQ := 1.0
-	for i := len(desc) - 1; i >= 0; i-- {
-		v := desc[i]
+	ls[len(this)-1].QFQ = lastQFQ
+	for i := len(this) - 1; i > 0; i-- {
+		v := this[i]
 		lastQFQ *= v.QFQFactor()
-		ls[i].QFQ = lastQFQ
+		ls[i-1].QFQ = lastQFQ
 	}
 
 	return ls
 }
-
-//func (this PreKlines) Factor(startTime time.Time) []*Factor {
-//	ls := make([]*Factor, 0, len(this))
-//	sort.Slice(this, func(i, j int) bool {
-//		return this[i].Time.Before(this[i].Time)
-//	})
-//	lastHFQ := 1.0
-//	for _, v := range this {
-//		if v.Time.Before(startTime) {
-//			//continue
-//		}
-//		lastHFQ *= v.HFQFactor()
-//		ls = append(ls, &Factor{
-//			Time:    v.Time,
-//			Last:    v.Last,
-//			PreLast: v.PreLast,
-//			HFQ:     lastHFQ,
-//		})
-//	}
-//
-//	sort.Slice(this, func(i, j int) bool {
-//		return this[i].Time.After(this[i].Time)
-//	})
-//
-//	lastQFQ := 1.0
-//	for i := len(this) - 1; i >= 0; i-- {
-//		v := this[i]
-//		if v.Time.Before(startTime) {
-//			//continue
-//		}
-//		lastHFQ *= v.QFQFactor()
-//		ls[i].QFQ = lastQFQ
-//	}
-//
-//	return ls
-//}
 
 type Factor struct {
 	Time    time.Time
@@ -405,8 +337,4 @@ type Factor struct {
 	PreLast Price
 	QFQ     float64
 	HFQ     float64
-}
-
-func (this *Factor) String() string {
-	return fmt.Sprintf("%s  %.3f  %.3f", this.Time.Format(time.DateOnly), this.QFQ, this.HFQ)
 }
