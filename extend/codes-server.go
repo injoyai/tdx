@@ -15,12 +15,12 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func ListenCodesAndEquityHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.GbbqOption) error {
+func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.GbbqOption) error {
 	code, err := tdx.NewCodes(codesOption...)
 	if err != nil {
 		return nil
 	}
-	equity, err := tdx.NewGbbq(equityOption...)
+	gbbq, err := tdx.NewGbbq(equityOption...)
 	if err != nil {
 		return nil
 	}
@@ -31,7 +31,7 @@ func ListenCodesAndEquityHTTP(port int, codesOption []tdx.CodesOption, equityOpt
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.RequestURI {
-		case "/all":
+		case "/codes":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
 			ls = append(ls, code.GetIndexes()...)
@@ -42,8 +42,8 @@ func ListenCodesAndEquityHTTP(port int, codesOption []tdx.CodesOption, equityOpt
 			succ(w, code.GetETFs())
 		case "/indexes":
 			succ(w, code.GetIndexes())
-		case "/equities":
-			succ(w, equity.All())
+		case "/gbbqs":
+			succ(w, gbbq.All())
 		default:
 			http.NotFound(w, r)
 		}
@@ -62,7 +62,7 @@ func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.RequestURI {
-		case "/all":
+		case "/codes":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
 			ls = append(ls, code.GetIndexes()...)
@@ -101,7 +101,7 @@ type CodesHTTP struct {
 }
 
 func (this *CodesHTTP) Update() error {
-	ls, err := this.getList("/all")
+	ls, err := this.getList("/codes")
 	if err != nil {
 		return err
 	}
@@ -127,8 +127,8 @@ func (this *CodesHTTP) getList(path string) (tdx.CodeModels, error) {
 	return ls, err
 }
 
-func DialEquityHTTP(address string, spec ...string) (e *EquityHTTP, err error) {
-	e = &EquityHTTP{address: address, m: make(map[string][]*protocol.Gbbq)}
+func DialGbbqHTTP(address string, spec ...string) (e *GbbqHTTP, err error) {
+	e = &GbbqHTTP{address: address, m: make(map[string][]*protocol.Gbbq)}
 	cr := cron.New(cron.WithSeconds())
 	_spec := conv.Default("0 20 9 * * *", spec...)
 	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(e.Update()) })
@@ -143,16 +143,16 @@ func DialEquityHTTP(address string, spec ...string) (e *EquityHTTP, err error) {
 	return e, nil
 }
 
-var _ tdx.IGbbq = &EquityHTTP{}
+var _ tdx.IGbbq = &GbbqHTTP{}
 
-type EquityHTTP struct {
+type GbbqHTTP struct {
 	address string
 	m       map[string][]*protocol.Gbbq
 	mu      sync.RWMutex
 }
 
-func (this *EquityHTTP) Update() error {
-	m, err := this.get("/equities")
+func (this *GbbqHTTP) Update() error {
+	m, err := this.get("/gbbqs")
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func (this *EquityHTTP) Update() error {
 	return nil
 }
 
-func (this *EquityHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
+func (this *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	if len(code) == 8 {
 		code = code[2:]
 	}
@@ -177,7 +177,7 @@ func (this *EquityHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	return nil
 }
 
-func (this *EquityHTTP) Turnover(code string, t time.Time, volume int64) float64 {
+func (this *GbbqHTTP) Turnover(code string, t time.Time, volume int64) float64 {
 	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0
@@ -185,7 +185,25 @@ func (this *EquityHTTP) Turnover(code string, t time.Time, volume int64) float64
 	return x.Turnover(volume)
 }
 
-func (this *EquityHTTP) get(path string) (map[string][]*protocol.Gbbq, error) {
+func (this *GbbqHTTP) GetXRXDs(code string) protocol.XRXDs {
+	code = protocol.AddPrefix(code)
+	this.mu.RLock()
+	ls := this.m[code]
+	this.mu.RUnlock()
+	res := protocol.XRXDs{}
+	for _, v := range ls {
+		if v.IsXRXD() {
+			res = append(res, v.XRXD())
+		}
+	}
+	return res
+}
+
+func (this *GbbqHTTP) GetFactors(code string, ks protocol.Klines) []*protocol.Factor {
+	return this.GetXRXDs(code).Pre(ks).Factors()
+}
+
+func (this *GbbqHTTP) get(path string) (map[string][]*protocol.Gbbq, error) {
 	resp, err := http.DefaultClient.Get(this.address + path)
 	if err != nil {
 		return nil, err

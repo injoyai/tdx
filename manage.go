@@ -31,7 +31,10 @@ func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
 
 func NewManage(op ...Option) (m *Manage, err error) {
 
-	m = &Manage{poolClients: DefaultClients}
+	m = &Manage{
+		poolClients: DefaultClients,
+		Gbbq:        &Gbbq{}, //默认不初始化股本变迁数据
+	}
 
 	for _, v := range op {
 		if v != nil {
