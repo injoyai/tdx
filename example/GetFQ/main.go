@@ -32,11 +32,10 @@ func main() {
 
 	ks := xs.Pre(resp.List)
 
-	for _, v := range ks.Factor() {
+	for _, v := range ks.Factors() {
 		if v.Last == v.PreLast {
 			//continue
 		}
 		logs.Debug(v)
 	}
-
 }

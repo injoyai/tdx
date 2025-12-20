@@ -400,12 +400,12 @@ func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	return result.(*protocol.GbbqResp), nil
 }
 
-func (this *Client) GetGbbqAll() (protocol.Gbbqs, error) {
+func (this *Client) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	codes, err := this.GetStockCodeAll()
 	if err != nil {
 		return nil, err
 	}
-	gbbqs := protocol.Gbbqs{}
+	gbbqs := map[string][]*protocol.Gbbq{}
 	var resp *protocol.GbbqResp
 	for _, code := range codes {
 		for i := 0; i == 0 || i < DefaultRetry; i++ {

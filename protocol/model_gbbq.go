@@ -163,33 +163,6 @@ func (this *Gbbq) XRXD() *XRXD {
 	}
 }
 
-type Gbbqs map[string][]*Gbbq
-
-func (this Gbbqs) GetEquities() map[string][]*Equity {
-	m := map[string][]*Equity{}
-	for k, v := range this {
-		for _, vv := range v {
-			if vv.IsEquity() {
-				m[k] = append(m[k], vv.Equity())
-			}
-		}
-
-	}
-	return m
-}
-
-func (this Gbbqs) GetXRXDs() map[string][]*XRXD {
-	m := map[string][]*XRXD{}
-	for k, v := range this {
-		for _, vv := range v {
-			if vv.IsXRXD() {
-				m[k] = append(m[k], vv.XRXD())
-			}
-		}
-	}
-	return m
-}
-
 type Equity struct {
 	Category int       //2, 3, 5, 7, 8, 9, 10
 	Code     string    //例sh600000
@@ -296,15 +269,7 @@ func (this *PreKline) HFQFactor() float64 {
 
 type PreKlines []*PreKline
 
-func (this PreKlines) FactorMap() map[string]*Factor {
-	m := make(map[string]*Factor)
-	for _, v := range this.Factor() {
-		m[v.Time.Format(time.DateOnly)] = v
-	}
-	return m
-}
-
-func (this PreKlines) Factor() []*Factor {
+func (this PreKlines) Factors() []*Factor {
 	ls := make([]*Factor, len(this))
 
 	sort.Slice(this, func(i, j int) bool { return this[i].Time.Before(this[j].Time) })

@@ -14,52 +14,54 @@ import (
 type IGbbq interface {
 	GetEquity(code string, t time.Time) *protocol.Equity
 	Turnover(code string, t time.Time, volume int64) float64
+	GetXRXDs(code string) protocol.XRXDs
+	GetFactors(code string, ks protocol.Klines) []*protocol.Factor
 }
 
 type (
-	GbbqOption func(e *Equity)
+	GbbqOption func(e *Gbbq)
 
 	DialGbbqFunc func(c *Client) (IGbbq, error)
 )
 
 func WithGbbqRetry(retry int) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.retry = retry
 	}
 }
 
 func WithGbbqSpec(spec string) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.spec = spec
 	}
 }
 
 func WithGbbqDB(db *xorms.Engine) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.db = db
 	}
 }
 
 func WithGbbqDialDB(dial func() (*xorms.Engine, error)) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.dialDB = dial
 	}
 }
 
 func WithGbbqClient(c *Client) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.c = c
 	}
 }
 
 func WithGbbqDialClient(dial DialClientFunc) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		s.dialClient = dial
 	}
 }
 
 func WithGbbqOption(op ...GbbqOption) GbbqOption {
-	return func(s *Equity) {
+	return func(s *Gbbq) {
 		for _, o := range op {
 			if o != nil {
 				o(s)
@@ -68,9 +70,9 @@ func WithGbbqOption(op ...GbbqOption) GbbqOption {
 	}
 }
 
-func NewGbbq(op ...GbbqOption) (*Equity, error) {
-	s := &Equity{
-		spec:      DefaultEquitySpec,
+func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
+	s := &Gbbq{
+		spec:      DefaultGbbqSpec,
 		retry:     DefaultRetry,
 		updateKey: "gbbq",
 		dialDB:    nil,
@@ -118,7 +120,7 @@ func NewGbbq(op ...GbbqOption) (*Equity, error) {
 	return s, err
 }
 
-type Equity struct {
+type Gbbq struct {
 	spec       string
 	retry      int
 	updateKey  string
@@ -132,7 +134,7 @@ type Equity struct {
 	mu      sync.RWMutex
 }
 
-func (this *Equity) All() map[string][]*protocol.Gbbq {
+func (this *Gbbq) All() map[string][]*protocol.Gbbq {
 	m := make(map[string][]*protocol.Gbbq)
 	this.mu.RLock()
 	defer this.mu.RUnlock()
@@ -142,7 +144,7 @@ func (this *Equity) All() map[string][]*protocol.Gbbq {
 	return m
 }
 
-func (this *Equity) GetEquity(code string, t time.Time) *protocol.Equity {
+func (this *Gbbq) GetEquity(code string, t time.Time) *protocol.Equity {
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
@@ -155,7 +157,7 @@ func (this *Equity) GetEquity(code string, t time.Time) *protocol.Equity {
 	return nil
 }
 
-func (this *Equity) GetXRXDs(code string) protocol.XRXDs {
+func (this *Gbbq) GetXRXDs(code string) protocol.XRXDs {
 	code = protocol.AddPrefix(code)
 	this.mu.RLock()
 	ls := this.m[code]
@@ -169,7 +171,11 @@ func (this *Equity) GetXRXDs(code string) protocol.XRXDs {
 	return res
 }
 
-func (this *Equity) Turnover(code string, t time.Time, volume int64) float64 {
+func (this *Gbbq) GetFactors(code string, ks protocol.Klines) []*protocol.Factor {
+	return this.GetXRXDs(code).Pre(ks).Factors()
+}
+
+func (this *Gbbq) Turnover(code string, t time.Time, volume int64) float64 {
 	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0
@@ -177,7 +183,7 @@ func (this *Equity) Turnover(code string, t time.Time, volume int64) float64 {
 	return x.Turnover(volume)
 }
 
-func (this *Equity) Update() error {
+func (this *Gbbq) Update() error {
 	old, err := this.loading()
 	if err != nil {
 		return err
@@ -205,7 +211,7 @@ func (this *Equity) Update() error {
 	return nil
 }
 
-func (this *Equity) sort(m map[string][]*protocol.Gbbq) {
+func (this *Gbbq) sort(m map[string][]*protocol.Gbbq) {
 	for _, v := range m {
 		sort.Slice(v, func(i, j int) bool {
 			return v[i].Time.Before(v[j].Time)
@@ -213,7 +219,7 @@ func (this *Equity) sort(m map[string][]*protocol.Gbbq) {
 	}
 }
 
-func (this *Equity) loading() (map[string][]*protocol.Gbbq, error) {
+func (this *Gbbq) loading() (map[string][]*protocol.Gbbq, error) {
 	list := []*protocol.Gbbq(nil)
 	if err := this.db.Asc("Time").Find(&list); err != nil {
 		return nil, err
@@ -225,13 +231,11 @@ func (this *Equity) loading() (map[string][]*protocol.Gbbq, error) {
 	return m, nil
 }
 
-func (this *Equity) update() (map[string][]*protocol.Gbbq, error) {
+func (this *Gbbq) update() (map[string][]*protocol.Gbbq, error) {
 	gbbqs, err := this.c.GetGbbqAll()
 	if err != nil {
 		return nil, err
 	}
-
-	//m := gbbqs.GetEquities()
 	err = this.db.SessionFunc(func(session *xorm.Session) error {
 		if _, err = session.Where("1=1").Delete(new(protocol.Gbbq)); err != nil {
 			return err

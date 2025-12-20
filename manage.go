@@ -14,7 +14,7 @@ const (
 	DefaultDatabaseDir = "./data/database"
 	DefaultCodesSpec   = "0 1 9 * * *"
 	DefaultWorkdaySpec = "0 3 9 * * *"
-	DefaultEquitySpec  = "0 5 9 * * *"
+	DefaultGbbqSpec    = "0 5 9 * * *"
 )
 
 func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
