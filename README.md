@@ -1,13 +1,12 @@
-### 📈 说明
+### 📈 通达信股票行情API
 
 * 参考 [`https://github.com/bensema/gotdx`](https://github.com/bensema/gotdx)
 * 参考 [`https://github.com/mootdx/mootdx`](https://github.com/mootdx/mootdx)
 * 参考 [`https://github.com/jing2uo/tdx2db`](https://github.com/jing2uo/tdx2db)
+* **Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)**
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
-**Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)**
 
 ### 🚀 如何使用
 
@@ -104,7 +103,7 @@ func main() {
 
 
 
-## ⚠️ 免责声明
+### ⚠️ 免责声明
 
 1. 本项目仅供学习和研究使用
 2. 数据来源于通达信公共服务器，可能存在延迟
@@ -112,7 +111,7 @@ func main() {
 
 ---
 
-## 📄 许可证
+### 📄 许可证
 
 MIT License - 详见 [LICENSE](LICENSE)
 
