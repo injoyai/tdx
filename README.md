@@ -1,10 +1,15 @@
-### 说明
+### 📈 说明
 
 * 参考 [`https://github.com/bensema/gotdx`](https://github.com/bensema/gotdx)
 * 参考 [`https://github.com/mootdx/mootdx`](https://github.com/mootdx/mootdx)
 * 参考 [`https://github.com/jing2uo/tdx2db`](https://github.com/jing2uo/tdx2db)
 
-### 如何使用
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+**Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)，请支持原作者！**
+
+### 🚀 如何使用
 
 ```go
 package main
@@ -99,3 +104,18 @@ func main() {
 
 
 
+## ⚠️ 免责声明
+
+1. 本项目仅供学习和研究使用
+2. 数据来源于通达信公共服务器，可能存在延迟
+3. 不构成任何投资建议，投资有风险
+
+---
+
+## 📄 许可证
+
+MIT License - 详见 [LICENSE](LICENSE)
+
+---
+
+**如果这个项目对您有帮助，请点个 Star ⭐ 支持一下！**
