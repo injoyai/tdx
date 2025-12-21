@@ -3,7 +3,7 @@
 * 参考 [`https://github.com/bensema/gotdx`](https://github.com/bensema/gotdx)
 * 参考 [`https://github.com/mootdx/mootdx`](https://github.com/mootdx/mootdx)
 * 参考 [`https://github.com/jing2uo/tdx2db`](https://github.com/jing2uo/tdx2db)
-* **Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)**
+* **推荐Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)**
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
