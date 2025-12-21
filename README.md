@@ -7,7 +7,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)，请支持原作者！**
+**Web可视化界面 + RESTful API [tdx-api](https://github.com/oficcejo/tdx-api)**
 
 ### 🚀 如何使用
 
