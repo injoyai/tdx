@@ -177,7 +177,7 @@ func (this *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	return nil
 }
 
-func (this *GbbqHTTP) Turnover(code string, t time.Time, volume int64) float64 {
+func (this *GbbqHTTP) GetTurnover(code string, t time.Time, volume int64) float64 {
 	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0

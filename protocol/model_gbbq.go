@@ -297,9 +297,9 @@ func (this PreKlines) Factors() []*Factor {
 }
 
 type Factor struct {
-	Time    time.Time
-	Last    Price
-	PreLast Price
-	QFQ     float64
-	HFQ     float64
+	Time    time.Time //日期
+	Last    Price     //昨收价
+	PreLast Price     //除权除息后昨收价
+	QFQ     float64   //前复权因子
+	HFQ     float64   //后复权因子
 }

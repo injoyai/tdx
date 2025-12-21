@@ -13,7 +13,7 @@ import (
 
 type IGbbq interface {
 	GetEquity(code string, t time.Time) *protocol.Equity
-	Turnover(code string, t time.Time, volume int64) float64
+	GetTurnover(code string, t time.Time, volume int64) float64
 	GetXRXDs(code string) protocol.XRXDs
 	GetFactors(code string, ks protocol.Klines) []*protocol.Factor
 }
@@ -148,7 +148,8 @@ func (this *Gbbq) GetEquity(code string, t time.Time) *protocol.Equity {
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
-	for _, v := range ls {
+	for i := len(ls) - 1; i >= 0; i-- {
+		v := ls[i]
 		//读取过来的是15:00,但是今天就生效了,把小时归零,方便判断
 		if v.IsEquity() && t.Unix() >= IntegerDay(v.Time).Unix() {
 			return v.Equity()
@@ -175,7 +176,7 @@ func (this *Gbbq) GetFactors(code string, ks protocol.Klines) []*protocol.Factor
 	return this.GetXRXDs(code).Pre(ks).Factors()
 }
 
-func (this *Gbbq) Turnover(code string, t time.Time, volume int64) float64 {
+func (this *Gbbq) GetTurnover(code string, t time.Time, volume int64) float64 {
 	x := this.GetEquity(code, t)
 	if x == nil {
 		return 0

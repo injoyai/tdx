@@ -19,6 +19,21 @@ type (
 	DialCodesFunc func(c *Client) (ICodes, error)
 )
 
+type ICodes interface {
+	Iter() iter.Seq2[string, *CodeModel]
+	Get(code string) *CodeModel
+	GetName(code string) string
+	GetStocks(limit ...int) CodeModels
+	GetStockCodes(limit ...int) []string
+	GetETFs(limit ...int) CodeModels
+	GetETFCodes(limit ...int) []string
+	GetIndexes(limit ...int) CodeModels
+	GetIndexCodes(limit ...int) []string
+}
+
+// DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
+var DefaultCodes ICodes
+
 func WithCodesDB(db *xorms.Engine) CodesOption {
 	return func(c *Codes) {
 		c.db = db

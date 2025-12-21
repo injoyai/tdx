@@ -9,7 +9,7 @@ import (
 
 func main() {
 
-	code := "sh688326"
+	code := "sh600138"
 
 	c, err := tdx.DialDefault()
 	logs.PanicErr(err)
@@ -20,7 +20,9 @@ func main() {
 	resp, err := c.GetKlineDay(code, 0, 1)
 	logs.PanicErr(err)
 
-	t := e.Turnover(code, time.Now(), resp.List[0].Volume*100)
+	eq := e.GetEquity(code, time.Now())
 
-	logs.Debug("换手率:", t)
+	logs.Debugf("总股本: %.3f  流通股本: %.3f\n", eq.Total, eq.Float)
+
+	logs.Debug("换手率:", e.GetTurnover(code, time.Now(), resp.List[0].Volume*100))
 }
