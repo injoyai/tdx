@@ -8,6 +8,8 @@
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+---
+
 ### 🚀 如何使用
 
 ```go
@@ -37,6 +39,8 @@ func main() {
 
 ```
 
+---
+
 ### 开发进度(一期完成)
 
 * 基本信息(5档报价)
@@ -47,6 +51,7 @@ func main() {
   ![](docs/plan20241028-2.png)
 * K线
   ![](docs/plan20241029.png)
+
 
 ### 数据校对
 
@@ -59,7 +64,8 @@ func main() {
 * 校对分时成交
   ![](docs/check_trade.png)
 
-#### 服务器地址(端口7709)
+
+### 服务器地址(端口7709)
 
 | IP              | 测试时间       | 所属地区 | 运营商 |
 |-----------------|------------|------|-----|
@@ -101,13 +107,11 @@ func main() {
 |                 |            |      |     |
 | 119.97.185.59   | 2025-11-27 | 武汉   | 电信  |
 
-
+---
 
 ### ⚠️ 免责声明
 
 1. 本项目仅供学习和研究使用
-2. 数据来源于通达信公共服务器，可能存在延迟
-3. 不构成任何投资建议，投资有风险
 
 ---
 
