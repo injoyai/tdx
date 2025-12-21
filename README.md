@@ -8,8 +8,6 @@
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
----
-
 ### 🚀 如何使用
 
 ```go
@@ -38,8 +36,6 @@ func main() {
 }
 
 ```
-
----
 
 ### 开发进度(一期完成)
 
@@ -107,18 +103,14 @@ func main() {
 |                 |            |      |     |
 | 119.97.185.59   | 2025-11-27 | 武汉   | 电信  |
 
----
 
 ### ⚠️ 免责声明
 
 1. 本项目仅供学习和研究使用
 
----
-
 ### 📄 许可证
 
 MIT License - 详见 [LICENSE](LICENSE)
 
----
 
 **如果这个项目对您有帮助，请点个 Star ⭐ 支持一下！**
