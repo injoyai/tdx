@@ -31,7 +31,7 @@ func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOptio
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.RequestURI {
-		case "/codes":
+		case "/codes", "/all":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
 			ls = append(ls, code.GetIndexes()...)
@@ -62,7 +62,7 @@ func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.RequestURI {
-		case "/codes":
+		case "/codes", "/all":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
 			ls = append(ls, code.GetIndexes()...)

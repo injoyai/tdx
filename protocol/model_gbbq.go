@@ -156,10 +156,10 @@ func (this *Gbbq) XRXD() *XRXD {
 	return &XRXD{
 		Code:        this.Code,
 		Time:        this.Time,
-		Fenhong:     float64(int64(this.C1*base+0.5)) / base,
-		Peigujia:    float64(int64(this.C2*base+0.5)) / base,
-		Songzhuangu: float64(int64(this.C3*base+0.5)) / base,
-		Peigu:       float64(int64(this.C4*base+0.5)) / base,
+		Fenhong:     math.Round(this.C1*base) / base,
+		Peigujia:    math.Round(this.C2*base) / base,
+		Songzhuangu: math.Round(this.C3*base) / base,
+		Peigu:       math.Round(this.C4*base) / base,
 	}
 }
 
