@@ -14,7 +14,7 @@ type TradeResp struct {
 	List  Trades
 }
 
-// Trade 分时成交，todo 时间没有到秒，客户端上也没有,东方客户端能显示秒
+// Trade 分时成交, 时间没有到秒，客户端上也没有,东方客户端能显示秒
 type Trade struct {
 	Time   time.Time //时间, 09:30
 	Price  Price     //价格
@@ -180,6 +180,7 @@ func (this Trades) Kline(t time.Time, last Price) *Kline {
 
 // kline1 生成一分钟k线,一天
 func (this Trades) klinesForDay(date time.Time) Klines {
+	_929 := 569  //9:25 的分钟
 	_930 := 570  //9:30 的分钟
 	_1130 := 690 //11:30 的分钟
 	_1300 := 780 //13:00 的分钟
@@ -187,7 +188,7 @@ func (this Trades) klinesForDay(date time.Time) Klines {
 	keys := []int(nil)
 	//早上
 	m := map[int]Trades{}
-	for i := 1; i <= 120; i++ {
+	for i := 0; i <= 120; i++ {
 		keys = append(keys, _930+i)
 		m[_930+i] = []*Trade{}
 	}
@@ -207,7 +208,7 @@ func (this Trades) klinesForDay(date time.Time) Klines {
 	//分组,按
 	for _, v := range this {
 		ms := minutes(v.Time)
-		t := conv.Select(ms < _930, _930, ms)
+		t := conv.Select(ms < _929, _929, ms)
 		t++
 		t = conv.Select(t > _1130 && t <= _1300, _1130, t)
 		t = conv.Select(t > _1500, _1500, t)
