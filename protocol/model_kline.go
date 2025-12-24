@@ -410,6 +410,8 @@ func (ks Klines) Merge241(n int) Klines {
 		}
 	}
 
+	result.Sort()
+
 	return result
 }
 
