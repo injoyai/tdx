@@ -749,6 +749,62 @@ func (this *Client) GetKlineMinuteUntil(code string, f func(k *protocol.Kline) b
 	return this.GetKlineUntil(protocol.TypeKlineMinute, code, f)
 }
 
+func (this *Client) GetKlineMinute241Until(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
+	resp, err := this.GetKlineMinuteUntil(code, f)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.List) == 0 {
+		return resp, nil
+	}
+	ks := protocol.Klines{}
+	for _, v := range resp.List {
+		if v.Time.Format(time.TimeOnly) == "09:31:00" {
+			var tr *protocol.TradeResp
+			if v.Time.Format(time.DateOnly) == time.Now().Format(time.DateOnly) {
+				tr, err = this.GetTradeAll(code)
+			} else {
+				tr, err = this.GetHistoryTradeDay(v.Time.Format("20060102"), code)
+			}
+			if err != nil {
+				return nil, err
+			}
+			_925 := new(protocol.Trade)
+			if len(tr.List) > 0 && tr.List[0].Time.Format(time.TimeOnly) < "09:30:00" {
+				_925 = tr.List[0]
+			}
+			ks = append(ks, &protocol.Kline{
+				Last:   v.Last,
+				Open:   _925.Price,
+				High:   _925.Price,
+				Low:    _925.Price,
+				Close:  _925.Price,
+				Order:  _925.Number,
+				Volume: int64(_925.Volume),
+				Amount: _925.Amount(),
+				Time:   time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 9, 30, 0, 0, v.Time.Location()),
+			})
+			v.Last = _925.Price
+			v.Volume -= int64(_925.Volume)
+			if v.Volume < 0 {
+				v.Volume = 0
+			}
+			v.Amount -= _925.Amount()
+			if v.Amount < 0 {
+				v.Amount = 0
+			}
+			v.Order -= _925.Number
+			if v.Order < 0 {
+				v.Order = 0
+			}
+		}
+		ks = append(ks, v)
+	}
+	resp.List = ks
+	resp.Count = uint16(len(ks))
+	return resp, nil
+}
+
 // GetKline5Minute 获取五分钟k线数据
 func (this *Client) GetKline5Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
 	return this.GetKline(protocol.TypeKline5Minute, code, start, count)
