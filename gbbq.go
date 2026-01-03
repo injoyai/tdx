@@ -172,6 +172,20 @@ func (this *Gbbq) GetXRXDs(code string) protocol.XRXDs {
 	return res
 }
 
+func (this *Gbbq) GetXRXDMap(code string) map[string]*protocol.XRXD {
+	code = protocol.AddPrefix(code)
+	this.mu.RLock()
+	ls := this.m[code]
+	this.mu.RUnlock()
+	res := map[string]*protocol.XRXD{}
+	for _, v := range ls {
+		if v.IsXRXD() {
+			res[v.Time.Format(time.DateOnly)] = v.XRXD()
+		}
+	}
+	return res
+}
+
 func (this *Gbbq) GetFactors(code string, ks protocol.Klines) []*protocol.Factor {
 	return this.GetXRXDs(code).Pre(ks).Factors()
 }
