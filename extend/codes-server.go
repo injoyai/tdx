@@ -163,9 +163,7 @@ func (this *GbbqHTTP) Update() error {
 }
 
 func (this *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
-	if len(code) == 8 {
-		code = code[2:]
-	}
+	code = protocol.AddPrefix(code)
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
