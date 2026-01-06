@@ -167,8 +167,9 @@ func (this *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
-	for _, v := range ls {
-		if v.IsEquity() && v.IsEquity() && t.Unix() >= v.Time.Unix() {
+	for i := len(ls) - 1; i >= 0; i-- {
+		v := ls[i]
+		if v.IsEquity() && t.Unix() >= v.Time.Unix() {
 			return v.Equity()
 		}
 	}

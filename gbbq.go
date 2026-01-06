@@ -145,6 +145,7 @@ func (this *Gbbq) All() map[string][]*protocol.Gbbq {
 }
 
 func (this *Gbbq) GetEquity(code string, t time.Time) *protocol.Equity {
+	code = protocol.AddPrefix(code)
 	this.mu.RLock()
 	ls := this.m[code]
 	this.mu.RUnlock()
