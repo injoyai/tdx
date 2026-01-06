@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -35,6 +36,13 @@ func Reverse(bs []byte) []byte {
 // Uint32 字节通过小端方式转为uint32
 func Uint32(bs []byte) uint32 {
 	return conv.Uint32(Reverse(bs))
+}
+
+// Float32 字节通过小端方式转为float32
+func Float32(bs []byte) float32 {
+	var f float32
+	binary.Read(bytes.NewBuffer(bs), binary.LittleEndian, &f)
+	return f
 }
 
 // Uint16 字节通过小端方式转为uint16

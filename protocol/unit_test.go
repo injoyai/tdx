@@ -23,3 +23,7 @@ func Test_getVolume(t *testing.T) {
 	t.Log(getVolume2(1237966432))
 
 }
+
+func TestFloat32(t *testing.T) {
+	t.Log(Float32([]byte{0x00, 0x00, 0x20, 0x41})) //10
+}

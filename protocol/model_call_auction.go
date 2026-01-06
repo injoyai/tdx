@@ -78,15 +78,16 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 		_minute := int(n % 60)
 
 		a := &CallAuction{
-			Price:     Price(Uint32(bs[4:6])),
+			Price:     Price(Float32(bs[2:6]) * 1000),
 			Match:     Uint32(bs[6:8]),
-			Unmatched: Uint32(bs[10:12]),
+			Unmatched: int16(Uint16(bs[10:12])),
+			Flag:      1,
 		}
 
-		_ = bs[2:6]
-		_ = bs[6:10]
-		_ = bs[10:14]
-		_ = bs[14]
+		if a.Unmatched < 0 {
+			a.Flag = -1
+			a.Unmatched = -a.Unmatched
+		}
 
 		_second := int(bs[15])
 
@@ -108,5 +109,6 @@ type CallAuction struct {
 	Time      time.Time //时间
 	Price     Price     //价格
 	Match     uint32    //匹配量
-	Unmatched uint32    //未匹配量
+	Unmatched int16     //未匹配量
+	Flag      int8      //标志
 }

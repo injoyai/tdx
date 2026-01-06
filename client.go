@@ -384,7 +384,7 @@ func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, erro
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.CallAuctionResp), errors.New("未实现")
+	return result.(*protocol.CallAuctionResp), nil
 }
 
 func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
