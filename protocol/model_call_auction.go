@@ -79,8 +79,8 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 
 		a := &CallAuction{
 			Price:     Price(Float32(bs[2:6]) * 1000),
-			Match:     Uint32(bs[6:8]),
-			Unmatched: int16(Uint16(bs[10:12])),
+			Match:     int64(Uint32(bs[6:8])),
+			Unmatched: int64(int16(Uint16(bs[10:12]))),
 			Flag:      1,
 		}
 
@@ -108,7 +108,7 @@ type CallAuctionResp struct {
 type CallAuction struct {
 	Time      time.Time //时间
 	Price     Price     //价格
-	Match     uint32    //匹配量
-	Unmatched int16     //未匹配量
+	Match     int64     //匹配量
+	Unmatched int64     //未匹配量
 	Flag      int8      //标志,1表示未匹配量是买单，-1表示未匹配量是卖单
 }
