@@ -110,5 +110,5 @@ type CallAuction struct {
 	Price     Price     //价格
 	Match     uint32    //匹配量
 	Unmatched int16     //未匹配量
-	Flag      int8      //标志
+	Flag      int8      //标志,1表示未匹配量是买单，-1表示未匹配量是卖单
 }
