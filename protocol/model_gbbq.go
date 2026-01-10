@@ -270,6 +270,10 @@ func (this *PreKline) HFQFactor() float64 {
 type PreKlines []*PreKline
 
 func (this PreKlines) Factors() []*Factor {
+	if len(this) == 0 {
+		return []*Factor(nil)
+	}
+
 	ls := make([]*Factor, len(this))
 
 	sort.Slice(this, func(i, j int) bool { return this[i].Time.Before(this[j].Time) })
