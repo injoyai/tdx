@@ -2,13 +2,14 @@ package tdx
 
 import (
 	"context"
-	"github.com/injoyai/ios"
-	"github.com/injoyai/ios/module/tcp"
-	"github.com/injoyai/logs"
 	"math/rand"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/injoyai/ios"
+	"github.com/injoyai/ios/module/tcp"
+	"github.com/injoyai/logs"
 )
 
 func NewTCPDial(addr string) ios.DialFunc {

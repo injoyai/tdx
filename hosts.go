@@ -1,12 +1,13 @@
 package tdx
 
 import (
-	"github.com/injoyai/base/types"
-	"github.com/injoyai/logs"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/injoyai/base/types"
+	"github.com/injoyai/logs"
 )
 
 var (
