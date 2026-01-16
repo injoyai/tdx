@@ -2,15 +2,16 @@ package extend
 
 import (
 	"fmt"
-	"github.com/injoyai/tdx/protocol"
 	"time"
+
+	"github.com/injoyai/tdx/protocol"
 )
 
-func DoIncomes(ks Klines, startAt time.Time, days ...int) Incomes {
+func DoIncomes(ks protocol.Klines, startAt time.Time, days ...int) Incomes {
 	year, month, day := startAt.Date()
 	start := time.Date(year, month, day, 15, 0, 0, 0, startAt.Location()).Unix()
 	for i, v := range ks {
-		if v.Date >= start {
+		if v.Time.Unix() >= start {
 			ks = ks[i:]
 			break
 		}
@@ -23,7 +24,7 @@ func DoIncomes(ks Klines, startAt time.Time, days ...int) Incomes {
 			x := ks[v]
 			ls = append(ls, &Income{
 				Offset: v,
-				Time:   time.Unix(x.Date, 0),
+				Time:   x.Time,
 				Source: protocol.K{
 					Open:  ks[0].Open,
 					High:  ks[0].High,

@@ -2,12 +2,13 @@ package extend
 
 import (
 	"context"
+	"path/filepath"
+	"time"
+
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/protocol"
-	"path/filepath"
-	"time"
 )
 
 func NewPullTrade(dir string) *PullTrade {

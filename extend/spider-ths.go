@@ -22,25 +22,25 @@ const (
 )
 
 // GetTHSDayKlineFactorFull 增加计算复权因子
-func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3][]*Kline, []*Factor, error) {
+func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3]protocol.Klines, []*Factor, error) {
 	ks, err := GetTHSDayKlineFull(code, c)
 	if err != nil {
-		return [3][]*Kline{}, nil, err
+		return [3]protocol.Klines{}, nil, err
 	}
-	mQPrice := make(map[int64]float64)
+	mQPrice := make(map[string]float64)
 	for _, v := range ks[1] {
-		mQPrice[v.Date] = v.Close.Float64()
+		mQPrice[v.Time.Format(time.DateOnly)] = v.Close.Float64()
 	}
-	mHPrice := make(map[int64]float64)
+	mHPrice := make(map[string]float64)
 	for _, v := range ks[2] {
-		mHPrice[v.Date] = v.Close.Float64()
+		mHPrice[v.Time.Format(time.DateOnly)] = v.Close.Float64()
 	}
 	fs := make([]*Factor, 0, len(ks[0]))
 	for _, v := range ks[0] {
 		fs = append(fs, &Factor{
-			Date:    v.Date,
-			QFactor: mQPrice[v.Date] / v.Close.Float64(),
-			HFactor: mHPrice[v.Date] / v.Close.Float64(),
+			Date:    v.Time.Unix(),
+			QFactor: mQPrice[v.Time.Format(time.DateOnly)] / v.Close.Float64(),
+			HFactor: mHPrice[v.Time.Format(time.DateOnly)] / v.Close.Float64(),
 		})
 	}
 	return ks, fs, nil
@@ -52,43 +52,34 @@ GetTHSDayKlineFull
 前复权,和通达信对的上,和东方财富对不上
 后复权,和通达信,东方财富都对不上
 */
-func GetTHSDayKlineFull(code string, c *tdx.Client) ([3][]*Kline, error) {
+func GetTHSDayKlineFull(code string, c *tdx.Client) ([3]protocol.Klines, error) {
 	resp, err := c.GetKlineDayAll(code)
 	if err != nil {
-		return [3][]*Kline{}, err
+		return [3]protocol.Klines{}, err
 	}
 	mAmount := make(map[int64]protocol.Price)
-	bfq := []*Kline(nil)
+	bfq := protocol.Klines(nil)
 	for _, v := range resp.List {
 		mAmount[v.Time.Unix()] = v.Amount
-		bfq = append(bfq, &Kline{
-			Code:   code,
-			Date:   v.Time.Unix(),
-			Open:   v.Open,
-			High:   v.High,
-			Low:    v.Low,
-			Close:  v.Close,
-			Volume: v.Volume,
-			Amount: v.Amount,
-		})
+		bfq = append(bfq, v)
 	}
 	//前复权
 	qfq, err := GetTHSDayKline(code, THS_QFQ)
 	if err != nil {
-		return [3][]*Kline{}, err
+		return [3]protocol.Klines{}, err
 	}
 	for i := range qfq {
-		qfq[i].Amount = mAmount[qfq[i].Date]
+		qfq[i].Amount = mAmount[qfq[i].Time.Unix()]
 	}
 	//后复权
 	hfq, err := GetTHSDayKline(code, THS_HFQ)
 	if err != nil {
-		return [3][]*Kline{}, err
+		return [3]protocol.Klines{}, err
 	}
 	for i := range hfq {
-		hfq[i].Amount = mAmount[hfq[i].Date]
+		hfq[i].Amount = mAmount[hfq[i].Time.Unix()]
 	}
-	return [3][]*Kline{bfq, qfq, hfq}, nil
+	return [3]protocol.Klines{bfq, qfq, hfq}, nil
 }
 
 /*
@@ -96,7 +87,7 @@ GetTHSDayKline
 前复权,和通达信对的上,和东方财富对不上
 后复权,和通达信,东方财富都对不上
 */
-func GetTHSDayKline(code string, _type uint8) ([]*Kline, error) {
+func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 	if _type != THS_BFQ && _type != THS_QFQ && _type != THS_HFQ {
 		return nil, fmt.Errorf("数据类型错误,例如:不复权0或前复权1或后复权2")
 	}
@@ -171,7 +162,7 @@ func GetTHSDayKline(code string, _type uint8) ([]*Kline, error) {
 		}
 	}
 
-	ls := []*Kline(nil)
+	ls := protocol.Klines(nil)
 	i := 0
 	nowYear := time.Now().Year()
 	for year := 1990; year <= nowYear; year++ {
@@ -182,9 +173,8 @@ func GetTHSDayKline(code string, _type uint8) ([]*Kline, error) {
 			}
 			x = time.Date(year, x.Month(), x.Day(), 15, 0, 0, 0, time.Local)
 			low := protocol.Price(conv.Float64(prices[i*4+0]) * 1000 / priceFactor)
-			ls = append(ls, &Kline{
-				Code:   protocol.AddPrefix(code),
-				Date:   x.Unix(),
+			ls = append(ls, &protocol.Kline{
+				Time:   x,
 				Open:   protocol.Price(conv.Float64(prices[i*4+1])*1000/priceFactor) + low,
 				High:   protocol.Price(conv.Float64(prices[i*4+2])*1000/priceFactor) + low,
 				Low:    low,

@@ -3,10 +3,11 @@ package extend
 import (
 	"bytes"
 	"encoding/csv"
-	"github.com/injoyai/conv"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/injoyai/conv"
 )
 
 func toCsv(data [][]interface{}) (*bytes.Buffer, error) {
