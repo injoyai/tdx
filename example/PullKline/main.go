@@ -29,6 +29,8 @@ func main() {
 	ks, err := p.DayKlines(code)
 	logs.PanicErr(err)
 
-	logs.Debug(ks)
+	for _, v := range ks {
+		logs.Debug(v)
+	}
 
 }

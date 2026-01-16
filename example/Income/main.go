@@ -16,12 +16,6 @@ func main() {
 		Tables: []string{extend.Day},
 	})
 
-	//m, err := tdx.NewManage(nil)
-	//logs.PanicErr(err)
-
-	//err = pull.Run(context.Background(), m)
-	//logs.PanicErr(err)
-
 	ks, err := pull.DayKlines(code)
 	logs.PanicErr(err)
 

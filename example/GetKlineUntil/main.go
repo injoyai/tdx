@@ -1,11 +1,12 @@
 package main
 
 import (
+	"time"
+
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/example/common"
 	"github.com/injoyai/tdx/protocol"
-	"time"
 )
 
 func main() {
