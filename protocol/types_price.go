@@ -19,6 +19,13 @@ func (this Price) String() string {
 	return fmt.Sprintf("%s元", FloatUnitString(this.Float64()))
 }
 
+func (this Price) Abs() Price {
+	if this < 0 {
+		return -this
+	}
+	return this
+}
+
 func Yuan(f float64) Price {
 	return Price(f * 1000)
 }

@@ -407,3 +407,15 @@ func AddPrefix(code string) string {
 func minutes(t time.Time) int {
 	return t.Hour()*60 + t.Minute()
 }
+
+// int64版的math.Sqrt
+func isqrt(x int64) int64 {
+	r := int64(math.Sqrt(float64(x)))
+	for (r+1)*(r+1) <= x {
+		r++
+	}
+	for r*r > x {
+		r--
+	}
+	return r
+}

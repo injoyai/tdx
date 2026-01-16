@@ -40,7 +40,7 @@ type KlineResp struct {
 }
 
 type Kline struct {
-	Last      Price     //昨日收盘价,这个是列表的上一条数据的收盘价，如果没有上条数据，那么这个值为0
+	Last      Price     //昨日收盘价
 	Open      Price     //开盘价
 	High      Price     //最高价
 	Low       Price     //最低价
@@ -61,6 +61,11 @@ func (this *Kline) String() string {
 		Int64UnitString(this.Volume), FloatUnitString(this.Amount.Float64()),
 		this.UpCount, this.DownCount,
 	)
+}
+
+// Amplitude 振幅
+func (this *Kline) Amplitude() Price {
+	return this.High - this.Low
 }
 
 // MaxDifference 最大差值，最高-最低
@@ -235,31 +240,175 @@ func FixKlineTime(ks []*Kline) []*Kline {
 
 type Klines []*Kline
 
+// MA 均线
+func (ks Klines) MA(n int) []Price {
+	out := make([]Price, len(ks))
+	var sum int64
+
+	for i := 0; i < len(ks); i++ {
+		sum += int64(ks[i].Close)
+
+		if i >= n {
+			sum -= int64(ks[i-n].Close)
+		}
+
+		if i >= n-1 {
+			out[i] = Price(sum / int64(n))
+		}
+	}
+	return out
+}
+
+// EMA MACD的基础
+func (ks Klines) EMA(n int) []Price {
+	out := make([]Price, len(ks))
+	if len(ks) == 0 {
+		return out
+	}
+
+	out[0] = ks[0].Close
+	den := int64(n + 1)
+	num := int64(2)
+
+	for i := 1; i < len(ks); i++ {
+		out[i] = Price(
+			(int64(ks[i].Close)*num + int64(out[i-1])*(den-num)) / den,
+		)
+	}
+	return out
+}
+
+// MACD 常用于短线核心
+func (ks Klines) MACD() (dif, dea, hist []Price) {
+	ema12 := ks.EMA(12)
+	ema26 := ks.EMA(26)
+
+	n := len(ks)
+	dif = make([]Price, n)
+	for i := 0; i < n; i++ {
+		dif[i] = ema12[i] - ema26[i]
+	}
+
+	dea = make([]Price, n)
+	dea[0] = dif[0]
+
+	// DEA = EMA(dif, 9)
+	den := int64(10)
+	num := int64(2)
+
+	for i := 1; i < n; i++ {
+		dea[i] = Price((int64(dif[i])*num + int64(dea[i-1])*(den-num)) / den)
+	}
+
+	hist = make([]Price, n)
+	for i := 0; i < n; i++ {
+		hist[i] = (dif[i] - dea[i]) * 2
+	}
+	return
+}
+
+// RSI 常用于超买超卖
+func (ks Klines) RSI(n int) []int64 {
+	out := make([]int64, len(ks))
+	var gain, loss int64
+
+	for i := 1; i < len(ks); i++ {
+		diff := int64(ks[i].Close - ks[i-1].Close)
+
+		if diff > 0 {
+			gain += diff
+		} else {
+			loss -= diff
+		}
+
+		if i >= n {
+			prev := int64(ks[i-n].Close - ks[i-n-1].Close)
+			if prev > 0 {
+				gain -= prev
+			} else {
+				loss += prev
+			}
+		}
+
+		if i >= n && loss > 0 {
+			out[i] = 100 * gain / (gain + loss)
+		}
+	}
+	return out
+}
+
+// BOLL 布林带（洗盘神器）
+func (ks Klines) BOLL(n int) (upper, mid, lower []Price) {
+	mid = ks.MA(n)
+	upper = make([]Price, len(ks))
+	lower = make([]Price, len(ks))
+
+	for i := n - 1; i < len(ks); i++ {
+		var sum int64
+		for j := i - n + 1; j <= i; j++ {
+			d := int64(ks[j].Close - mid[i])
+			sum += d * d
+		}
+
+		std := isqrt(sum / int64(n))
+		upper[i] = mid[i] + Price(std*2)
+		lower[i] = mid[i] - Price(std*2)
+	}
+	return
+}
+
+// ATR 常用于判断是否该止损
+func (ks Klines) ATR(n int) []Price {
+	out := make([]Price, len(ks))
+	var sum int64
+
+	for i := 1; i < len(ks); i++ {
+		h := ks[i].High
+		l := ks[i].Low
+		pc := ks[i-1].Close
+
+		tr := max(h-l, max((h-pc).Abs(), (l-pc).Abs()))
+		sum += int64(tr)
+
+		if i >= n {
+			prev := max(ks[i-n+1].High-ks[i-n+1].Low,
+				max((ks[i-n+1].High-ks[i-n].Close).Abs(), (ks[i-n+1].Low-ks[i-n].Close).Abs()))
+			sum -= int64(prev)
+			out[i] = Price(sum / int64(n))
+		}
+	}
+	return out
+}
+
+func (ks Klines) VWAP() []Price {
+	out := make([]Price, len(ks))
+	var volSum, amtSum int64
+
+	for i := 0; i < len(ks); i++ {
+		volSum += ks[i].Volume
+		amtSum += int64(ks[i].Amount)
+		if volSum > 0 {
+			out[i] = Price(amtSum / volSum)
+		}
+	}
+	return out
+}
+
 // LastPrice 获取最后一个K线的收盘价
-func (this Klines) LastPrice() Price {
-	if len(this) == 0 {
+func (ks Klines) LastPrice() Price {
+	if len(ks) == 0 {
 		return 0
 	}
-	return this[len(this)-1].Close
+	return ks[len(ks)-1].Close
 }
 
-func (this Klines) Len() int {
-	return len(this)
+func (ks Klines) Sort() {
+	sort.Slice(ks, func(i, j int) bool {
+		return ks[i].Time.Before(ks[j].Time)
+	})
 }
 
-func (this Klines) Swap(i, j int) {
-	this[i], this[j] = this[j], this[i]
-}
-
-func (this Klines) Less(i, j int) bool {
-	return this[i].Time.Before(this[j].Time)
-}
-
-func (this Klines) Sort() {
-	sort.Sort(this)
-}
-
-func (this Klines) Kline(t time.Time, last Price) *Kline {
+func (ks Klines) Kline(t time.Time, last Price) *Kline {
 	k := &Kline{
 		Time:   t,
 		Open:   last,
@@ -269,7 +418,7 @@ func (this Klines) Kline(t time.Time, last Price) *Kline {
 		Volume: 0,
 		Amount: 0,
 	}
-	for i, v := range this {
+	for i, v := range ks {
 		switch i {
 		case 0:
 			k.Open = v.Open
@@ -291,30 +440,30 @@ func (this Klines) Kline(t time.Time, last Price) *Kline {
 }
 
 // Merge 合并成其他类型的K线
-func (this Klines) Merge(n int) Klines {
+func (ks Klines) Merge(n int) Klines {
 	if n <= 1 {
-		return this
+		return ks
 	}
 
-	ks := Klines(nil)
+	res := Klines(nil)
 	ls := Klines(nil)
 	for i := 0; ; i++ {
-		if len(this) <= i*n {
+		if len(ks) <= i*n {
 			break
 		}
-		if len(this) < (i+1)*n {
-			ls = this[i*n:]
+		if len(ks) < (i+1)*n {
+			ls = ks[i*n:]
 		} else {
-			ls = this[i*n : (i+1)*n]
+			ls = ks[i*n : (i+1)*n]
 		}
 		if len(ls) == 0 {
 			break
 		}
 		last := ls[len(ls)-1]
 		k := ls.Kline(last.Time, ls[0].Open)
-		ks = append(ks, k)
+		res = append(res, k)
 	}
-	return ks
+	return res
 }
 
 // Merge241 合并成其他类型的K线
