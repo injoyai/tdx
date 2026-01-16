@@ -22,7 +22,7 @@ func main() {
 
 	eq := e.GetEquity(code, time.Now())
 
-	logs.Debugf("总股本: %.3f  流通股本: %.3f\n", eq.Total, eq.Float)
+	logs.Debugf("总股本: %d  流通股本: %d\n", eq.Total, eq.Float)
 
 	logs.Debug("换手率:", e.GetTurnover(code, time.Now(), resp.List[0].Volume*100))
 }
