@@ -126,6 +126,7 @@ func WithPool(pool IPool) Option {
 
 func WithDialPool(dial DialPoolFunc) Option {
 	return func(m *Manage) {
+		m.IPool = nil
 		m.dialPool = dial
 	}
 }
@@ -138,6 +139,7 @@ func WithCodes(codes ICodes) Option {
 
 func WithDialCodes(dial DialCodesFunc) Option {
 	return func(m *Manage) {
+		m.Codes = nil
 		m.dialCodes = dial
 	}
 }
@@ -150,6 +152,7 @@ func WithWorkday(w *Workday) Option {
 
 func WithDialWorkday(dial DialWorkdayFunc) Option {
 	return func(m *Manage) {
+		m.Workday = nil
 		m.dialWorkday = dial
 	}
 }
@@ -162,14 +165,15 @@ func WithGbbq(gbbq IGbbq) Option {
 
 func WithDialGbbq(dial DialGbbqFunc) Option {
 	return func(m *Manage) {
+		m.Gbbq = nil
 		m.dialGbbq = dial
 	}
 }
 
 func WithDialGbbqDefault() Option {
-	return func(m *Manage) {
-		m.dialGbbq = func(c *Client) (IGbbq, error) { return NewGbbq() }
-	}
+	return WithDialGbbq(func(c *Client) (IGbbq, error) {
+		return NewGbbq(WithGbbqClient(c))
+	})
 }
 
 func WithOption(op ...Option) Option {
