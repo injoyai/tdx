@@ -146,8 +146,8 @@ func (this *Gbbq) Equity() *Equity {
 		Category: this.Category,
 		Code:     this.Code,
 		Time:     this.Time,
-		Float:    this.C3,
-		Total:    this.C4,
+		Float:    int64(this.C3),
+		Total:    int64(this.C4),
 	}
 }
 
@@ -167,13 +167,13 @@ type Equity struct {
 	Category int       //2, 3, 5, 7, 8, 9, 10
 	Code     string    //例sh600000
 	Time     time.Time //时间
-	Float    float64   //流通股本,单位股
-	Total    float64   //总股本,单位股
+	Float    int64     //流通股本,单位股
+	Total    int64     //总股本,单位股
 }
 
 // Turnover 换手率,传入股,通达信获取的一般是手,注意
 func (this *Equity) Turnover(volume int64) float64 {
-	return (float64(volume) / this.Float) * 100
+	return (float64(volume) / float64(this.Float)) * 100
 }
 
 /*
