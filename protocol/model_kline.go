@@ -350,7 +350,7 @@ func (ks Klines) BOLL(n int) (upper, mid, lower []Price) {
 			sum += d * d
 		}
 
-		std := isqrt(sum / int64(n))
+		std := I64Sqrt(sum / int64(n))
 		upper[i] = mid[i] + Price(std*2)
 		lower[i] = mid[i] - Price(std*2)
 	}

@@ -90,11 +90,11 @@ func (this *PullKline) Name() string {
 	return "拉取k线数据"
 }
 
-func (this *PullKline) DayKlines(code string) ([]*Kline, error) {
+func (this *PullKline) DayKlines(code string) (Klines, error) {
 	return this.Klines(tableDay, code)
 }
 
-func (this *PullKline) Klines(table string, code string) ([]*Kline, error) {
+func (this *PullKline) Klines(table string, code string) (Klines, error) {
 	//连接数据库
 	db, err := xorms.NewSqlite(filepath.Join(this.Config.Dir, code+".db"))
 	if err != nil {
@@ -102,7 +102,7 @@ func (this *PullKline) Klines(table string, code string) ([]*Kline, error) {
 	}
 	defer db.Close()
 
-	data := []*Kline(nil)
+	data := Klines{}
 	err = db.Table(table).Asc("Unix").Find(&data)
 	return data, err
 }
@@ -212,22 +212,6 @@ func (this *PullKline) Update(m *tdx.Manage) error {
 
 	b.Wait()
 	return nil
-}
-
-type Kline struct {
-	Unix            int64 `xorm:"pk"`
-	*protocol.Kline `xorm:"extends"`
-	Turnover        float64
-	FloatStock      int64
-	TotalStock      int64
-}
-
-func (this *Kline) FloatValue() protocol.Price {
-	return this.Close * protocol.Price(this.FloatStock)
-}
-
-func (this *Kline) TotalValue() protocol.Price {
-	return this.Close * protocol.Price(this.TotalStock)
 }
 
 /*

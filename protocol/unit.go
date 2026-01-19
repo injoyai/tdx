@@ -408,8 +408,8 @@ func minutes(t time.Time) int {
 	return t.Hour()*60 + t.Minute()
 }
 
-// int64版的math.Sqrt
-func isqrt(x int64) int64 {
+// I64Sqrt int64版的math.Sqrt
+func I64Sqrt(x int64) int64 {
 	r := int64(math.Sqrt(float64(x)))
 	for (r+1)*(r+1) <= x {
 		r++
