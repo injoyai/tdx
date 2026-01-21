@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/robfig/cron/v3"
-	"xorm.io/xorm"
 )
 
 type Updater interface {
@@ -37,29 +37,31 @@ func NewTimer(spec string, retry int, up Updater) error {
 	return nil
 }
 
-func NewUpdated(key string, db *xorm.Engine) (*Updated, error) {
+// NewUpdated 更新 hour=[9|15] minute=0
+func NewUpdated(db *xorms.Engine, hour, minute int) (*Updated, error) {
 	err := db.Sync2(new(UpdateModel))
-	return &Updated{key: key, db: db}, err
+	return &Updated{db: db, hour: hour, minute: minute}, err
 }
 
 type Updated struct {
-	key string
-	db  *xorm.Engine
+	db     *xorms.Engine
+	hour   int
+	minute int
 }
 
-func (this *Updated) Update() error {
-	_, err := this.db.Where("`Key`=?", this.key).Update(&UpdateModel{Time: time.Now().Unix()})
+func (this *Updated) Update(key string) error {
+	_, err := this.db.Where("`Key`=?", key).Update(&UpdateModel{Time: time.Now().Unix()})
 	return err
 }
 
-func (this *Updated) Updated() (bool, error) {
+func (this *Updated) Updated(key string) (bool, error) {
 	update := new(UpdateModel)
 	{ //查询或者插入一条数据
-		has, err := this.db.Where("`Key`=?", this.key).Get(update)
+		has, err := this.db.Where("`Key`=?", key).Get(update)
 		if err != nil {
 			return true, err
 		} else if !has {
-			update.Key = this.key
+			update.Key = key
 			if _, err = this.db.Insert(update); err != nil {
 				return true, err
 			}
@@ -68,7 +70,7 @@ func (this *Updated) Updated() (bool, error) {
 	}
 	{ //判断是否更新过,更新过则不更新
 		now := time.Now()
-		node := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
+		node := time.Date(now.Year(), now.Month(), now.Day(), this.hour, this.minute, 0, 0, time.Local)
 		updateTime := time.Unix(update.Time, 0)
 		if now.Sub(node) > 0 {
 			//当前时间在9点之后,且更新时间在9点之前,需要更新
@@ -84,6 +86,12 @@ func (this *Updated) Updated() (bool, error) {
 	}
 	return true, nil
 }
+
+/*
+
+
+
+ */
 
 type UpdateModel struct {
 	Key  string

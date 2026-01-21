@@ -109,7 +109,7 @@ func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
 	if err = s.db.Sync2(new(protocol.Gbbq)); err != nil {
 		return nil, err
 	}
-	s.updated, err = NewUpdated(s.updateKey, s.db.Engine)
+	s.updated, err = NewUpdated(s.db, 9, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (this *Gbbq) Update() error {
 	this.m = old
 	this.mu.Unlock()
 
-	updated, err := this.updated.Updated()
+	updated, err := this.updated.Updated(this.updateKey)
 	if err == nil && updated {
 		return nil
 	}
@@ -268,6 +268,6 @@ func (this *Gbbq) update() (map[string][]*protocol.Gbbq, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = this.updated.Update()
+	err = this.updated.Update(this.updateKey)
 	return gbbqs, err
 }

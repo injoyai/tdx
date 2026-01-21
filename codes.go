@@ -98,6 +98,7 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 		spec:      DefaultCodesSpec,
 		retry:     DefaultRetry,
 		CodesBase: NewCodesBase(),
+		updateKey: "codes",
 	}
 
 	WithCodesOption(op...)(cs)
@@ -128,7 +129,7 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 			return nil, err
 		}
 	}
-	cs.updated, err = NewUpdated("codes", cs.db.Engine)
+	cs.updated, err = NewUpdated(cs.db, 9, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +153,10 @@ type Codes struct {
 		内部字段
 	*/
 
-	c       *Client
-	db      *xorms.Engine
-	updated *Updated
+	c         *Client
+	db        *xorms.Engine
+	updateKey string
+	updated   *Updated
 
 	*CodesBase
 }
@@ -182,7 +184,7 @@ func (this *Codes) update() ([]*CodeModel, error) {
 	}
 
 	//如果更新过,则不更新
-	updated, err := this.updated.Updated()
+	updated, err := this.updated.Updated(this.updateKey)
 	if err == nil && updated {
 		return list, nil
 	}
@@ -268,7 +270,7 @@ func (this *Codes) update() ([]*CodeModel, error) {
 	}
 
 	//更新时间
-	err = this.updated.Update()
+	err = this.updated.Update(this.updateKey)
 	return list, err
 }
 
