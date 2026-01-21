@@ -27,32 +27,32 @@ const (
 	Quarter  = "quarter"
 	Year     = "year"
 
-	tableMinute   = "MinuteKline"
-	table5Minute  = "Minute5Kline"
-	table15Minute = "Minute15Kline"
-	table30Minute = "Minute30Kline"
-	table60Minute = "Minute60Kline"
-	tableDay      = "DayKline"
-	tableWeek     = "WeekKline"
-	tableMonth    = "MonthKline"
-	tableQuarter  = "QuarterKline"
-	tableYear     = "YearKline"
+	TableMinute   = "MinuteKline"
+	Table5Minute  = "Minute5Kline"
+	Table15Minute = "Minute15Kline"
+	Table30Minute = "Minute30Kline"
+	Table60Minute = "Minute60Kline"
+	TableDay      = "DayKline"
+	TableWeek     = "WeekKline"
+	TableMonth    = "MonthKline"
+	TableQuarter  = "QuarterKline"
+	TableYear     = "YearKline"
 )
 
 var (
 	AllTable      = []string{Minute, Minute5, Minute15, Minute30, Minute60, Day, Week, Month, Quarter, Year}
 	AllKlineType  = AllTable //向下兼容
 	KlineTableMap = map[string]*KlineTable{
-		Minute:   NewKlineTable(tableMinute, func(c *tdx.Client) KlineHandler { return c.GetKlineMinuteUntil }),
-		Minute5:  NewKlineTable(table5Minute, func(c *tdx.Client) KlineHandler { return c.GetKline5MinuteUntil }),
-		Minute15: NewKlineTable(table15Minute, func(c *tdx.Client) KlineHandler { return c.GetKline15MinuteUntil }),
-		Minute30: NewKlineTable(table30Minute, func(c *tdx.Client) KlineHandler { return c.GetKline30MinuteUntil }),
-		Minute60: NewKlineTable(table60Minute, func(c *tdx.Client) KlineHandler { return c.GetKline60MinuteUntil }),
-		Day:      NewKlineTable(tableDay, func(c *tdx.Client) KlineHandler { return c.GetKlineDayUntil }),
-		Week:     NewKlineTable(tableWeek, func(c *tdx.Client) KlineHandler { return c.GetKlineWeekUntil }),
-		Month:    NewKlineTable(tableMonth, func(c *tdx.Client) KlineHandler { return c.GetKlineMonthUntil }),
-		Quarter:  NewKlineTable(tableQuarter, func(c *tdx.Client) KlineHandler { return c.GetKlineQuarterUntil }),
-		Year:     NewKlineTable(tableYear, func(c *tdx.Client) KlineHandler { return c.GetKlineYearUntil }),
+		Minute:   NewKlineTable(TableMinute, func(c *tdx.Client) KlineHandler { return c.GetKlineMinuteUntil }),
+		Minute5:  NewKlineTable(Table5Minute, func(c *tdx.Client) KlineHandler { return c.GetKline5MinuteUntil }),
+		Minute15: NewKlineTable(Table15Minute, func(c *tdx.Client) KlineHandler { return c.GetKline15MinuteUntil }),
+		Minute30: NewKlineTable(Table30Minute, func(c *tdx.Client) KlineHandler { return c.GetKline30MinuteUntil }),
+		Minute60: NewKlineTable(Table60Minute, func(c *tdx.Client) KlineHandler { return c.GetKline60MinuteUntil }),
+		Day:      NewKlineTable(TableDay, func(c *tdx.Client) KlineHandler { return c.GetKlineDayUntil }),
+		Week:     NewKlineTable(TableWeek, func(c *tdx.Client) KlineHandler { return c.GetKlineWeekUntil }),
+		Month:    NewKlineTable(TableMonth, func(c *tdx.Client) KlineHandler { return c.GetKlineMonthUntil }),
+		Quarter:  NewKlineTable(TableQuarter, func(c *tdx.Client) KlineHandler { return c.GetKlineQuarterUntil }),
+		Year:     NewKlineTable(TableYear, func(c *tdx.Client) KlineHandler { return c.GetKlineYearUntil }),
 	}
 )
 
@@ -91,7 +91,7 @@ func (this *PullKline) Name() string {
 }
 
 func (this *PullKline) DayKlines(code string) (Klines, error) {
-	return this.Klines(tableDay, code)
+	return this.Klines(TableDay, code)
 }
 
 func (this *PullKline) Klines(table string, code string) (Klines, error) {
