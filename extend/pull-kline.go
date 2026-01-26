@@ -94,6 +94,10 @@ func (this *PullKline) DayKlines(code string) (Klines, error) {
 	return this.Klines(TableDay, code)
 }
 
+func (this *PullKline) MinKlines(code string) (Klines, error) {
+	return this.Klines(TableMinute, code)
+}
+
 func (this *PullKline) Klines(table string, code string) (Klines, error) {
 	//连接数据库
 	db, err := xorms.NewSqlite(filepath.Join(this.Config.Dir, code+".db"))

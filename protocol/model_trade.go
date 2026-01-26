@@ -118,6 +118,19 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 
 type Trades []*Trade
 
+// Volume2 内(主动卖)外(主动买)盘成交量,不准确,能用
+func (this Trades) Volume2() (sell int64, buy int64) {
+	for _, v := range this {
+		switch v.Status {
+		case 0: //买
+			buy += int64(v.Volume) * 100
+		case 1: //卖
+			sell += int64(v.Volume) * 100
+		}
+	}
+	return
+}
+
 // Klines 合并分时成交成k线
 func (this Trades) Klines() Klines {
 	//按天分割
@@ -223,6 +236,12 @@ func (this Trades) klinesForDay(date time.Time) Klines {
 	}
 	return ls
 }
+
+/*
+
+
+
+ */
 
 type TradeCache struct {
 	Date string //日期

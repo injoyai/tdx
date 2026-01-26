@@ -26,7 +26,7 @@ type Quote struct {
 	TotalHand      int      // 总手（东财的盘口-总手）
 	Intuition      int      // 现量（东财的盘口-现量）现在成交量
 	Amount         float64  // 金额（东财的盘口-金额）
-	InsideDish     int      // 内盘（东财的盘口-外盘）（和东财对不上）
+	InsideDish     int      // 内盘（东财的盘口-内盘）（和东财对不上）
 	OuterDisc      int      // 外盘（东财的盘口-外盘）（和东财对不上）
 
 	ReversedBytes2 int         // 保留，未知

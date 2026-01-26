@@ -8,6 +8,8 @@ type Kline struct {
 	Turnover        float64
 	FloatStock      int64
 	TotalStock      int64
+	//InsideDish      int64
+	//OuterDisc       int64
 }
 
 func (this *Kline) FloatValue() protocol.Price {
