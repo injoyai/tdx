@@ -9,13 +9,13 @@ func main() {
 
 	for _, v := range tdx.Hosts {
 
-		c, err := tdx.Dial(v)
+		c, err := tdx.Dial(v, tdx.WithDebug(false))
 		if err != nil {
-			logs.Errf("[%s:7709] %v", v, err)
+			logs.Errf("[%s] 失败\n", v)
 			continue
 		}
 		c.Close()
-		logs.Debugf("[%s:7709] 连接成功...\n", v)
+		logs.Debugf("[%s] 成功\n", v)
 
 	}
 
