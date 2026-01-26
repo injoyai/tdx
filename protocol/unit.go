@@ -320,14 +320,19 @@ func isSHETF(code string) bool {
 	if len(code) != 6 {
 		return false
 	}
-	return code[:2] == "51" || code[:2] == "56" || code[:2] == "58"
+	switch code[:2] {
+	case "50", "51", "52", "53", "56", "58": //55不是
+		return true
+	}
+
+	return false
 }
 
 func isSZETF(code string) bool {
 	if len(code) != 6 {
 		return false
 	}
-	return code[:2] == "15"
+	return code[:2] == "15" || code[:2] == "16"
 }
 
 func isBJETF(code string) bool {
