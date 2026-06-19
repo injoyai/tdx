@@ -147,6 +147,9 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 	resp := &KlineResp{
 		Count: Uint16(bs[:2]),
 	}
+	if resp.Count == 0 {
+		return resp, nil
+	}
 	bs = bs[2:]
 
 	var last Price //上条数据(昨天)的收盘价

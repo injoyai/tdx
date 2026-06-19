@@ -62,6 +62,9 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 	}
 
 	_count := Uint16(bs[:2])
+	if _count == 0 {
+		return &CallAuctionResp{}, nil
+	}
 	resp := &CallAuctionResp{
 		Count: _count,
 		List:  make([]*CallAuction, 0, _count),

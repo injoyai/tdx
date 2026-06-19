@@ -91,6 +91,9 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 	resp := &TradeResp{
 		Count: Uint16(bs[:2]),
 	}
+	if resp.Count == 0 {
+		return resp, nil
+	}
 
 	bs = bs[2:]
 

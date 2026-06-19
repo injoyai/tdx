@@ -30,12 +30,19 @@ func (historyTrade) Frame(date, code string, start, count uint16) (*Frame, error
 }
 
 func (historyTrade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
+	if len(bs) < 2 {
+		return nil, errors.New("数据长度不足")
+	}
+	count := Uint16(bs[:2])
+	if count == 0 {
+		return &TradeResp{}, nil
+	}
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")
 	}
 
 	resp := &TradeResp{
-		Count: Uint16(bs[:2]),
+		Count: count,
 	}
 
 	//第2-6字节不知道是啥

@@ -25,12 +25,19 @@ func (this historyMinute) Frame(date, code string) (*Frame, error) {
 
 func (this historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 
+	if len(bs) < 2 {
+		return nil, errors.New("数据长度不足")
+	}
+	count := Uint16(bs[:2])
+	if count == 0 {
+		return &MinuteResp{}, nil
+	}
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")
 	}
 
 	resp := &MinuteResp{
-		Count: Uint16(bs[:2]),
+		Count: count,
 	}
 
 	multiple := Price(1) * 10

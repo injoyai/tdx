@@ -39,12 +39,19 @@ func (this *minute) Frame(code string) (*Frame, error) {
 
 func (this *minute) Decode(bs []byte) (*MinuteResp, error) {
 
+	if len(bs) < 2 {
+		return nil, errors.New("数据长度不足")
+	}
+	count := Uint16(bs[:2])
+	if count == 0 {
+		return &MinuteResp{}, nil
+	}
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")
 	}
 
 	resp := &MinuteResp{
-		Count: Uint16(bs[:2]),
+		Count: count,
 	}
 	//2-6字节是啥?
 	bs = bs[6:]

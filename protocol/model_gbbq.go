@@ -56,6 +56,9 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 	}
 
 	_count := Uint16(bs[9:11])
+	if _count == 0 {
+		return &GbbqResp{}, nil
+	}
 	resp := &GbbqResp{
 		Count: _count,
 		List:  make([]*Gbbq, 0, _count),

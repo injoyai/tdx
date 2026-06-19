@@ -236,7 +236,8 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 	}
 
 	if err != nil {
-		logs.Err(err)
+		logs.Errf("type=0x%X msgID=%d cache=%v err=%v", f.Type, f.MsgID, val, err)
+		this.Wait.Done(conv.String(f.MsgID), nil, err)
 		return
 	}
 
@@ -377,34 +378,39 @@ func (this *Client) GetIndexCodeAll() ([]string, error) {
 // GetQuote 获取盘口五档报价
 func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
-		//如果是股票代码,则加上前缀
 		codes[i] = protocol.AddPrefix(codes[i])
 		if !protocol.IsStock(codes[i]) {
 			if DefaultCodes == nil {
 				return nil, errors.New("DefaultCodes未初始化")
 			}
-			//不是股票代码的话，根据codes的信息加上前缀
-			//codes[i] = DefaultCodes.AddExchange(codes[i])
 			codes[i] = protocol.AddPrefix(codes[i])
 		}
 	}
 
-	f, err := protocol.MQuote.Frame(codes...)
-	if err != nil {
-		return nil, err
-	}
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	quotes := result.(protocol.QuotesResp)
-
-	{ //todo 临时处理下先,后续优化,感觉有问题
-		//判断长度和预期是否一致
-		if len(quotes) != len(codes) {
-			return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
+	// TDX服务器单次最多返回80只,需要分批请求
+	const batchSize = 80
+	allQuotes := protocol.QuotesResp{}
+	for start := 0; start < len(codes); start += batchSize {
+		end := start + batchSize
+		if end > len(codes) {
+			end = len(codes)
 		}
-		for i, code := range codes {
+		batch := codes[start:end]
+
+		f, err := protocol.MQuote.Frame(batch...)
+		if err != nil {
+			return nil, err
+		}
+		result, err := this.SendFrame(f)
+		if err != nil {
+			return nil, err
+		}
+		quotes := result.(protocol.QuotesResp)
+
+		if len(quotes) != len(batch) {
+			return nil, fmt.Errorf("预期%d个，实际%d个", len(batch), len(quotes))
+		}
+		for i, code := range batch {
 			if !protocol.IsStock(code) {
 				m := DefaultCodes.Get(code)
 				if m == nil {
@@ -423,9 +429,10 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 				quotes[i].Kline.Close = m.Price(quotes[i].Kline.Close)
 			}
 		}
+		allQuotes = append(allQuotes, quotes...)
 	}
 
-	return quotes, nil
+	return allQuotes, nil
 }
 
 func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {

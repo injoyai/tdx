@@ -41,6 +41,9 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 	resp := &CodeResp{
 		Count: Uint16(bs[:2]),
 	}
+	if resp.Count == 0 {
+		return resp, nil
+	}
 	bs = bs[2:]
 
 	for i := uint16(0); i < resp.Count; i++ {
