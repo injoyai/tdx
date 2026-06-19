@@ -677,26 +677,27 @@ func toCodeResp(r *protocol.CodeResp) map[string]any {
 func toQuotes(resp protocol.QuotesResp) []map[string]any {
 	out := make([]map[string]any, 0, len(resp))
 	for _, q := range resp {
-		if q == nil {
+		if q == nil || q.Kline == nil {
 			continue
 		}
+		k := q.Kline
 		out = append(out, map[string]any{
 			"exchange":   q.Exchange.String(),
 			"code":       q.Code,
 			"active1":    q.Active1,
-			"totalHand":  q.TotalHand,
+			"totalHand":  k.Volume,
 			"intuition":  q.Intuition,
-			"amount":     q.Amount,
+			"amount":     k.Amount.Float64(),
 			"insideDish": q.InsideDish,
 			"outerDisc":  q.OuterDisc,
 			"rate":       q.Rate,
 			"active2":    q.Active2,
 			"k": map[string]float64{
-				"last":  q.K.Last.Float64(),
-				"open":  q.K.Open.Float64(),
-				"high":  q.K.High.Float64(),
-				"low":   q.K.Low.Float64(),
-				"close": q.K.Close.Float64(),
+				"last":  k.Last.Float64(),
+				"open":  k.Open.Float64(),
+				"high":  k.High.Float64(),
+				"low":   k.Low.Float64(),
+				"close": k.Close.Float64(),
 			},
 			"buyLevel":  toPriceLevels(q.BuyLevel),
 			"sellLevel": toPriceLevels(q.SellLevel),
