@@ -1,3 +1,6 @@
 /dump/
 /data/
 /docs/superpowers
+.codegraph
+.vscode
+.idea
