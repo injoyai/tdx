@@ -866,7 +866,7 @@ func (this *Client) GetIndex(Type uint8, code string, start, count uint16) (*pro
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindIndex})
+	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindIndex, Code: code})
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +970,7 @@ func (this *Client) GetKline(Type uint8, code string, start, count uint16) (*pro
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindStock})
+	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindStock, Code: code})
 	if err != nil {
 		return nil, err
 	}
