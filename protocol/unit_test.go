@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/hex"
+	"math"
 	"testing"
 )
 
@@ -18,10 +19,29 @@ func TestUTF8ToGBK(t *testing.T) {
 	t.Log(string(bs))
 }
 
-func Test_getVolume(t *testing.T) {
-	t.Log(getVolume(1237966432))
-	t.Log(getVolume2(1237966432))
+func TestGetVolume(t *testing.T) {
+	for _, want := range []float32{0, 0.5, 1, 10, 436, 587760.1875} {
+		bits := math.Float32bits(want)
+		if got := getVolume(bits); got != float64(want) {
+			t.Errorf("getVolume(%08x) = %v, want %v", bits, got, want)
+		}
+		if got := getVolume2(bits); got != float64(want) {
+			t.Errorf("getVolume2(%08x) = %v, want %v", bits, got, want)
+		}
+	}
+}
 
+func TestIsConvertibleBond(t *testing.T) {
+	for _, code := range []string{"sh110075", "SH111000", "sh113001", "sh118001", "sz123064", "sz125001", "sz126001", "sz127001", "sz128001"} {
+		if !IsConvertibleBond(code) {
+			t.Errorf("IsConvertibleBond(%q) = false, want true", code)
+		}
+	}
+	for _, code := range []string{"sh600000", "sz000001", "sh510300", "sz159919", "sh000001", "110075"} {
+		if IsConvertibleBond(code) {
+			t.Errorf("IsConvertibleBond(%q) = true, want false", code)
+		}
+	}
 }
 
 func TestFloat32(t *testing.T) {
