@@ -80,10 +80,15 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 		a := &CallAuction{
 			Price:     Price(Float32(bs[2:6]) * 1000),
 			Match:     int64(Uint32(bs[6:10])),
-			Unmatched: int64(int16(Uint16(bs[10:12]))),
+			Unmatched: int64(int32(Uint32(bs[10:14]))),
 			Flag:      1,
 		}
 
+		// TDX 集合竞价协议未匹配量为 4 字节有符号数：正值=买盘未匹配（买盘排队），
+		// 负值=卖盘未匹配（卖盘排队）。原实现只读低 2 字节（int16），未匹配量超过
+		// 32767 手时数值被截断，且截断后的低 16 位符号可能与真实符号相反（如
+		// +109912 = 0x0001AD58 的低 16 位 0xAD58 = -21160），导致方向被误判为相反侧。
+		// 修复为读完整 4 字节，Flag 语义保持：1=买盘未匹配，-1=卖盘未匹配。
 		if a.Unmatched < 0 {
 			a.Flag = -1
 			a.Unmatched = -a.Unmatched
@@ -109,6 +114,6 @@ type CallAuction struct {
 	Time      time.Time //时间
 	Price     Price     //价格
 	Match     int64     //匹配量
-	Unmatched int64     //未匹配量
-	Flag      int8      //标志,1表示未匹配量是买单，-1表示未匹配量是卖单
+	Unmatched int64     //未匹配量（已取绝对值，方向见 Flag）
+	Flag      int8      //标志,1表示未匹配量是买单（买盘排队），-1表示未匹配量是卖单（卖盘排队）
 }
