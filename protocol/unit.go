@@ -164,108 +164,41 @@ func basePrice(code string) Price {
 	}
 }
 
-func getVolume(val uint32) (volume float64) {
-	ivol := int32(val)
-	logpoint := ivol >> (8 * 3)
-	//hheax := ivol >> (8 * 3)          // [3]
-	hleax := (ivol >> (8 * 2)) & 0xff // [2]
-	lheax := (ivol >> 8) & 0xff       //[1]
-	lleax := ivol & 0xff              //[0]
-
-	//dbl_1 := 1.0
-	//dbl_2 := 2.0
-	//dbl_128 := 128.0
-
-	dwEcx := logpoint*2 - 0x7f
-	dwEdx := logpoint*2 - 0x86
-	dwEsi := logpoint*2 - 0x8e
-	dwEax := logpoint*2 - 0x96
-	tmpEax := dwEcx
-	if dwEcx < 0 {
-		tmpEax = -dwEcx
-	} else {
-		tmpEax = dwEcx
-	}
-
-	dbl_xmm6 := 0.0
-	dbl_xmm6 = math.Pow(2.0, float64(tmpEax))
-	if dwEcx < 0 {
-		dbl_xmm6 = 1.0 / dbl_xmm6
-	}
-
-	dbl_xmm4 := 0.0
-	dbl_xmm0 := 0.0
-
-	if hleax > 0x80 {
-		tmpdbl_xmm3 := 0.0
-		//tmpdbl_xmm1 := 0.0
-		dwtmpeax := dwEdx + 1
-		tmpdbl_xmm3 = math.Pow(2.0, float64(dwtmpeax))
-		dbl_xmm0 = math.Pow(2.0, float64(dwEdx)) * 128.0
-		dbl_xmm0 += float64(hleax&0x7f) * tmpdbl_xmm3
-		dbl_xmm4 = dbl_xmm0
-	} else {
-		if dwEdx >= 0 {
-			dbl_xmm0 = math.Pow(2.0, float64(dwEdx)) * float64(hleax)
-		} else {
-			dbl_xmm0 = (1 / math.Pow(2.0, float64(dwEdx))) * float64(hleax)
-		}
-		dbl_xmm4 = dbl_xmm0
-	}
-
-	dbl_xmm3 := math.Pow(2.0, float64(dwEsi)) * float64(lheax)
-	dbl_xmm1 := math.Pow(2.0, float64(dwEax)) * float64(lleax)
-	if (hleax & 0x80) > 0 {
-		dbl_xmm3 *= 2.0
-		dbl_xmm1 *= 2.0
-	}
-	volume = dbl_xmm6 + dbl_xmm4 + dbl_xmm3 + dbl_xmm1
-	return
+func getVolume(val uint32) float64 {
+	return float64(math.Float32frombits(val))
 }
 
 func getVolume2(val uint32) float64 {
-	ivol := int32(val)
-	logpoint := ivol >> 24       // 提取最高字节（原8*3移位）
-	hleax := (ivol >> 16) & 0xff // 提取次高字节
-	lheax := (ivol >> 8) & 0xff  // 提取第三字节
-	lleax := ivol & 0xff         // 提取最低字节
-
-	dwEcx := logpoint*2 - 0x7f            // 基础指数计算
-	dbl_xmm6 := math.Exp2(float64(dwEcx)) // 核心指数计算仅一次
-
-	// 计算dbl_xmm4
-	var dbl_xmm4 float64
-	if hleax > 0x80 {
-		// 高位分支：合并指数计算
-		dbl_xmm4 = dbl_xmm6 * (64.0 + float64(hleax&0x7f)) / 64.0
-	} else {
-		// 低位分支：复用核心指数
-		dbl_xmm4 = dbl_xmm6 * float64(hleax) / 128.0
-	}
-
-	// 计算缩放因子
-	scale := 1.0
-	if (hleax & 0x80) != 0 {
-		scale = 2.0
-	}
-
-	// 预计算常量的倒数，优化除法
-	const (
-		inv32768   = 1.0 / 32768.0   // 2^15
-		inv8388608 = 1.0 / 8388608.0 // 2^23
-	)
-
-	// 计算低位分量
-	dbl_xmm3 := dbl_xmm6 * float64(lheax) * inv32768 * scale
-	dbl_xmm1 := dbl_xmm6 * float64(lleax) * inv8388608 * scale
-
-	// 合计最终结果
-	return dbl_xmm6 + dbl_xmm4 + dbl_xmm3 + dbl_xmm1
+	return getVolume(val)
 }
 
 // IsStock 是否是股票,示例sz000001
 func IsStock(code string) bool {
 	return IsSZStock(code) || IsSHStock(code) || IsBJStock(code)
+}
+
+// IsConvertibleBond reports whether code belongs to a current convertible-bond code range.
+func IsConvertibleBond(code string) bool {
+	if len(code) != 8 {
+		return false
+	}
+	code = strings.ToLower(code)
+	number := code[2:]
+	switch code[:2] {
+	case ExchangeSH.String():
+		return strings.HasPrefix(number, "110") ||
+			strings.HasPrefix(number, "111") ||
+			strings.HasPrefix(number, "113") ||
+			strings.HasPrefix(number, "118")
+	case ExchangeSZ.String():
+		return strings.HasPrefix(number, "123") ||
+			strings.HasPrefix(number, "125") ||
+			strings.HasPrefix(number, "126") ||
+			strings.HasPrefix(number, "127") ||
+			strings.HasPrefix(number, "128")
+	default:
+		return false
+	}
 }
 
 func IsSZStock(code string) bool {

@@ -187,10 +187,7 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		*/
 		k.Volume = int64(getVolume(Uint32(bs[:4])))
 		bs = bs[4:]
-		switch c.Type {
-		case TypeKlineMinute, TypeKline5Minute, TypeKlineMinute2, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute, TypeKlineDay2:
-			k.Volume /= 100
-		}
+		k.Volume = normalizeKlineVolume(k.Volume, c)
 		k.Amount = Price(getVolume(Uint32(bs[:4])) * 1000) //从元转为厘,并去除多余的小数
 		bs = bs[4:]
 
@@ -212,6 +209,17 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 type KlineCache struct {
 	Type uint8  //1分钟,5分钟,日线等
 	Kind string //指数,个股等
+	Code string //证券代码,用于区分不同品种的成交量单位
+}
+
+func normalizeKlineVolume(volume int64, c KlineCache) int64 {
+	switch c.Type {
+	case TypeKlineMinute, TypeKline5Minute, TypeKlineMinute2, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute, TypeKlineDay2:
+		if !IsConvertibleBond(c.Code) {
+			return volume / 100
+		}
+	}
+	return volume
 }
 
 // FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00

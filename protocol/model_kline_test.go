@@ -32,3 +32,24 @@ func Test_stockKline_Decode(t *testing.T) {
 		t.Log(v)
 	}
 }
+
+func TestNormalizeKlineVolume(t *testing.T) {
+	tests := []struct {
+		name   string
+		volume int64
+		cache  KlineCache
+		want   int64
+	}{
+		{name: "stock minute", volume: 43600, cache: KlineCache{Type: TypeKlineMinute, Code: "sh600000"}, want: 436},
+		{name: "sh convertible bond minute", volume: 436, cache: KlineCache{Type: TypeKlineMinute, Code: "sh110075"}, want: 436},
+		{name: "sz convertible bond minute", volume: 534, cache: KlineCache{Type: TypeKlineMinute, Code: "sz123064"}, want: 534},
+		{name: "stock day", volume: 43600, cache: KlineCache{Type: TypeKlineDay, Code: "sh600000"}, want: 43600},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizeKlineVolume(test.volume, test.cache); got != test.want {
+				t.Fatalf("normalizeKlineVolume() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
