@@ -754,7 +754,7 @@ func (this *Client) GetTradeAll(code string) (*protocol.TradeResp, error) {
 	return this.GetMinuteTradeAll(code)
 }
 
-// GetMinuteTradeAll 获取分时全部交易详情,todo 只做参考 因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
+// GetMinuteTradeAll 获取分时全部交易详情,只能盘后调用,因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
 func (this *Client) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
 	size := uint16(1800)
