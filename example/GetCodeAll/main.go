@@ -9,7 +9,7 @@ import (
 
 func main() {
 	common.Test(func(c *tdx.Client) {
-		resp, err := c.GetCodeAll(protocol.ExchangeSZ)
+		resp, err := c.GetCodeAll(protocol.ExchangeBJ)
 		logs.PanicErr(err)
 
 		for _, v := range resp.List {

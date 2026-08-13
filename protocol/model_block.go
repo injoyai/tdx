@@ -53,8 +53,9 @@ const (
 	FileTdxZs   = "tdxzs.cfg"   // 板块指数配置: 板块名↔指数代码(880xxx 行业/概念, 881xxx 地域)↔类型
 	FileTdxZs3  = "tdxzs3.cfg"  // 板块指数配置(扩展, 同 tdxzs.cfg 格式)
 	FileTdxDsZs = "tdxdszs.cfg" // 港股板块指数配置: 板块名↔指数代码(HKxxxx)
-	FileTdxBk   = "tdxbk.cfg"   // 概念板块简称↔全称
-	FileIncon   = "incon.dat"   // 证监会/通达信行业分类代码表
+	FileTdxBk    = "tdxbk.cfg"    // 概念板块简称↔全称
+	FileTdxBjMore = "tdxbjmore.cfg" // 北交所代码↔名称
+	FileIncon    = "incon.dat"    // 证监会/通达信行业分类代码表
 	FileHsPy    = "hspy.dat"    // 沪深拼音/简称
 )
 
@@ -95,6 +96,27 @@ func ParseTdxZs(data []byte) []*TdxZs {
 			zs.Ref = f[5]
 		}
 		out = append(out, zs)
+	}
+	return out
+}
+
+// ParseTdxBjMore 解析 tdxbjmore.cfg(GBK 文本) -> 北交所代码↔名称列表。
+// 每行 5 段以 `|` 分隔: `44|代码|市场|名称|flag|`，例:
+//
+//	44|920000|2|安徽凤凰|1|
+func ParseTdxBjMore(data []byte) []*Code {
+	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	out := make([]*Code, 0, len(lines))
+	for _, ln := range lines {
+		ln = strings.TrimRight(ln, "\r")
+		if ln == "" || strings.HasPrefix(ln, "#") {
+			continue
+		}
+		f := strings.Split(ln, "|")
+		if len(f) < 4 || f[1] == "" {
+			continue
+		}
+		out = append(out, &Code{Code: f[1], Name: f[3]})
 	}
 	return out
 }

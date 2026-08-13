@@ -17,7 +17,6 @@ import (
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/lib/bse"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -289,22 +288,19 @@ func (this *Client) GetCode(exchange protocol.Exchange, start uint16) (*protocol
 func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
 	resp := &protocol.CodeResp{}
 
-	//通达信没有北交所代码列表,通过爬虫的方式从北交所官网获取,放在这里是为了方便业务逻辑
-	//不放在extend包时防止循环引用
-	//todo 这是临时方案,等通达信有北交所代码列表时再改
+	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
+	//通过 zhb.zip 中的 tdxbjmore.cfg 获取北交所代码和名称。
 	if exchange == protocol.ExchangeBJ {
-		codes, err := bse.GetCodes()
+		files, err := this.GetZHBFiles()
 		if err != nil {
 			return nil, err
 		}
-		resp.Count = uint16(len(codes))
-		for _, v := range codes {
-			resp.List = append(resp.List, &protocol.Code{
-				Code:      v.Code,
-				Name:      v.Name,
-				LastPrice: v.Last,
-			})
+		data, ok := files[protocol.FileTdxBjMore]
+		if !ok {
+			return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxBjMore)
 		}
+		resp.List = protocol.ParseTdxBjMore(data)
+		resp.Count = uint16(len(resp.List))
 		return resp, nil
 	}
 
