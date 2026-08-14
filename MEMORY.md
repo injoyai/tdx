@@ -29,6 +29,10 @@
 4. **北交所代码获取**：`GetCodeAll(ExchangeBJ)` 走 `GetZHBFiles()` → `tdxbjmore.cfg`（含名称，338条，含已分配未上市代码）。弃用官网爬虫（335条，仅已上市）。
 5. **tdxstat.cfg**：全市场逐股统计，35字段，无名称字段。名称需另从 `tdxbjmore.cfg`/板块文件等获取。
 6. **退市股票**：强制退市→新三板(代码400/420，市场44)；通达信已清退原代码K线数据，线上查不到退市股K线。
+7. **板块指数(880xxx/881xxx)编码约定**：`protocol.IsIndex/AddPrefix` 已识别板块指数——880xxx(概念/风格/地区)、881xxx(行业)归属上海交易所(ExchangeSH)，`AddPrefix("880741")`→`sh880741`，`IsIndex("sh880741")`=true。板块指数日K线用 `GetIndexDay`(指数解析, 量×100/涨跌家数)、实时行情用 `GetQuote` 均可直接获取；`GetQuote` 已改为对指数类(含板块指数)跳过 `DefaultCodes` 价格修正(指数原始解码价格即正确, 不再要求 DefaultCodes 初始化)。板块指数不在 `GetCodeAll`/`DefaultCodes` 股票代码列表内。示例：`example/GetBlockData` 演示拉全量板块+板块指数行情。
+8. **可转债(标准行情7709)**：`protocol.AddPrefix` 已识别可转债前缀——沪市(110/111/113/118)→`sh`、深市(123/125/126/127/128)→`sz`。日K线 `GetKlineDay`/分钟线直接可用(价格解码与股票同路径, 分→厘)。实时行情 `GetQuote` 依赖 `DefaultCodes` 价格修正：转债 `Decimal=4`(价格×10^(2-4)=÷100)，故已收录在市转债价格正确；已退市/未收录转债不在 `DefaultCodes` 内会报"未查询到代码"。当前在市转债约326只(沪深GetCodeAll实时列表可查)。
+9. **期货(扩展行情7727)**：`DialExHqDefault` 连通, 走 `client_exhq.go`。合约代码格式=`品种+YYMM`(如 `IF2609`、`A2609`)，`IF00` 等连续/主力代码无效。期货批量行情用 `ExQuoteList(market, 3, 0, n)`(category=3, market: 47中金/60主力期货/30上期/28郑商/29大商/66广期)，返回收/昨结/持仓/量。期货日K用 `ExBars(4, market, code, 0, n)`(扩展行情日K category=4, 与标准行情 Day=9 不同; 时间/价格/持仓/量/结算价全部正确)。`ExInstruments` 分页 start 为全局品种序号(非市场编号), 全市场约14.4万品种, 含通达信商品指数(T001~T032, market=42)。
+10. **`DecodeCode` 通用代码解析**：已泛化支持多市场——A股(6位数字自动补前缀, 行为不变)、港股(5位纯数字如 `00700`/`hk00700`)、美股(纯字母如 `AAPL`/`usBRK.B`, 最长前缀匹配避免 `SHOP` 被误拆为 `sh`+`OP`)、期货(需显式前缀如 `cffIF2609`/`dceA2609`, 裸合约如 `IF2609` 因无法确定交易所而报错提示用前缀)。另支持带点后缀格式 `000001.SZ`/`600000.SH`/`00700.HK`/`AAPL.US`/`IF2609.CFF`(后缀=交易所缩写, 大小写均可; 美股点代码 `BRK.B` 因后缀 B 非交易所而按美股代码解析)。前缀支持小写缩写/大写/中文名(如 `上海600000`)。注意: 标准行情7709的 Frame(model_quote/model_kline 等)只接受 A股 6 位定长代码; 港股/美股/期货实际走扩展行情7727(`ExQuote`/`ExBars` 等), 不经 DecodeCode。
 
 ## 本地数据文件解析（extend/local.go，参考 pytdx TdxDailyBarReader/TdxLCMinBarReader 官方协议）
 

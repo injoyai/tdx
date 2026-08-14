@@ -375,11 +375,11 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
 		//如果是股票代码,则加上前缀
 		codes[i] = protocol.AddPrefix(codes[i])
-		if !protocol.IsStock(codes[i]) {
+		if !protocol.IsStock(codes[i]) && !protocol.IsIndex(codes[i]) {
 			if DefaultCodes == nil {
 				return nil, errors.New("DefaultCodes未初始化")
 			}
-			//不是股票代码的话，根据codes的信息加上前缀
+			//不是股票/指数代码的话，根据codes的信息加上前缀
 			//codes[i] = DefaultCodes.AddExchange(codes[i])
 			codes[i] = protocol.AddPrefix(codes[i])
 		}
@@ -401,7 +401,9 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 			return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
 		}
 		for i, code := range codes {
-			if !protocol.IsStock(code) {
+			// 股票类代码才需要按 Decimal 修正价格;
+			// 指数(含板块指数 880xxx)与基金行情原始解码价格即正确, 跳过修正。
+			if !protocol.IsStock(code) && !protocol.IsIndex(code) {
 				m := DefaultCodes.Get(code)
 				if m == nil {
 					return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
