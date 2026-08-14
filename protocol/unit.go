@@ -59,18 +59,22 @@ func UTF8ToGBK(text []byte) []byte {
 
 func DecodeCode(code string) (Exchange, string, error) {
 	code = AddPrefix(code)
-	if len(code) != 8 {
-		return 0, "", fmt.Errorf("股票代码长度错误,例如:SZ000001")
-	}
-	switch strings.ToLower(code[:2]) {
-	case ExchangeSH.String():
-		return ExchangeSH, code[2:], nil
-	case ExchangeSZ.String():
-		return ExchangeSZ, code[2:], nil
-	case ExchangeBJ.String():
-		return ExchangeBJ, code[2:], nil
+
+	switch len(code) {
+	case 8, 9:
+		prefix := code[:len(code)-6]
+		// 前缀必须是已知市场的字母缩写/中文名,不能是数字。
+		// 否则如 "000001.SZ" 会把数字前缀 "000" 静默解析成市场编码0(SZ),得到错误代码。
+		if !isExchangeName(prefix) {
+			return 0, "", fmt.Errorf("无法识别的市场: %q", prefix)
+		}
+		ex, err := ParseExchange(prefix)
+		if err != nil {
+			return 0, "", err
+		}
+		return ex, code[len(code)-6:], nil
 	default:
-		return 0, "", fmt.Errorf("股票代码错误,例如:SZ000001")
+		return 0, "", fmt.Errorf("代码长度错误,例如:SZ000001")
 	}
 }
 
