@@ -6,6 +6,7 @@
 
 - 通达信(tdx)协议 Go 实现：标准行情(7709端口) + 盘后数据(report file) + 扩展行情(exhq)。
 - 支持沪深北交易所、K线/分时/成交、板块、财务、复权、行业归属、报表配置等。
+- **输出数据约定**：所有生成/落盘的数据文件统一写入 `./output/`（已入 `.gitignore`），按场景建子目录；禁止散落写入项目根目录/`example/` 内或其他任意路径（见 AGENTS.md 第 8.2 节）。
 
 ## 技术栈
 
@@ -41,12 +42,18 @@
   - `02~03` uint16 当日分钟数(0点起)
   - `04~19` 4×float32 开/高/低/收(元)，`20~23` float32 额(元)，`24~27` uint32 量(股)，`28~31` 保留
 - 单位约定：内部 `Price` 单位=厘(元×1000)，`Volume` 单位=手(股÷100，与线上K线一致)。
-- API：`ReadDay(dir, code)`、`ReadMinute(dir, code, MinuteType1|MinuteType5)`；code 需带交易所前缀(如 `sz000001`)，本地文件名为 `sz000001.day` 格式。
+- **成交量单位差异（指数 vs 股票）**：`.day/.lc1/.lc5` 的 `24~27` 字段，**指数(如 sh000001/sz399001/bj899050)单位是"手"，原值即手**；**股票单位是"股"**，需 ÷100 转手。`ReadDay/ReadMinute1/ReadMinute5/WriteDay/WriteMinute1/WriteMinute5` 已按 `protocol.IsIndex(c)` 区分处理（指数不÷100；写入时股票×100转股、指数原样写手）。判断时用 decodeCode 已带前缀的 c 直接 `IsIndex(c)`，勿再拼前缀。
+- API：`ReadDay(dir, code)`、`ReadMinute1(dir, code)`、`ReadMinute5(dir, code)`；code 需带交易所前缀(如 `sz000001`)，本地文件名为 `sz000001.day` 格式。
+- **写入**：`WriteDay(code, ks) ([]byte, error)`、`WriteMinute1(code, ks)`、`WriteMinute5(code, ks)`（均 `([]byte, error)`），与读取格式对称，**只返回通达信格式字节流、不落盘**，由调用方自由决定如何写入/使用（如 `example/FetchLC1ForTest` 内自行 `os.WriteFile` 到 `./output/lc1/vipdoc/...`）。code 需带交易所前缀用于判断指数/股票。均在 `extend/local.go`。
 
 ## 踩坑记录
 
 - **`.day` 价格是 uint32×(100)** 而非 float32——旧实现用 bytesToFloat 解析价格/成交量完全错误，日期解析也有误（现已修复）。
 - **分钟线价格/成交额是 float32**，必须用 `math.Float32frombits` 转，直接 `Uint32` 得位模式会得到天文数字价格。
+- **float32 精度限制**：分钟线价格以 float32(元) 存，两位小数价格经 float32 往返会差 ±1厘（如 11.2 元→11.199999），测试断言需容差。
+- **`.lc1` 占位记录（与 `.lc5` 的差异，重要）**：真实 `.lc1` 每个交易日末尾（14:59=899分钟，偶见 14:58=898）有 1 条「量=0额=0」的占位记录，其 OHLC 价格=当日最后成交价（四价相同）；当日首条 09:31 是**真实数据**（量额非零），绝不能重复/跳过。`.lc5` 无此占位。`ReadMinute1` 仅对 `.lc1` 跳过「分钟>=898(14:58)且量额全零」的记录（`ReadMinute5` 全保留）；`WriteMinute1` 生成 `.lc1` 时在**当日最后一条真实数据(15:00)之前**补 14:59 占位（`WriteMinute5` 不补）。注意：**不能只按「量=0额=0」判断占位**——实时拉取的数据里盘中也有量额全零的真实无成交分钟（实测 sz000001 有 101 条），必须同时满足「分钟>=898」才跳过，否则误删。用户生成 `.lc1` 若显示不了成交量，多半是占位/量零记录问题。
+- **踩坑（用被覆盖文件误判格式）**：曾用 `sz000001.lc1` 分析真实格式，但它已被本项目 `WriteMinute1` 生成的旧文件覆盖，导致误判「占位在当日首条前、9:31 有重复」。真实格式必须用未被覆盖的文件（如 `sz000002.lc1`）验证。教训：**分析真实格式前先确认样本文件非本工具生成**。
 - **1分钟线文件巨大**（如 sz000001.lc1 超 120 万条 / 35MB），读取时注意内存；通达信 1 分钟数据可能较旧（取决于客户端下载范围）。
 - `minline/` 目录只有 `.lc1`(1分钟)；5分钟 `.lc5` 实际存放在 `fzline/` 目录。
+- **分钟线拉取/生成工具**：`example/FetchLC1ForTest/main.go` 实时拉取股票/指数 1分钟与5分钟K线，用 `WriteMinute` 生成 `.lc1/.lc5`，输出统一放 `./output/lc1/vipdoc/<sh|sz>/<minline|fzline>/`（供客户端导入测试，需手动复制到通达信 `vipdoc` 目录）。指数分钟线用 `GetIndexAll(TypeKlineMinute/5Minute)`，股票用 `GetKlineMinuteAll`/`GetKline5MinuteAll`。
 - zhb.zip 盘后包内含 46 个配置（tdxstat/tdxstat2/tdxbjmore/tdxhy/tdxzs/tdxbk/gbbq 等），GBK 文本，解析需 `UTF8ToGBK`。
