@@ -76,6 +76,18 @@ func New(opts ...Option) (*Server, error) {
 		return nil, err
 	}
 
+	// 初始化 DefaultCodes(ETF/可转债等非股票行情需要查 Decimal 修正价格, 见 Client.GetQuote)
+	if tdx.DefaultCodes == nil {
+		codesClient, err := tdx.DialHostsRange(cfg.hosts, cfg.options...)
+		if err != nil {
+			return nil, err
+		}
+		tdx.DefaultCodes, err = tdx.NewCodesSqlite(tdx.WithCodesClient(codesClient))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	s := &Server{pool: pool}
 
 	if len(cfg.exHqHosts) > 0 {
