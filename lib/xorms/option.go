@@ -13,7 +13,7 @@ import (
 type Option func(*xorm.Engine)
 
 func WithCfg(path ...string) Option {
-	return WithDMap(cfg.Default.GetDMap(conv.Default[string]("database", path...)))
+	return WithDMap(cfg.GetDMap(conv.Default("database", path...)))
 }
 
 func WithDMap(m *conv.Map) Option {
