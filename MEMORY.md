@@ -53,7 +53,7 @@
 
 ## extend/pull v2 拉取服务（2026-08 新增）
 
-> 通用可插拔的日线+1分钟线拉取服务，覆盖沪深股票/指数/ETF/LOF/板块/期货/港股/美股，每天增量更新。v1 的 `extend/pull-kline.go` 保留不动。
+> 通用可插拔的日线+1分钟线拉取服务，覆盖沪深股票/指数/ETF/LOF/板块/期货/港股/美股，每天增量更新。v1 的 `extend/pull-kline.go` 保留不动。包级文档：`extend/pull/README.md`（2026-09 新增，架构/配置/存储布局/查询/合并/自定义 Unit）。
 
 - **架构**：`pull.Unit` 接口（`Name()/Codes(ctx,s)/FetchDay(ctx,s,code)/FetchMin(ctx,s,code)`）实现市场可插拔；`pull.Service` 编排（并发 `Goroutines`、重试 `Retry`、增量去重 `Updated`、进度条）；`pull.PullConfig` 全部通过**代码参数**传入（本库是第三方引用库，不写配置文件）。示例：`example/PullV2`（`go run ./example/PullV2`）。
 - **存储（sqlite, `lib/xorms`）**：成交量统一为**股**。日线一代码一文件 `Dir/day/{key}.db`；1分钟线按年分文件 `Dir/min/{key}/{year}.db`（`{key}` 为 `Code.Key()`）。`KlineDay{Unix pk, OHLC float64(元), Volume int64(股), Amount, Turnover, FloatStock, TotalStock}`；`KlineMinute`（全称）同字段无股本/换手。仅存日线+1分钟，5/15/30/60分钟、周/月/季/年由 `DayToPeriod`/`MinuteToPeriod`（`merge.go`，复用 `protocol.Klines.Merge`）纯内存派生、不落盘。
