@@ -33,6 +33,7 @@
 8. **可转债(标准行情7709)**：`protocol.AddPrefix` 已识别可转债前缀——沪市(110/111/113/118)→`sh`、深市(123/125/126/127/128)→`sz`。日K线 `GetKlineDay`/分钟线直接可用(价格解码与股票同路径, 分→厘)。实时行情 `GetQuote` 依赖 `DefaultCodes` 价格修正：转债 `Decimal=4`(价格×10^(2-4)=÷100)，故已收录在市转债价格正确；已退市/未收录转债不在 `DefaultCodes` 内会报"未查询到代码"。当前在市转债约326只(沪深GetCodeAll实时列表可查)。
 9. **期货(扩展行情7727)**：`DialExHqDefault` 连通, 走 `client_exhq.go`。合约代码格式=`品种+YYMM`(如 `IF2609`、`A2609`)，`IF00` 等连续/主力代码无效。期货批量行情用 `ExQuoteList(market, 3, 0, n)`(category=3, market: 47中金/60主力期货/30上期/28郑商/29大商/66广期)，返回收/昨结/持仓/量。期货日K用 `ExBars(4, market, code, 0, n)`(扩展行情日K category=4, 与标准行情 Day=9 不同; 时间/价格/持仓/量/结算价全部正确)。`ExInstruments` 分页 start 为全局品种序号(非市场编号), 全市场约14.4万品种, 含通达信商品指数(T001~T032, market=42)。
 10. **`DecodeCode` 通用代码解析**：已泛化支持多市场——A股(6位数字自动补前缀, 行为不变)、港股(5位纯数字如 `00700`/`hk00700`)、美股(纯字母如 `AAPL`/`usBRK.B`, 最长前缀匹配避免 `SHOP` 被误拆为 `sh`+`OP`)、期货(需显式前缀如 `cffIF2609`/`dceA2609`, 裸合约如 `IF2609` 因无法确定交易所而报错提示用前缀)。另支持带点后缀格式 `000001.SZ`/`600000.SH`/`00700.HK`/`AAPL.US`/`IF2609.CFF`(后缀=交易所缩写, 大小写均可; 美股点代码 `BRK.B` 因后缀 B 非交易所而按美股代码解析)。前缀支持小写缩写/大写/中文名(如 `上海600000`)。注意: 标准行情7709的 Frame(model_quote/model_kline 等)只接受 A股 6 位定长代码; 港股/美股/期货实际走扩展行情7727(`ExQuote`/`ExBars` 等), 不经 DecodeCode。
+11. **manage.go `RangeIndexes` 修复(2026-09)**：历史 bug——曾误遍历 `GetETFs()`，已改为 `GetIndexes()`。若外部代码曾依赖错误行为（遍历出 ETF 列表），需注意语义变化。
 
 ## 本地数据文件解析（extend/local.go，参考 pytdx TdxDailyBarReader/TdxLCMinBarReader 官方协议）
 
@@ -49,6 +50,22 @@
 - **成交量单位差异（指数 vs 股票）**：`.day/.lc1/.lc5` 的 `24~27` 字段，**指数(如 sh000001/sz399001/bj899050)单位是"手"，原值即手**；**股票单位是"股"**，需 ÷100 转手。`ReadDay/ReadMinute1/ReadMinute5/WriteDay/WriteMinute1/WriteMinute5` 已按 `protocol.IsIndex(c)` 区分处理（指数不÷100；写入时股票×100转股、指数原样写手）。判断时用 decodeCode 已带前缀的 c 直接 `IsIndex(c)`，勿再拼前缀。
 - API：`ReadDay(dir, code)`、`ReadMinute1(dir, code)`、`ReadMinute5(dir, code)`；code 需带交易所前缀(如 `sz000001`)，本地文件名为 `sz000001.day` 格式。
 - **写入**：`WriteDay(code, ks) ([]byte, error)`、`WriteMinute1(code, ks)`、`WriteMinute5(code, ks)`（均 `([]byte, error)`），与读取格式对称，**只返回通达信格式字节流、不落盘**，由调用方自由决定如何写入/使用（如 `example/FetchLC1ForTest` 内自行 `os.WriteFile` 到 `./output/lc1/vipdoc/...`）。code 需带交易所前缀用于判断指数/股票。均在 `extend/local.go`。
+
+## extend/pull v2 拉取服务（2026-08 新增）
+
+> 通用可插拔的日线+1分钟线拉取服务，覆盖沪深股票/指数/ETF/LOF/板块/期货/港股/美股，每天增量更新。v1 的 `extend/pull-kline.go` 保留不动。
+
+- **架构**：`pull.Unit` 接口（`Name()/Codes(ctx,s)/FetchDay(ctx,s,code)/FetchMin(ctx,s,code)`）实现市场可插拔；`pull.Service` 编排（并发 `Goroutines`、重试 `Retry`、增量去重 `Updated`、进度条）；`pull.PullConfig` 全部通过**代码参数**传入（本库是第三方引用库，不写配置文件）。示例：`example/PullV2`（`go run ./example/PullV2`）。
+- **存储（sqlite, `lib/xorms`）**：成交量统一为**股**。日线一代码一文件 `Dir/day/{key}.db`；1分钟线按年分文件 `Dir/min/{key}/{year}.db`（`{key}` 为 `Code.Key()`）。`KlineDay{Unix pk, OHLC float64(元), Volume int64(股), Amount, Turnover, FloatStock, TotalStock}`；`KlineMinute`（全称）同字段无股本/换手。仅存日线+1分钟，5/15/30/60分钟、周/月/季/年由 `DayToPeriod`/`MinuteToPeriod`（`merge.go`，复用 `protocol.Klines.Merge`）纯内存派生、不落盘。
+- **Code.Key() 规则**：a_stock/index/etf_lof/block→原代码（已带 sh/sz/bj 前缀）；hk→`HK00700`；us→`US.AAPL`；future 等→`future.cff/IF2609`（多交易所用前缀区分）。`SplitKey` 反向解析。
+- **注册的内置 Unit**（`extend/pull/market/`，`init()` 中 `pull.Register`）：`a_stock`/`index`/`etf_lof`（标准行情7709，走 `Manage`）；`block`（板块指数，`GetBlockDataWithIndex`）；`future`/`hk`/`us`（扩展行情7727，走 `ExPool`）。`Config.Units` 未指定时默认全部；`Config.Codes` 可按市场名覆盖代码列表。
+- **成交量流转（v2 统一转股）**：标准行情 7709 股票/ETF 日线与分钟线 `Decode` 后=手，`pull.ToShares(×100)` 转股；指数日线 Decode 时 KindIndex 分支已 ×100（=股）直接存、指数分钟经 normalize ÷100 回手再 ×100=股（代码统一 `pull.ToShares`）；期货/港股/美股 ExBars 的 `Trade`=手，同样 ×100 转股。
+- **ExBars 细节**：返回列表**从旧到新**，须从末尾（最新）往前遍历；`page` 以 800 为步进（`start` 参数是偏移）。**日K category 按市场不同**：期货用 `TypeKlineDay2`(=4，v1 实测，MEMORY.md 第9条)；港股用 `TypeKlineDay`(=9，`exhq_live_test.go` 实测 `ExBars(9,31,"00700",0,5)`)，美股参照港股用 9。分钟 category 统一 `TypeKlineMinute2`(=8，待实测验证)。期货多交易所 market：47中金/60主力/30上期/28郑商/29大商/66广期/42期货指数。**注意 `start` 为 uint16**：翻页偏移超 65535 会回绕，v2 用 `int` 累加 + `exPageLimit` 护栏（超出报错），意味着 ExBars 单次序列最多取 ~65535 根历史。
+- **增量更新**：`tdx.Updated` 按日去重（非交易日 `Workday.TodayIs()` 跳过）；整体键 `"pull"` + **按 Unit 粒度键 `"pull:{unit名}"`**（某市场中途失败下次只重拉该市场，其余跳过；全部成功才标记整体）。日线 `SaveDay` 删除 `Unix>=last` 后插入（幂等覆盖最新一根）；分钟按年文件。首次全量从 `StartAt` 起（未设置默认最近两年，`NewService` 归一化），`last>0` 时增量拉取直到命中边界。**分钟线历史补全**：`FetchMin` 从 `Start.Year()` 到今年逐年检查，文件不存在的年份全量补拉（std/ex 两路径一致）；某年文件中途失败留半库时删除该文件重跑即可。**空数据保护（双重）**：`SaveDay/SaveMin` 空切片直接跳过（不打开库文件，避免创建空库）；`last>0 && len(out)==0`（退市/停牌/异常返回空）跳写，防"只删不插"侵蚀。
+- **引擎缓存**：`Service.engines`（map，路径为 key，`sync.Mutex` 保护）缓存已打开的 sqlite 引擎，`Close()` 统一释放；避免每次读写开关引擎。
+- **查询 API**：`Service.QueryDay(code,start,end)`（单文件）与 `Service.QueryMin(code,start,end)`（自动按年定位文件拼接，升序）；start/end 零值=不限制该端（`rangeQuery` 构造条件，注意 xorms `Where` 返回 `*xorms.Session` 需链式调用）；库不存在返回空不报错。
+- **元→厘转换**：`merge.go` 用包内 `yuan()`（四舍五入）而非 `protocol.Yuan`（截断），减少 DayToPeriod/MinuteToPeriod 往返 ±1 厘误差。
+- **删尾重插的语义（重要）**：upsert "先删 `>=last` 后插入" 的目的是**自动修复盘中拉到的半根 K 线**（删了完整重插）。两个配套约定：① 拉取时命中边界那根（t == last）必须**收入结果再停**（std 路径 `GetKlineDayUntil` 天然含边界；ex 路径 2026-08 修复前 `break` 前不 append，每次增量静默丢一根——已修复）；② **空结果保护**：`last>0 && len(out)==0`（退市/长期停牌/服务端异常返回空）时必须跳过写入，否则只剩"删"没有"插"，逐次侵蚀历史（a_stock/future 两路径均已加守卫）。
 
 ## 踩坑记录
 
