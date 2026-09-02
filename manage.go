@@ -222,7 +222,7 @@ func (this *Manage) RangeETFs(f func(code string)) {
 
 // RangeIndexes 遍历所有指数
 func (this *Manage) RangeIndexes(f func(code string)) {
-	for _, v := range this.Codes.GetETFs() {
+	for _, v := range this.Codes.GetIndexes() {
 		f(v.FullCode())
 	}
 }
