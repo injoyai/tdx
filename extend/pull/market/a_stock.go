@@ -15,11 +15,11 @@ import (
 // stdUnit 标准行情(7709)市场的基础实现：通过 tdx.Manage 连接源取连接。
 // 日线/分钟线增量逻辑由框架（store.go）统一处理，这里只负责"拉取原始K线并转股"。
 type stdUnit struct {
-	name string
-	kind string // 分类：stock / etf / index（决定用 GetKline 还是 GetIndex）
+	name pull.Market // 市场标识（pull.Market 枚举）
+	kind string      // 分类：stock / etf / index（决定用 GetKline 还是 GetIndex）
 }
 
-func (u *stdUnit) Name() string { return u.name }
+func (u *stdUnit) Name() string { return u.name.String() }
 
 // Codes 获取代码列表（由具体市场决定来源）。
 func (u *stdUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
@@ -133,9 +133,9 @@ var (
 )
 
 func init() {
-	pull.Register(&AStock{stdUnit{name: "a_stock", kind: "stock"}})
-	pull.Register(&Index{stdUnit{name: "index", kind: "index"}})
-	pull.Register(&EtfLof{stdUnit{name: "etf_lof", kind: "etf"}})
+	pull.Register(&AStock{stdUnit{name: pull.MarketAStock, kind: "stock"}})
+	pull.Register(&Index{stdUnit{name: pull.MarketIndex, kind: "index"}})
+	pull.Register(&EtfLof{stdUnit{name: pull.MarketEtfLof, kind: "etf"}})
 }
 
 // ---- Codes 实现 ----

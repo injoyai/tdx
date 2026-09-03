@@ -75,21 +75,28 @@ func main() {
 
 > 完整演示见 [`example/PullV2`](../../example/PullV2)：全市场 / 自定义代码列表 / 只拉日线 三种用法。
 
+### 两种拉取模式
+
+- **全量模式**（`Codes` 为空，上例）：全部注册市场，各自自动发现代码（整市场拉取）。
+- **白名单模式**（`Codes` 非空）：只拉列出的代码，市场由 `ParseCode` 自动路由；未涉及的市场不拉。
+
 ---
 
 ## 🗺 内置市场
 
-| Unit 名 | 市场 | 连接 | 说明 |
-|---|---|---|---|
-| `a_stock` | 沪深股票 | 7709 | `GetKline*` |
-| `index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
-| `etf_lof` | ETF/LOF | 7709 | `GetKline*` |
-| `block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
-| `future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
-| `hk` | 港股 | 7727 | `ExBars` |
-| `us` | 美股 | 7727 | `ExBars` |
+| 枚举常量 | 值 | 市场 | 连接 | 说明 |
+|---|---|---|---|---|
+| `pull.MarketAStock` | `a_stock` | 沪深股票 | 7709 | `GetKline*` |
+| `pull.MarketIndex` | `index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
+| `pull.MarketEtfLof` | `etf_lof` | ETF/LOF | 7709 | `GetKline*` |
+| `pull.MarketBlock` | `block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
+| `pull.MarketFuture` | `future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
+| `pull.MarketHK` | `hk` | 港股 | 7727 | `ExBars` |
+| `pull.MarketUS` | `us` | 美股 | 7727 | `ExBars` |
 
-> `import _ "github.com/injoyai/tdx/extend/pull/market"` 即注册全部；`PullConfig.Units` 选择子集。
+> 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；自定义市场可扩展自己的 Market 值。
+
+> `import _ "github.com/injoyai/tdx/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
 
 ---
 
@@ -98,8 +105,7 @@ func main() {
 | 字段 | 说明 | 默认值 |
 |---|---|---|
 | `Dir` | 数据根目录（**必填**） | — |
-| `Units` | 拉取哪些市场；nil = 全部已注册 | 全部 |
-| `Codes` | 按市场名覆盖代码列表，key=`Unit.Name()` | 自动发现 |
+| `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `Goroutines` | 并发数 | `8` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
@@ -110,6 +116,25 @@ func main() {
 | `Workday` | 交易日历 | 无（不判断交易日） |
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。
+
+### 代码自动路由
+
+`Codes` 是扁平的代码列表，无需按市场分组——`pull.ParseCode` 自动识别所属市场：
+
+```go
+Codes: []string{
+    "sz000001", // 沪深股票（带前缀）
+    "600000",   // 沪深股票（6 位裸数字，自动补 sh 前缀）
+    "510300",   // ETF（自动补前缀并分类）
+    "399001",   // 深证成指（指数）
+    "880001",   // 板块指数
+    "00700",    // 港股（5 位数字）
+    "AAPL",     // 美股（纯字母）
+    "cff/IF2609", // 期货（带交易所前缀）
+}
+```
+
+> 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
 
 ---
 
@@ -145,13 +170,13 @@ func main() {
 
 ```go
 // 日线（升序）；start/end 零值 = 不限制该端
-ks, _ := s.QueryDay(pull.Code{Market: "a_stock", Code: "sh600000"}, start, end)
+ks, _ := s.QueryDay(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
 
 // 1分钟线：自动按年定位文件并拼接，不存在的年份跳过
-ms, _ := s.QueryMin(pull.Code{Market: "a_stock", Code: "sh600000"}, start, end)
+ms, _ := s.QueryMin(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
 
 // 库内最后一条时间戳（空库返回 0）
-last, _ := s.LastDayUnix(pull.Code{Market: "a_stock", Code: "sh600000"})
+last, _ := s.LastDayUnix(pull.Code{Market: pull.MarketAStock, Code: "sh600000"})
 ```
 
 ---

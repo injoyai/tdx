@@ -43,7 +43,7 @@ var futureMarketNames = map[uint8]string{
 // 品种代码列表中，同一 Unit 可能覆盖多个扩展市场（如期货多个交易所），
 // 此时交易所简称作为 Code.Code 前缀（"cff/IF2609"），由 marketOf 解析。
 type exUnit struct {
-	name string // 市场标识
+	name pull.Market // 市场标识（pull.Market 枚举）
 	// markets 该 Unit 覆盖的扩展市场编码（用于从 ExInstruments 过滤）
 	markets []uint8
 	// dayCategory 日K category；期货=TypeKlineDay2(=4)（v1 实测），港股/美股各自覆盖为 TypeKlineDay(=9)
@@ -52,7 +52,7 @@ type exUnit struct {
 	minuteCategory uint8
 }
 
-func (u *exUnit) Name() string { return u.name }
+func (u *exUnit) Name() string { return u.name.String() }
 
 // Ex 取扩展行情连接池；未配置返回错误。
 func (u *exUnit) Ex(s *pull.Service) (tdx.IPool, error) {
@@ -337,7 +337,7 @@ var _ pull.Unit = (*Future)(nil)
 
 func init() {
 	pull.Register(&Future{exUnit{
-		name:           "future",
+		name:           pull.MarketFuture,
 		markets:        []uint8{marketCFF, marketCZC, marketDCE, marketSHF, marketGFE, marketQHZ},
 		dayCategory:    exDayCategory,
 		minuteCategory: exMinuteCategory,

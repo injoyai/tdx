@@ -24,7 +24,7 @@ var _ pull.Unit = (*US)(nil)
 
 func init() {
 	pull.Register(&US{exUnit{
-		name:           "us",
+		name:           pull.MarketUS,
 		markets:        []uint8{marketUS},
 		dayCategory:    usDayCategory,
 		minuteCategory: usMinuteCategory,

@@ -10,7 +10,7 @@ import (
 //
 // 新增一个市场 = 新增一个实现 + Register，无需修改框架代码。
 type Unit interface {
-	// Name 唯一标识，如 "a_stock"、"hk"、"future"，用于日志/进度条/去重。
+	// Name 唯一标识（Market 枚举值，如 MarketAStock、MarketHK、MarketFuture），用于日志/进度条/去重。
 	Name() string
 
 	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。

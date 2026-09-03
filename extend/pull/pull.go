@@ -25,6 +25,9 @@ type Service struct {
 	goro      int
 	start     time.Time
 
+	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
+	overrides map[Market][]Code
+
 	mu      sync.Mutex               // 保护 engines 缓存
 	engines map[string]*xorms.Engine // 已打开的 sqlite 引擎缓存（key=文件路径）
 }
@@ -53,9 +56,31 @@ func NewService(cfg *PullConfig) (*Service, error) {
 		retry = tdx.DefaultRetry
 	}
 
-	// 需要更新的市场：未指定则全部注册
-	units := cfg.Units
-	if len(units) == 0 {
+	// 代码列表：一次性解析并按市场分组。
+	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
+	// Codes 为空 = 全量模式：全部注册市场各自自动发现代码。
+	overrides := map[Market][]Code{}
+	if len(cfg.Codes) > 0 {
+		for _, s := range cfg.Codes {
+			c, err := ParseCode(s)
+			if err != nil {
+				return nil, err
+			}
+			overrides[c.Market] = append(overrides[c.Market], c)
+		}
+	}
+
+	// 需要更新的市场：白名单模式取涉及的市场，全量模式取全部注册
+	var units []Unit
+	if len(overrides) > 0 {
+		for m := range overrides {
+			u, ok := Get(m.String())
+			if !ok {
+				return nil, fmt.Errorf("pull: 未注册的市场 %s", m)
+			}
+			units = append(units, u)
+		}
+	} else {
 		units = Units()
 	}
 	if len(units) == 0 {
@@ -95,6 +120,7 @@ func NewService(cfg *PullConfig) (*Service, error) {
 		retry:     retry,
 		goro:      goro,
 		start:     start,
+		overrides: overrides,
 		engines:   map[string]*xorms.Engine{},
 	}, nil
 }
@@ -113,14 +139,11 @@ func (s *Service) Close() error {
 	return s.updatedDB.Close()
 }
 
-// Config 返回配置副本（只读；Codes map 深拷贝，避免与 Service 共享底层）。
+// Config 返回配置副本（只读；Codes 切片拷贝，避免与 Service 共享底层）。
 func (s *Service) Config() PullConfig {
 	c := *s.cfg
 	if s.cfg.Codes != nil {
-		c.Codes = make(map[string][]string, len(s.cfg.Codes))
-		for k, v := range s.cfg.Codes {
-			c.Codes[k] = append([]string(nil), v...)
-		}
+		c.Codes = append([]string(nil), s.cfg.Codes...)
 	}
 	return c
 }
@@ -236,20 +259,11 @@ func (s *Service) updateUnit(ctx context.Context, u Unit) error {
 	return nil
 }
 
-// codes 获取市场代码列表；Config.Codes 显式覆盖时优先使用。
-// 覆盖列表中的条目用 SplitKey 解析；无法识别市场前缀时（如 "sh600000"）补上该市场的标识。
+// codes 获取市场代码列表；Config.Codes 指定时优先使用（已按市场分组）。
+// 注意：overrides 只包含用户显式列出的市场；其他市场仍走自动发现。
 func (s *Service) codes(ctx context.Context, u Unit) ([]Code, error) {
-	// 显式覆盖：按市场名指定代码列表
-	if override, ok := s.cfg.Codes[u.Name()]; ok {
-		out := make([]Code, 0, len(override))
-		for _, key := range override {
-			c := SplitKey(key)
-			if c.Market == "" {
-				c.Market = u.Name()
-			}
-			out = append(out, c)
-		}
-		return out, nil
+	if override, ok := s.overrides[Market(u.Name())]; ok {
+		return override, nil
 	}
 	return u.Codes(ctx, s)
 }
