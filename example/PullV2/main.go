@@ -9,7 +9,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
@@ -25,7 +24,7 @@ func main() {
 	// 例2：只拉指定的沪深股票 + 港股，自定义代码列表，并发 4
 	// _ = pullCustom()
 
-	// 例3：只拉日线，指定单个市场
+	// 例3：只拉日线，只拉几只指数
 	// _ = pullDayOnly()
 }
 
@@ -87,15 +86,15 @@ func pullCustom() error {
 	cfg := &pull.PullConfig{
 		Dir:        "./output/pullv2/custom",
 		Goroutines: 4,
-		// 只更新两个市场
-		Units: []pull.Unit{
-			mustUnit("a_stock"),
-			mustUnit("hk"),
-		},
-		// 自定义代码列表（覆盖默认的自动发现）
-		Codes: map[string][]string{
-			"a_stock": {"sh600000", "sz000001"},
-			"hk":      {"HK00700", "HK09988"},
+		// 自定义代码列表（覆盖默认的自动发现）：
+		// 直接写代码即可，市场自动路由（sz000001→沪深股票、510300→ETF、00700→港股…见 pull.ParseCode）
+		Codes: []string{
+			"sz000001", // 平安银行（沪深股票）
+			"sh600000", // 浦发银行（沪深股票）
+			"510300",   // 沪深300ETF（自动补 sh 前缀）
+			"399001",   // 深证成指（指数）
+			"00700",    // 腾讯（港股，5 位数字自动识别）
+			"AAPL",     // 苹果（美股，纯字母自动识别）
 		},
 		StartAt: "20260601",
 		Manage:  m,
@@ -123,8 +122,12 @@ func pullDayOnly() error {
 		Day:     true, // 只拉日线
 		Minute:  false,
 		StartAt: "20260101",
-		// 只更新指数市场
-		Units:  []pull.Unit{mustUnit("index")},
+		// 只拉几只指数（白名单模式：只拉列出的代码，不拉其他市场）
+		Codes: []string{
+			"sh000001", // 上证指数
+			"sz399001", // 深证成指
+			"sz399006", // 创业板指
+		},
 		Manage: m,
 	}
 	s, err := pull.NewService(cfg)
@@ -132,13 +135,4 @@ func pullDayOnly() error {
 		return err
 	}
 	return s.Update(context.Background())
-}
-
-// mustUnit 按名称取已注册的市场 Unit。
-func mustUnit(name string) pull.Unit {
-	u, ok := pull.Get(name)
-	if !ok {
-		panic(fmt.Sprintf("未注册的市场: %s", name))
-	}
-	return u
 }
