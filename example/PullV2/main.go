@@ -35,7 +35,13 @@ func main() {
 		Manage:     m,
 		ExPool:     ex,
 		Workday:    m.Workday,
-		Codes:      []string{"sz000001"},
+		Codes: []string{
+			"sz000001",
+			"sh000001",
+			"HK00700",
+			"US.AAPL",
+			"HK.HSI",
+		},
 	})
 	logs.PrintErr(err)
 
