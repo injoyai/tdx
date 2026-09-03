@@ -5,6 +5,7 @@ package market
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/injoyai/tdx"
@@ -26,11 +27,29 @@ func (u *stdUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, erro
 	return nil, fmt.Errorf("market: %s 未实现 Codes", u.name)
 }
 
+// gbbqMu 保护下述懒加载（多个 stdUnit / goroutine 并发触发时只初始化一次）。
+var gbbqMu sync.Mutex
+
 // Manage 取标准行情连接源；未配置返回错误。
+// 懒加载 Gbbq：NewManage 默认塞空实现（&Gbbq{}，GetEquity 恒 nil），导致
+// 股票日线的流通股/总股本/换手率静默为 0。检测到空实现时自动初始化真实现
+// （独立连接，首跑全量拉取一次 gbbq 入库，之后每日 05:09 定时更新）。
 func (u *stdUnit) Manage(s *pull.Service) (*tdx.Manage, error) {
 	m := s.Manage()
 	if m == nil {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Manage（标准行情7709连接源）", u.name)
+	}
+	if _, ok := m.Gbbq.(*tdx.Gbbq); !ok {
+		return m, nil // 用户自定义实现或 nil，不动
+	}
+	gbbqMu.Lock()
+	defer gbbqMu.Unlock()
+	if g, ok := m.Gbbq.(*tdx.Gbbq); ok && g.IsEmpty() {
+		g, err := tdx.NewGbbq() // 独立连接，避免与池内连接并发冲突
+		if err != nil {
+			return nil, fmt.Errorf("pull: 初始化股本变迁数据失败: %w", err)
+		}
+		m.Gbbq = g
 	}
 	return m, nil
 }

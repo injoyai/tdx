@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/injoyai/bar"
@@ -15,7 +16,7 @@ import (
 
 // Service 拉取服务：编排市场 Unit、增量去重、并发、重试、落库。
 type Service struct {
-	cfg       *PullConfig
+	cfg       *Config
 	units     []Unit
 	updated   *tdx.Updated
 	updatedDB *xorms.Engine // 内部自建的去重库，Close 时释放
@@ -33,7 +34,7 @@ type Service struct {
 }
 
 // NewService 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
-func NewService(cfg *PullConfig) (*Service, error) {
+func NewService(cfg *Config) (*Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
@@ -140,7 +141,7 @@ func (s *Service) Close() error {
 }
 
 // Config 返回配置副本（只读；Codes 切片拷贝，避免与 Service 共享底层）。
-func (s *Service) Config() PullConfig {
+func (s *Service) Config() Config {
 	c := *s.cfg
 	if s.cfg.Codes != nil {
 		c.Codes = append([]string(nil), s.cfg.Codes...)
@@ -218,7 +219,8 @@ func (s *Service) workday() (*tdx.Workday, bool) {
 	return nil, false
 }
 
-// updateUnit 拉取单个市场。
+// updateUnit 拉取单个市场。返回错误表示存在失败代码（已重试耗尽），
+// Update 据此不标记该市场"当日完成"，下次重跑会继续补拉。
 func (s *Service) updateUnit(ctx context.Context, u Unit) error {
 	codes, err := s.codes(ctx, u)
 	if err != nil {
@@ -231,16 +233,30 @@ func (s *Service) updateUnit(ctx context.Context, u Unit) error {
 	b := bar.NewCoroutine(len(codes), s.goro, bar.WithPrefix(fmt.Sprintf("[%s]", u.Name())))
 	defer b.Close()
 
+	// 成功计数：成功数=总数表示全部完成；失败时记录首个错误。
+	// 注意 defer 在 GoRetry 每次重试尝试后都会执行，重试成功最终 err=nil 不计数，
+	// 故以"成功数"而非"失败次数"判定（避免重试内多次失败重复计数）。
+	var succCount int64
+	var mu sync.Mutex
+	var firstFail error
+
 	for _, code := range codes {
 		code := code
 		b.GoRetry(func() (err error) {
 			b.SetPrefix(fmt.Sprintf("[%s] %s", u.Name(), code.Key()))
 			b.Flush()
 			defer func() {
-				if err != nil {
-					b.Logf("[错误] [%s] %s\n", code.Key(), err)
-					b.Flush()
+				if err == nil {
+					atomic.AddInt64(&succCount, 1)
+					return
 				}
+				mu.Lock()
+				if firstFail == nil {
+					firstFail = err
+				}
+				mu.Unlock()
+				b.Logf("[错误] [%s] %s\n", code.Key(), err)
+				b.Flush()
 			}()
 			if s.day {
 				if err = u.FetchDay(ctx, s, code); err != nil {
@@ -256,6 +272,10 @@ func (s *Service) updateUnit(ctx context.Context, u Unit) error {
 		}, s.retry)
 	}
 	b.Wait()
+	if n := atomic.LoadInt64(&succCount); n < int64(len(codes)) {
+		return fmt.Errorf("pull: 市场 %s 拉取不完整（成功 %d/%d），首个错误: %v",
+			u.Name(), n, len(codes), firstFail)
+	}
 	return nil
 }
 

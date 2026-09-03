@@ -6,8 +6,8 @@ import (
 	"github.com/injoyai/tdx"
 )
 
-// PullConfig 拉取配置，通过代码参数传入（本库作为第三方引用，配置不落文件）。
-type PullConfig struct {
+// Config 拉取配置，通过代码参数传入（本库作为第三方引用，配置不落文件）。
+type Config struct {
 	Dir    string   // 数据根目录（必填）
 	Codes  []string // 拉取代码列表（自动路由市场，见 ParseCode）；空 = 全部注册市场自动发现
 	Day    bool     // 是否拉日线（默认 true，见 NewService 归一化）
@@ -23,7 +23,7 @@ type PullConfig struct {
 }
 
 // Start 解析起始日期；未设置或非法时返回零值（Service 会归一化为最近两年）。
-func (c PullConfig) Start() time.Time {
+func (c Config) Start() time.Time {
 	if c.StartAt == "" {
 		return time.Time{}
 	}

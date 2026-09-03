@@ -17,15 +17,31 @@ import (
 )
 
 func main() {
-	// 例1：全市场拉取（股票/指数/ETF/LOF/板块/期货/港股/美股）
-	// 数据根目录 ./output/pullv2，起始日期 20260101，日线+分钟线
-	_ = pullAll()
+	m, err := tdx.NewManage()
+	logs.PrintErr(err)
 
-	// 例2：只拉指定的沪深股票 + 港股，自定义代码列表，并发 4
-	// _ = pullCustom()
+	// 扩展行情连接池（期货/港股/美股必需）
+	ex, err := tdx.NewPool(func() (*tdx.Client, error) {
+		return tdx.DialExHqDefault()
+	}, 4)
+	logs.PrintErr(err)
 
-	// 例3：只拉日线，只拉几只指数
-	// _ = pullDayOnly()
+	defer ex.Close()
+
+	s, err := pull.NewService(&pull.Config{
+		Dir:        "./output/pullv2",
+		Goroutines: 8,
+		StartAt:    "20260101",
+		Manage:     m,
+		ExPool:     ex,
+		Workday:    m.Workday,
+		Codes:      []string{"sz000001"},
+	})
+	logs.PrintErr(err)
+
+	logs.Debug("开始拉取")
+	err = s.Update(context.Background(), true)
+	logs.Debug("拉取完成, err=", err)
 }
 
 // pullAll 全市场拉取示例。
@@ -47,7 +63,7 @@ func pullAll() error {
 	}
 	defer ex.Close()
 
-	cfg := &pull.PullConfig{
+	cfg := &pull.Config{
 		Dir:        "./output/pullv2",
 		Goroutines: 8,
 		StartAt:    "20260101",
@@ -83,7 +99,7 @@ func pullCustom() error {
 	}
 	defer ex.Close()
 
-	cfg := &pull.PullConfig{
+	cfg := &pull.Config{
 		Dir:        "./output/pullv2/custom",
 		Goroutines: 4,
 		// 自定义代码列表（覆盖默认的自动发现）：
@@ -117,7 +133,7 @@ func pullDayOnly() error {
 		defer closer.Close()
 	}
 
-	cfg := &pull.PullConfig{
+	cfg := &pull.Config{
 		Dir:     "./output/pullv2/dayonly",
 		Day:     true, // 只拉日线
 		Minute:  false,

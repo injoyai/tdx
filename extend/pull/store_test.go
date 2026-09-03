@@ -18,7 +18,7 @@ func testService(t *testing.T) *Service {
 	// 测试环境未注册内置市场，注册一个仅供测试的市场（多个测试共用，只注册一次）；
 	// 用完整键 "test.xxx" 通过 ParseCode 路由到该市场
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	s, err := NewService(&PullConfig{
+	s, err := NewService(&Config{
 		Dir:   dir,
 		Codes: []string{"test.sh600000"},
 	})
@@ -197,17 +197,21 @@ func TestCodeFileLayout(t *testing.T) {
 		dayFile string
 		minFile string
 	}{
-		{Code{Market: MarketAStock, Code: "sh600000"}, "sh600000.db", "sh600000/2026.db"},
-		{Code{Market: MarketHK, Code: "00700"}, "HK00700.db", "HK00700/2026.db"},
-		{Code{Market: MarketUS, Code: "AAPL"}, "US.AAPL.db", "US.AAPL/2026.db"},
-		{Code{Market: MarketFuture, Code: "cff/IF2609"}, "future.cff/IF2609.db", "future.cff/IF2609/2026.db"},
+		{Code{Market: MarketAStock, Code: "sh600000"}, "cn/stock/day/sh600000.db", "cn/stock/min/sh600000/sh600000-2026.db"},
+		{Code{Market: MarketIndex, Code: "sh000001"}, "cn/index/day/sh000001.db", "cn/index/min/sh000001/sh000001-2026.db"},
+		{Code{Market: MarketEtfLof, Code: "sh510300"}, "cn/etf/day/sh510300.db", "cn/etf/min/sh510300/sh510300-2026.db"},
+		{Code{Market: MarketBlock, Code: "sh880001"}, "cn/block/day/sh880001.db", "cn/block/min/sh880001/sh880001-2026.db"},
+		{Code{Market: MarketHK, Code: "00700"}, "hk/stock/day/00700.db", "hk/stock/min/00700/00700-2026.db"},
+		{Code{Market: MarketHKIndex, Code: "HSI"}, "hk/index/day/HSI.db", "hk/index/min/HSI/HSI-2026.db"},
+		{Code{Market: MarketUS, Code: "AAPL"}, "us/stock/day/AAPL.db", "us/stock/min/AAPL/AAPL-2026.db"},
+		{Code{Market: MarketFuture, Code: "cff/IF2609"}, "cn/future/day/cff-IF2609.db", "cn/future/min/cff-IF2609/cff-IF2609-2026.db"},
 	}
 	for _, c := range cases {
-		if got := c.code.DayFile(dir); got != filepath.Join(dir, "day", c.dayFile) {
-			t.Errorf("%s DayFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, "day", c.dayFile))
+		if got := c.code.DayFile(dir); got != filepath.Join(dir, c.dayFile) {
+			t.Errorf("%s DayFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, c.dayFile))
 		}
-		if got := c.code.MinFile(dir, 2026); got != filepath.Join(dir, "min", c.minFile) {
-			t.Errorf("%s MinFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, "min", c.minFile))
+		if got := c.code.MinFile(dir, 2026); got != filepath.Join(dir, c.minFile) {
+			t.Errorf("%s MinFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, c.minFile))
 		}
 	}
 }
@@ -220,8 +224,9 @@ func TestSplitKey(t *testing.T) {
 	}{
 		{"US.AAPL", MarketUS, "AAPL"},
 		{"HK00700", MarketHK, "00700"},
-		{"future.cff/IF2609", MarketFuture, "cff/IF2609"},
-		{"a_stock.sh600000", MarketAStock, "sh600000"},
+		{"cn/future.cff/IF2609", MarketFuture, "cff/IF2609"},
+		{"cn/stock.sh600000", MarketAStock, "sh600000"},
+		{"hk/index.HSI", MarketHKIndex, "HSI"},
 		{"sh600000", "", "sh600000"}, // 无法识别市场，保留原样
 	}
 	for _, c := range cases {
@@ -263,15 +268,20 @@ func TestParseCode(t *testing.T) {
 		// 港股
 		{"HK00700", MarketHK, "00700"},
 		{"00700", MarketHK, "00700"},
+		// 港股指数（白名单）
+		{"HSI", MarketHKIndex, "HSI"},
+		{"VHSI", MarketHKIndex, "VHSI"},
 		// 美股
 		{"AAPL", MarketUS, "AAPL"},
 		// 期货
 		{"cff/IF2609", MarketFuture, "cff/IF2609"},
 		{"shf/cu2609", MarketFuture, "shf/cu2609"},
 		// 完整键
-		{"future.cff/IF2609", MarketFuture, "cff/IF2609"},
-		{"hk.00700", MarketHK, "00700"},
+		{"cn/future.cff/IF2609", MarketFuture, "cff/IF2609"},
+		{"hk/stock.00700", MarketHK, "00700"},
 		{"US.AAPL", MarketUS, "AAPL"},
+		{"hk/index.HSI", MarketHKIndex, "HSI"},
+		{"hk/index.CES120", MarketHKIndex, "CES120"},
 	}
 	for _, c := range cases {
 		got, err := ParseCode(c.in)
@@ -295,7 +305,7 @@ func TestDirCreation(t *testing.T) {
 	dir := filepath.Join(os.TempDir(), "pull-test-"+t.Name())
 	defer os.RemoveAll(dir)
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	s, err := NewService(&PullConfig{
+	s, err := NewService(&Config{
 		Dir:   dir,
 		Codes: []string{"test.sh600000"},
 	})
@@ -307,9 +317,9 @@ func TestDirCreation(t *testing.T) {
 	if err := s.SaveDay(code, 0, []*KlineDay{{Unix: 1, Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
-	// 目录应自动创建
-	if _, err := os.Stat(filepath.Join(dir, "day", "sh600000.db")); err != nil {
-		t.Errorf("day 目录/文件未创建: %v", err)
+	// 地区/资产两级目录应自动创建
+	if _, err := os.Stat(filepath.Join(dir, "cn", "stock", "day", "sh600000.db")); err != nil {
+		t.Errorf("地区/资产/day 目录/文件未创建: %v", err)
 	}
 }
 
@@ -433,5 +443,40 @@ func TestSaveEmptySkipsWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(code.DayFile(s.Config().Dir)); !os.IsNotExist(err) {
 		t.Fatalf("空数据不应创建文件")
+	}
+}
+
+// TestInsertBatchOverLimit 回归测试：批量插入超过 sqlite 占位符上限
+// （999 变量）时自动分批，不报 "too many SQL variables"。
+func TestInsertBatchOverLimit(t *testing.T) {
+	s := testService(t)
+	code := Code{Market: MarketAStock, Code: "sh600000"}
+
+	// 200 根日线 × 10 字段 = 2000 变量 > 999，必然触发分批
+	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
+	ks := make([]*KlineDay, 0, 200)
+	for i := 0; i < 200; i++ {
+		ks = append(ks, &KlineDay{
+			Unix:   base.AddDate(0, 0, i).Unix(),
+			Open:   float64(i),
+			Close:  float64(i),
+			Volume: int64(i),
+		})
+	}
+	if err := s.SaveDay(code, 0, ks); err != nil {
+		t.Fatalf("SaveDay 超限批量: %v", err)
+	}
+
+	// 数据完整：200 根全部落库
+	got, err := s.QueryDay(code, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("QueryDay: %v", err)
+	}
+	if len(got) != 200 {
+		t.Fatalf("落库数量 = %d, want 200", len(got))
+	}
+	if got[0].Unix != ks[0].Unix || got[199].Unix != ks[199].Unix {
+		t.Errorf("首尾时间戳不符: got %d..%d, want %d..%d",
+			got[0].Unix, got[199].Unix, ks[0].Unix, ks[199].Unix)
 	}
 }

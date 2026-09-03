@@ -11,7 +11,7 @@ import (
 )
 
 // Block 板块市场：板块指数(880xxx/881xxx) 走标准行情 GetIndex 拉取。
-// 成分代码（板块内个股）不在此拉取，通过 Config.Codes["block"] 可自由指定。
+// 成分代码（板块内个股）不在此拉取，可在 Config.Codes 中以普通股票代码指定。
 type Block struct{ stdUnit }
 
 var _ pull.Unit = (*Block)(nil)

@@ -54,7 +54,7 @@ func main() {
 	}
 	defer ex.Close()
 
-	s, err := pull.NewService(&pull.PullConfig{
+	s, err := pull.NewService(&pull.Config{
 		Dir:     "./output/pullv2", // 数据根目录
 		StartAt: "20260101",        // 首次全量的最早日期；空 = 只拉最近两年
 		Manage:  m,
@@ -84,17 +84,18 @@ func main() {
 
 ## 🗺 内置市场
 
-| 枚举常量 | 值 | 市场 | 连接 | 说明 |
+| 枚举常量 | 值（即存储目录） | 市场 | 连接 | 说明 |
 |---|---|---|---|---|
-| `pull.MarketAStock` | `a_stock` | 沪深股票 | 7709 | `GetKline*` |
-| `pull.MarketIndex` | `index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
-| `pull.MarketEtfLof` | `etf_lof` | ETF/LOF | 7709 | `GetKline*` |
-| `pull.MarketBlock` | `block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
+| `pull.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
+| `pull.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
+| `pull.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
+| `pull.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
 | `pull.MarketFuture` | `future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
-| `pull.MarketHK` | `hk` | 港股 | 7727 | `ExBars` |
-| `pull.MarketUS` | `us` | 美股 | 7727 | `ExBars` |
+| `pull.MarketHK` | `hk/stock` | 港股主板 | 7727 | `ExBars` |
+| `pull.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `ExBars`，市场编码27，含 HSI/VHSI/CES100 等 |
+| `pull.MarketUS` | `us/stock` | 美股 | 7727 | `ExBars`，股票/ETF/指数混合（协议层无法区分） |
 
-> 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；自定义市场可扩展自己的 Market 值。
+> 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
 > `import _ "github.com/injoyai/tdx/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
 
@@ -117,6 +118,11 @@ func main() {
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。
 
+> **股本数据自动启用**：`tdx.NewManage()` 默认塞入空 Gbbq（股本变迁数据未初始化），
+> 拉取股票日线时 pull 会检测到并**自动初始化**（首跑全量拉取一次，约几分钟，落库
+> `./data/database/gbbq.db`；之后每日 05:09 定时增量更新）。之后流通股/总股本/换手率
+> 自动回填到日线。若不想启用，传入自定义 `IGbbq` 实现或 `WithGbbq` 即可。
+
 ### 代码自动路由
 
 `Codes` 是扁平的代码列表，无需按市场分组——`pull.ParseCode` 自动识别所属市场：
@@ -129,12 +135,14 @@ Codes: []string{
     "399001",   // 深证成指（指数）
     "880001",   // 板块指数
     "00700",    // 港股（5 位数字）
+    "HSI",      // 恒生指数（知名港股指数白名单）
     "AAPL",     // 美股（纯字母）
     "cff/IF2609", // 期货（带交易所前缀）
 }
 ```
 
 > 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
+> 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。
 
 ---
 
@@ -142,12 +150,23 @@ Codes: []string{
 
 ```
 {Dir}/
-├── updated.db          # 增量去重标记
-├── day/{key}.db        # 日线，一代码一库
-└── min/{key}/{year}.db # 1分钟线，一代码一年一库
+├── updated.db                  # 增量去重标记
+├── cn/                          # 中国大陆
+│   ├── stock/day/{code}.db      # 沪深股票
+│   ├── stock/min/{code}/{code}-{year}.db
+│   ├── index/ ...               # 沪深指数
+│   ├── etf/ ...                 # ETF/LOF
+│   └── block/ ...               # 板块指数
+├── hk/                          # 香港
+│   ├── stock/ ...               # 港股主板
+│   └── index/ ...               # 港股指数（恒生系/中华系）
+├── us/                          # 美国（股票/ETF/指数混合）
+│   └── stock/ ...
+└── cn/
+    └── future/ ...              # 期货（各交易所共用）
 ```
 
-`key` 为带市场前缀的唯一键（`sh600000` / `HK00700` / `US.AAPL` / `future.IF2609`），天然避免跨市场撞名。
+两级「地区/资产」目录（`cn/stock` / `cn/etf` / `hk/index` / `us/stock` / `cn/future` …），按地区或资产类别整体删除/归档即删对应目录。**文件名用原始代码**（目录已含市场信息，无需市场前缀），如 `cn/stock/day/sh600000.db`、`hk/stock/day/00700.db`、`hk/index/day/HSI.db`、`us/stock/day/AAPL.db`；期货多交易所代码含 `/`（如 `cff/IF2609`），文件名替换为 `-`：`cn/future/day/cff-IF2609.db`。同市场内代码唯一，无撞名风险。
 
 ### 单位约定
 

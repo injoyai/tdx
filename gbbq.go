@@ -134,6 +134,15 @@ type Gbbq struct {
 	mu      sync.RWMutex
 }
 
+// IsEmpty 判断是否为未初始化的空实现（NewManage 默认塞入的 &Gbbq{}）。
+// 空实现的 GetEquity/GetTurnover 等恒返回零值，与"已初始化但无数据"不同。
+func (this *Gbbq) IsEmpty() bool {
+	if this == nil {
+		return true
+	}
+	return this.db == nil && this.c == nil && this.m == nil
+}
+
 func (this *Gbbq) All() map[string][]*protocol.Gbbq {
 	m := make(map[string][]*protocol.Gbbq)
 	this.mu.RLock()

@@ -77,8 +77,10 @@ func upsertDay(db *xorms.Engine, from int64, ks []*KlineDay) error {
 		if _, err := session.Where("Unix >= ?", from).Delete(new(KlineDay)); err != nil {
 			return err
 		}
-		_, err := session.Insert(ks)
-		return err
+		return insertBatch(session, dayCols, func(start, end int) error {
+			_, err := session.Insert(ks[start:end])
+			return err
+		}, len(ks))
 	})
 }
 
@@ -92,10 +94,39 @@ func upsertMin(db *xorms.Engine, from int64, ks []*KlineMinute) error {
 		if _, err := session.Where("Unix >= ?", from).Delete(new(KlineMinute)); err != nil {
 			return err
 		}
-		_, err := session.Insert(ks)
-		return err
+		return insertBatch(session, minCols, func(start, end int) error {
+			_, err := session.Insert(ks[start:end])
+			return err
+		}, len(ks))
 	})
 }
+
+// insertBatch 分批插入，规避 sqlite 单语句占位符上限（SQLITE_MAX_VARIABLE_NUMBER，常见 999）。
+// cols 为每行字段数，fn 逐批调用（批内复用同一 session，整批失败即中止）。
+func insertBatch(session *xorm.Session, cols int, fn func(start, end int) error, total int) error {
+	// 每批行数 = 990 / 字段数，留出余量（上限常见 999）
+	n := 990 / cols
+	if n < 1 {
+		n = 1
+	}
+	for start := 0; start < total; start += n {
+		end := start + n
+		if end > total {
+			end = total
+		}
+		if err := fn(start, end); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// dayCols / minCols 每行字段数（与 KlineDay / KlineMinute 结构体字段数一致，
+// 用于 insertBatch 计算分批大小）。
+const (
+	dayCols = 10 // Unix, Open, High, Low, Close, Volume, Amount, Turnover, FloatStock, TotalStock
+	minCols = 7  // Unix, Open, High, Low, Close, Volume, Amount
+)
 
 // queryDay 按时间范围查询日线（升序）；start/end 为零值时表示不限制该端。
 func queryDay(db *xorms.Engine, start, end time.Time) ([]*KlineDay, error) {
