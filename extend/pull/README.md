@@ -18,7 +18,7 @@ pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服�
 ```
 
 - **`Unit`**：一个可拉取的独立市场/品种类别。新增市场 = 新增一个实现 + `pull.Register`，无需改框架。
-- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的当日增量去重、引擎缓存（同一库文件只打开一次）。
+- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重、有上限的引擎缓存。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
 
 ---
 
@@ -28,7 +28,6 @@ pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服�
 package main
 
 import (
-	"context"
 
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend/pull"
@@ -66,8 +65,8 @@ func main() {
 	}
 	defer s.Close()
 
-	// 拉取（当日已拉过自动跳过；must=true 强制重拉）
-	if err := s.Update(context.Background()); err != nil {
+	// 拉取（已完成市场自动跳过；must=true 可在非交易日调用，仍保留市场级去重）
+	if err := s.Update(); err != nil {
 		panic(err)
 	}
 }
@@ -90,7 +89,7 @@ func main() {
 | `pull.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
 | `pull.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
 | `pull.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
-| `pull.MarketFuture` | `future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
+| `pull.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
 | `pull.MarketHK` | `hk/stock` | 港股主板 | 7727 | `ExBars` |
 | `pull.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `ExBars`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `pull.MarketUS` | `us/stock` | 美股 | 7727 | `ExBars`，股票/ETF/指数混合（协议层无法区分） |
@@ -109,6 +108,7 @@ func main() {
 | `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `Goroutines` | 并发数 | `8` |
+| `MaxCachedEngines` | 行情数据库引擎缓存上限；使用中的引擎不淘汰，并发借用可暂时超限，释放后回落 | `32` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
 | `Retry` | 单条失败重试次数 | `tdx.DefaultRetry` |
 | `Updated` | 增量去重库 | 自动创建于 `Dir/updated.db` |
@@ -120,8 +120,9 @@ func main() {
 
 > **股本数据自动启用**：`tdx.NewManage()` 默认塞入空 Gbbq（股本变迁数据未初始化），
 > 拉取股票日线时 pull 会检测到并**自动初始化**（首跑全量拉取一次，约几分钟，落库
-> `./data/database/gbbq.db`；之后每日 05:09 定时增量更新）。之后流通股/总股本/换手率
-> 自动回填到日线。若不想启用，传入自定义 `IGbbq` 实现或 `WithGbbq` 即可。
+> `./data/database/gbbq.db`；之后每日 09:05 定时增量更新）。之后流通股/总股本/换手率
+> 自动回填到日线。只在股票日线任务中触发，查询代码、指数/ETF 和纯分钟任务均不初始化股本。
+> 自定义 `IGbbq` 实现会原样使用；辅助库位置不随 `Config.Dir` 改变。
 
 ### 代码自动路由
 
@@ -183,6 +184,27 @@ Codes: []string{
 拉取时按库内最后时间戳增量拉取，写入时**删除 `Unix>=from` 后批量插入**（事务内幂等）；
 空数据不写库（避免产生空库文件）。
 
+分钟线对所有待补年份共用一次从新到旧的分页，股票/ETF 的集合竞价逐笔查询也不再按年份重复。
+历史年份的 `minuteCoverage` 表与 K 线在同一事务中提交，记录已成功扫描的起点；今年始终按最后时间戳增量。
+旧库没有完成标记，会重新扫描认证；补拉只覆盖本次实际返回的时间段，保留服务器已不提供的本地历史前缀。
+空结果、拉取失败以及扩展行情偏移超限均不会写成功标记。`LastDayUnix/LastMinUnix` 不再为不存在的文件建库。
+完成标记表示成功处理了服务器当前可提供的数据，不保证其保留了所请求区间的全部历史；空年份会在后续执行中重新检查。
+
+`must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以本地时间 15:01 分界。
+
+### 执行与资源释放
+
+`Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
+失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
+标准行情直接复用根包 `GetIndexUntil`、`GetKlineUntil`、`GetKlineMinute241Until`；连接池直接使用 `IPool.Do`。
+正在进行的拉取等待底层响应或超时，不提供取消接口。
+
+迁移调用方式：`s.Update(ctx)` → `s.Update()`，`s.Update(ctx, true)` → `s.Update(true)`。
+自定义 `Unit` 的 `Codes/FetchDay/FetchMin` 方法也需移除首个 `context.Context` 参数，见下方接口示例。
+
+调用方应在更新结束后 `defer s.Close()`；内部行情引擎按最近使用顺序淘汰，使用中的查询/事务由引用计数保护。
+外部传入的连接池与 `Updated` 仍由调用方管理。
+
 ---
 
 ## 🔍 数据查询
@@ -206,9 +228,24 @@ last, _ := s.LastDayUnix(pull.Code{Market: pull.MarketAStock, Code: "sh600000"})
 // 日线 → 近似 N 日周期（固定 N 根分块，非日历对齐；5≈周、20≈月、60≈季、250≈年）
 weekly := pull.DayToPeriod(ks, 5)
 
-// 1分钟线 → N 分钟周期（5/15/30/60 等）
+// 固定 N 根合并（不按交易时段对齐）
 m5 := pull.MinuteToPeriod(ms, 5)
+
+// 日历对齐：ISO 周（周一开始）、月、季、年
+weeklyCalendar, err := pull.DayToCalendar(ks, pull.CalendarWeek, time.Local)
+
+// 按实际时区/交易时段对齐，A 股集合竞价 09:30 独立保留，午休与跨日不混合
+loc, err := time.LoadLocation("Asia/Shanghai")
+m5Aligned, err := pull.MinuteToSessions(ms, 5, loc, []pull.TradingSession{
+    {StartMinute: 9*60+30, EndMinute: 11*60+30},
+    {StartMinute: 13*60, EndMinute: 15*60},
+})
 ```
+
+`DayToPeriod` 与 `MinuteToPeriod` 保留固定根数语义；`n<=1` 原样返回。
+日线合并的股本取最后一根、换手率累加。新增日历/时段接口不修改输入，按时间排序，不填造缺失记录。
+`MinuteToSessions` 使用收盘时刻 `(start,end]` 分桶，时段开始时刻的独立记录单独保留；时段外数据或重叠时段报错。
+港美股请传对应时区与时段；期货可配置跨午夜时段，例如 `{StartMinute: 21*60, EndMinute: 2*60+30}`，避免套用 A 股时段。
 
 ---
 
@@ -218,14 +255,15 @@ m5 := pull.MinuteToPeriod(ms, 5)
 type MyUnit struct{}
 
 func (u *MyUnit) Name() string { return "my" }
-func (u *MyUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) { /* ... */ }
-func (u *MyUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code) error { /* ... */ }
-func (u *MyUnit) FetchMin(ctx context.Context, s *pull.Service, code pull.Code) error { /* ... */ }
+func (u *MyUnit) Codes(s *pull.Service) ([]pull.Code, error) { /* ... */ }
+func (u *MyUnit) FetchDay(s *pull.Service, code pull.Code) error { /* ... */ }
+func (u *MyUnit) FetchMin(s *pull.Service, code pull.Code) error { /* ... */ }
 
 func init() { pull.Register(&MyUnit{}) }
 ```
 
-增量判断、落库、重试、并发全部由 `Service` 统一处理，Unit 只需负责"拉原始 K 线 + 转股"。
+`Service` 提供调度、去重、查询和存储能力；Unit 负责调用协议、确定增量边界并调用 Save。
+自定义历史分钟补全可使用 `MinYearComplete`/`SaveMinComplete`，只能在完整扫描成功后写完成标记。
 参考实现：[`market/hk.go`](market/hk.go)（扩展行情）、[`market/a_stock.go`](market/a_stock.go)（标准行情）。
 
 ---

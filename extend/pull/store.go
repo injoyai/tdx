@@ -91,14 +91,18 @@ func upsertMin(db *xorms.Engine, from int64, ks []*KlineMinute) error {
 		return nil
 	}
 	return db.SessionFunc(func(session *xorm.Session) error {
-		if _, err := session.Where("Unix >= ?", from).Delete(new(KlineMinute)); err != nil {
-			return err
-		}
-		return insertBatch(session, minCols, func(start, end int) error {
-			_, err := session.Insert(ks[start:end])
-			return err
-		}, len(ks))
+		return writeMin(session, from, ks)
 	})
+}
+
+func writeMin(session *xorm.Session, from int64, ks []*KlineMinute) error {
+	if _, err := session.Where("Unix >= ?", from).Delete(new(KlineMinute)); err != nil {
+		return err
+	}
+	return insertBatch(session, minCols, func(start, end int) error {
+		_, err := session.Insert(ks[start:end])
+		return err
+	}, len(ks))
 }
 
 // insertBatch 分批插入，规避 sqlite 单语句占位符上限（SQLITE_MAX_VARIABLE_NUMBER，常见 999）。

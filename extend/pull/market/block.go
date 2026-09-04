@@ -3,8 +3,6 @@
 package market
 
 import (
-	"context"
-
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend/pull"
 	"github.com/injoyai/tdx/protocol"
@@ -22,13 +20,13 @@ func init() {
 
 // Codes 从板块文件(block_zs.dat)拉取板块指数代码列表。
 // 板块指数代码如 880xxx/881xxx，归 sh 市场。
-func (u *Block) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
 	m, err := u.Manage(s)
 	if err != nil {
 		return nil, err
 	}
 	var blocks []*protocol.Block
-	err = m.Do(func(c *tdx.Client) error {
+	err = m.IPool.Do(func(c *tdx.Client) error {
 		var err error
 		blocks, err = c.GetBlockDataWithIndex(protocol.BlockFileZS)
 		return err
@@ -52,11 +50,11 @@ func (u *Block) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error)
 }
 
 // FetchDay 板块指数日线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchDay(ctx context.Context, s *pull.Service, code pull.Code) error {
-	return u.stdUnit.FetchDay(ctx, s, code)
+func (u *Block) FetchDay(s *pull.Service, code pull.Code) error {
+	return u.stdUnit.FetchDay(s, code)
 }
 
 // FetchMin 板块指数分钟线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchMin(ctx context.Context, s *pull.Service, code pull.Code) error {
-	return u.stdUnit.FetchMin(ctx, s, code)
+func (u *Block) FetchMin(s *pull.Service, code pull.Code) error {
+	return u.stdUnit.FetchMin(s, code)
 }

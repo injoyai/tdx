@@ -8,8 +8,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend/pull"
@@ -46,7 +44,7 @@ func main() {
 	logs.PrintErr(err)
 
 	logs.Debug("开始拉取")
-	err = s.Update(context.Background(), true)
+	err = s.Update(true)
 	logs.Debug("拉取完成, err=", err)
 }
 
@@ -82,7 +80,7 @@ func pullAll() error {
 		return err
 	}
 	logs.Debug("开始全市场拉取，日线+1分钟线，成交量单位=股")
-	err = s.Update(context.Background())
+	err = s.Update()
 	logs.Debug("全市场拉取完成, err=", err)
 	return err
 }
@@ -126,7 +124,7 @@ func pullCustom() error {
 	if err != nil {
 		return err
 	}
-	return s.Update(context.Background())
+	return s.Update()
 }
 
 // pullDayOnly 只拉日线示例。
@@ -156,5 +154,5 @@ func pullDayOnly() error {
 	if err != nil {
 		return err
 	}
-	return s.Update(context.Background())
+	return s.Update()
 }

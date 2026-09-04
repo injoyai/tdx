@@ -3,7 +3,6 @@
 package market
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -65,7 +64,7 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.IPool, error) {
 
 // Codes 从 ExInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
 // 多交易所市场（期货）时 Code.Code 带交易所前缀，如 "cff/IF2609"。
-func (u *exUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 	p, err := u.Ex(s)
 	if err != nil {
 		return nil, err
@@ -74,9 +73,6 @@ func (u *exUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error
 	err = p.Do(func(c *tdx.Client) error {
 		var start uint32
 		for {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
 			ins, err := c.ExInstruments(start, 800)
 			if err != nil {
 				return err
@@ -154,180 +150,97 @@ func parseExTime(dt string) time.Time {
 // 故设上限护栏：超出仍未命中停止条件时报错（也意味着该接口最多取 ~65535 根历史）。
 const exPageLimit = 65535
 
-// FetchDay 拉取日线：ExBars 从最新往回翻页，直到命中增量边界或起始日期。
-// ExBars 返回列表从旧到新（旧在前新在后），故从列表末尾（最新）往前遍历。
-func (u *exUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code) error {
+// readExBars 扩展行情只扫描一次；包含增量边界，不跨 uint16 偏移上限。
+func readExBars(from time.Time,
+	fetch func(uint16, uint16) ([]protocol.ExKline, error)) ([]protocol.ExKline, error) {
+	var out []protocol.ExKline
+	for page := 0; ; page += 800 {
+		if page > exPageLimit {
+			return nil, fmt.Errorf("pull: 扩展行情翻页偏移超过 %d", exPageLimit)
+		}
+		bars, err := fetch(uint16(page), 800)
+		if err != nil {
+			return nil, err
+		}
+		for i := len(bars) - 1; i >= 0; i-- {
+			t := parseExTime(bars[i].Datetime)
+			if t.IsZero() {
+				return nil, fmt.Errorf("pull: 无效扩展行情时间 %q", bars[i].Datetime)
+			}
+			if t.Before(from) {
+				return out, nil
+			}
+			out = append(out, bars[i])
+			if t.Equal(from) {
+				return out, nil
+			}
+		}
+		if len(bars) < 800 {
+			return out, nil
+		}
+	}
+}
+
+func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time.Time) ([]protocol.ExKline, error) {
 	p, err := u.Ex(s)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	market, bare, err := u.marketOf(code)
+	if err != nil {
+		return nil, err
+	}
+	var out []protocol.ExKline
+	err = p.Do(func(c *tdx.Client) error {
+		var err error
+		out, err = readExBars(from, func(start, count uint16) ([]protocol.ExKline, error) {
+			return c.ExBars(category, market, bare, start, count)
+		})
+		return err
+	})
+	return out, err
+}
+
+// FetchDay 增量拉日线，含最后一根以便重插修复。
+func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	last, err := s.LastDayUnix(code)
 	if err != nil {
 		return err
 	}
-	start := s.Start()
-
-	var out []*pull.KlineDay
-	err = p.Do(func(c *tdx.Client) error {
-		market, bare, err := u.marketOf(code)
-		if err != nil {
-			return err
-		}
-		var page int
-		for {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if page > exPageLimit {
-				return fmt.Errorf("pull: 市场 %s 代码 %s 翻页偏移超过 %d 仍未命中停止条件", u.name, code.Key(), exPageLimit)
-			}
-			bars, err := c.ExBars(u.dayCategory, market, bare, uint16(page), 800)
-			if err != nil {
-				return err
-			}
-			if len(bars) == 0 {
-				break
-			}
-			stop := false
-			for i := len(bars) - 1; i >= 0; i-- { // 从最新往回
-				k := bars[i]
-				t := parseExTime(k.Datetime)
-				if t.IsZero() {
-					continue
-				}
-				if last > 0 && t.Before(time.Unix(last, 0)) { // 早于已入库边界，丢弃并停止
-					stop = true
-					break
-				}
-				if !start.IsZero() && t.Before(start) { // 早于起始日期，丢弃并停止
-					stop = true
-					break
-				}
-				out = append(out, &pull.KlineDay{
-					Unix:   t.Unix(),
-					Open:   k.Open,
-					High:   k.High,
-					Low:    k.Low,
-					Close:  k.Close,
-					Volume: pull.ToShares(int64(k.Trade)), // 手→股
-					Amount: k.Amount,
-				})
-				if last > 0 && !t.After(time.Unix(last, 0)) { // 恰为已入库最后一根：收入结果后停止（重插修复）
-					stop = true
-					break
-				}
-			}
-			page += 800
-			if len(bars) < 800 || stop {
-				break
-			}
-		}
-		return nil
-	})
+	from := s.Start()
+	if last > from.Unix() {
+		from = time.Unix(last, 0)
+	}
+	bars, err := u.bars(s, code, u.dayCategory, from)
 	if err != nil {
 		return err
 	}
-	// 空结果保护：已有数据但本次一条未拉到（退市/长期无数据/服务端异常），
-	// 跳过写入，避免 upsert "先删后插" 误删库内最后一根。
-	if last > 0 && len(out) == 0 {
-		return nil
+	out := make([]*pull.KlineDay, 0, len(bars))
+	for _, k := range bars {
+		out = append(out, &pull.KlineDay{
+			Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
+			Low: k.Low, Close: k.Close, Volume: pull.ToShares(int64(k.Trade)), Amount: k.Amount,
+		})
 	}
 	return s.SaveDay(code, last, out)
 }
 
-// FetchMin 拉取分钟线：按年分文件。历史年份文件不存在的逐个补全，今年增量。
-func (u *exUnit) FetchMin(ctx context.Context, s *pull.Service, code pull.Code) error {
-	p, err := u.Ex(s)
-	if err != nil {
-		return err
-	}
-	start := s.Start()
-	now := time.Now()
-
-	// 历史年份：文件不存在的逐个补全（历史不可变，已存在的跳过；
-	// 若某年文件中途失败留下半库，可删除该文件后重跑触发全量重拉）
-	for y := start.Year(); y < now.Year(); y++ {
-		if s.MinExists(code, y) {
-			continue
-		}
-		if err := u.fetchMinYear(ctx, p, s, code, y, start); err != nil {
-			return err
-		}
-	}
-	// 今年：增量更新
-	return u.fetchMinYear(ctx, p, s, code, now.Year(), start)
-}
-
-func (u *exUnit) fetchMinYear(ctx context.Context, p tdx.IPool, s *pull.Service, code pull.Code, year int, start time.Time) error {
-	last, err := s.LastMinUnix(code, year)
-	if err != nil {
-		return err
-	}
-	var out []*pull.KlineMinute
-	err = p.Do(func(c *tdx.Client) error {
-		market, bare, err := u.marketOf(code)
+// FetchMin 多年份共用一次分页，成功扫描后才提交年度完成标记。
+func (u *exUnit) FetchMin(s *pull.Service, code pull.Code) error {
+	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
+		bars, err := u.bars(s, code, u.minuteCategory, from)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		var page int
-		for {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if page > exPageLimit {
-				return fmt.Errorf("pull: 市场 %s 代码 %s 翻页偏移超过 %d 仍未命中停止条件", u.name, code.Key(), exPageLimit)
-			}
-			bars, err := c.ExBars(u.minuteCategory, market, bare, uint16(page), 800)
-			if err != nil {
-				return err
-			}
-			if len(bars) == 0 {
-				break
-			}
-			stop := false
-			for i := len(bars) - 1; i >= 0; i-- { // 从最新往回
-				k := bars[i]
-				t := parseExTime(k.Datetime)
-				if t.IsZero() || t.Year() != year {
-					continue // 只保留本年的数据
-				}
-				if last > 0 && t.Before(time.Unix(last, 0)) { // 早于已入库边界，丢弃并停止
-					stop = true
-					break
-				}
-				if !start.IsZero() && t.Before(start) { // 早于起始日期，丢弃并停止
-					stop = true
-					break
-				}
-				out = append(out, &pull.KlineMinute{
-					Unix:   t.Unix(),
-					Open:   k.Open,
-					High:   k.High,
-					Low:    k.Low,
-					Close:  k.Close,
-					Volume: pull.ToShares(int64(k.Trade)), // 手→股
-					Amount: k.Amount,
-				})
-				if last > 0 && !t.After(time.Unix(last, 0)) { // 恰为已入库最后一根：收入结果后停止（重插修复）
-					stop = true
-					break
-				}
-			}
-			page += 800
-			if len(bars) < 800 || stop {
-				break
-			}
+		out := make([]*pull.KlineMinute, 0, len(bars))
+		for _, k := range bars {
+			out = append(out, &pull.KlineMinute{
+				Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
+				Low: k.Low, Close: k.Close, Volume: pull.ToShares(int64(k.Trade)), Amount: k.Amount,
+			})
 		}
-		return nil
+		return out, nil
 	})
-	if err != nil {
-		return err
-	}
-	// 空结果保护：同 FetchDay，避免误删库内最后一根。
-	if last > 0 && len(out) == 0 {
-		return nil
-	}
-	return s.SaveMin(code, year, last, out)
 }
 
 // Future 期货市场（中金/郑商/大商/上期/广期/期货指数）。

@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
@@ -15,13 +14,13 @@ type Unit interface {
 
 	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。
 	// s 提供连接源（Manage 标准行情 / ExPool 扩展行情）访问。
-	Codes(ctx context.Context, s *Service) ([]Code, error)
+	Codes(s *Service) ([]Code, error)
 
-	// FetchDay 拉取并存储某代码的日线（增量逻辑由框架统一处理）。
-	FetchDay(ctx context.Context, s *Service, code Code) error
+	// FetchDay 拉取并存储某代码日线；实现需读取最后时间戳、控制增量边界并调用 SaveDay。
+	FetchDay(s *Service, code Code) error
 
-	// FetchMin 拉取并存储某代码的1分钟线（增量逻辑由框架统一处理）。
-	FetchMin(ctx context.Context, s *Service, code Code) error
+	// FetchMin 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。
+	FetchMin(s *Service, code Code) error
 }
 
 // registry 市场注册表（可插拔核心）。

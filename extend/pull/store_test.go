@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,13 +32,13 @@ func testService(t *testing.T) *Service {
 type mockUnit struct{ name string }
 
 func (u *mockUnit) Name() string { return u.name }
-func (u *mockUnit) Codes(ctx context.Context, s *Service) ([]Code, error) {
+func (u *mockUnit) Codes(s *Service) ([]Code, error) {
 	return nil, nil
 }
-func (u *mockUnit) FetchDay(ctx context.Context, s *Service, code Code) error {
+func (u *mockUnit) FetchDay(s *Service, code Code) error {
 	return nil
 }
-func (u *mockUnit) FetchMin(ctx context.Context, s *Service, code Code) error {
+func (u *mockUnit) FetchMin(s *Service, code Code) error {
 	return nil
 }
 
@@ -409,17 +408,19 @@ func TestEngineCache(t *testing.T) {
 	s := testService(t)
 	code := Code{Market: MarketAStock, Code: "sh600000"}
 
-	db1, err := s.openDay(code)
+	db1, release1, err := s.openDay(code)
 	if err != nil {
 		t.Fatalf("openDay: %v", err)
 	}
-	db2, err := s.openDay(code)
+	defer release1()
+	db2, release2, err := s.openDay(code)
 	if err != nil {
 		t.Fatalf("openDay 2: %v", err)
 	}
 	if db1 != db2 {
 		t.Fatalf("引擎缓存未生效：两次打开返回不同实例")
 	}
+	defer release2()
 	// 写入后查询走缓存引擎
 	if err := s.SaveDay(code, 0, []*KlineDay{{Unix: 1, Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)

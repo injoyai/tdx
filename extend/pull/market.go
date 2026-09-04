@@ -12,14 +12,14 @@ type Market string
 const (
 	// 枚举值即存储目录路径（Code.DirName 直接返回枚举值），
 	// 两级「地区/资产」形式，与磁盘布局完全一致。
-	MarketAStock  Market = "cn/stock"  // 沪深股票
-	MarketIndex   Market = "cn/index"  // 沪深指数
-	MarketEtfLof  Market = "cn/etf"    // ETF/LOF
-	MarketBlock   Market = "cn/block"  // 板块指数
+	MarketAStock  Market = "cn/stock" // 沪深股票
+	MarketIndex   Market = "cn/index" // 沪深指数
+	MarketEtfLof  Market = "cn/etf"   // ETF/LOF
+	MarketBlock   Market = "cn/block" // 板块指数
 	MarketFuture  Market = "cn/future" // 期货（中金/郑商/大商/上期/广期等，走扩展行情）
-	MarketHK      Market = "hk/stock"  // 港股主板（走扩展行情）
-	MarketHKIndex Market = "hk/index"  // 港股指数（恒生系/中华系，扩展行情市场27）
-	MarketUS      Market = "us/stock"  // 美股（股票/ETF/指数混合，走扩展行情；协议层无法区分）
+	MarketHK      Market = "hk/stock" // 港股主板（走扩展行情）
+	MarketHKIndex Market = "hk/index" // 港股指数（恒生系/中华系，扩展行情市场27）
+	MarketUS      Market = "us/stock" // 美股（股票/ETF/指数混合，走扩展行情；协议层无法区分）
 )
 
 // String 实现 fmt.Stringer。

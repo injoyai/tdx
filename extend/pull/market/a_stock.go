@@ -3,7 +3,6 @@
 package market
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -14,7 +13,7 @@ import (
 )
 
 // stdUnit 标准行情(7709)市场的基础实现：通过 tdx.Manage 连接源取连接。
-// 日线/分钟线增量逻辑由框架（store.go）统一处理，这里只负责"拉取原始K线并转股"。
+// 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
 	name pull.Market // 市场标识（pull.Market 枚举）
 	kind string      // 分类：stock / etf / index（决定用 GetKline 还是 GetIndex）
@@ -23,40 +22,39 @@ type stdUnit struct {
 func (u *stdUnit) Name() string { return u.name.String() }
 
 // Codes 获取代码列表（由具体市场决定来源）。
-func (u *stdUnit) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *stdUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 	return nil, fmt.Errorf("market: %s 未实现 Codes", u.name)
 }
 
 // gbbqMu 保护下述懒加载（多个 stdUnit / goroutine 并发触发时只初始化一次）。
 var gbbqMu sync.Mutex
 
-// Manage 取标准行情连接源；未配置返回错误。
-// 懒加载 Gbbq：NewManage 默认塞空实现（&Gbbq{}，GetEquity 恒 nil），导致
-// 股票日线的流通股/总股本/换手率静默为 0。检测到空实现时自动初始化真实现
-// （独立连接，首跑全量拉取一次 gbbq 入库，之后每日 05:09 定时更新）。
+// Manage 只获取标准行情连接源；不因查询代码、指数或分钟线触发股本初始化。
 func (u *stdUnit) Manage(s *pull.Service) (*tdx.Manage, error) {
 	m := s.Manage()
 	if m == nil {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Manage（标准行情7709连接源）", u.name)
 	}
-	if _, ok := m.Gbbq.(*tdx.Gbbq); !ok {
-		return m, nil // 用户自定义实现或 nil，不动
-	}
+	return m, nil
+}
+
+// stockEquity 仅股票日线使用；在同一锁内读取与替换默认空实现。
+func stockEquity(m *tdx.Manage) (tdx.IGbbq, error) {
 	gbbqMu.Lock()
 	defer gbbqMu.Unlock()
 	if g, ok := m.Gbbq.(*tdx.Gbbq); ok && g.IsEmpty() {
-		g, err := tdx.NewGbbq() // 独立连接，避免与池内连接并发冲突
+		g, err := tdx.NewGbbq()
 		if err != nil {
 			return nil, fmt.Errorf("pull: 初始化股本变迁数据失败: %w", err)
 		}
 		m.Gbbq = g
 	}
-	return m, nil
+	return m.Gbbq, nil
 }
 
 // fetchDayAll 一次性拉取全部日线（从 Start 起，直到没有更早数据）。
-func (u *stdUnit) fetchDayAll(ctx context.Context, c *tdx.Client, code string, startAt time.Time) (protocol.Klines, error) {
-	return u.dayUntil(ctx, c, code, func(k *protocol.Kline) bool {
+func (u *stdUnit) fetchDayAll(c *tdx.Client, code string, startAt time.Time) (protocol.Klines, error) {
+	return u.dayUntil(c, code, func(k *protocol.Kline) bool {
 		if !startAt.IsZero() && k.Time.Before(startAt) {
 			return true
 		}
@@ -65,9 +63,9 @@ func (u *stdUnit) fetchDayAll(ctx context.Context, c *tdx.Client, code string, s
 }
 
 // fetchDayFrom 拉取日线，直到遇到 last 之前的日期（增量）。
-func (u *stdUnit) fetchDayFrom(ctx context.Context, c *tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
+func (u *stdUnit) fetchDayFrom(c *tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
 	stop := time.Unix(last, 0)
-	return u.dayUntil(ctx, c, code, func(k *protocol.Kline) bool {
+	return u.dayUntil(c, code, func(k *protocol.Kline) bool {
 		if !k.Time.After(stop) { // <= last 已入库，停止
 			return true
 		}
@@ -79,14 +77,13 @@ func (u *stdUnit) fetchDayFrom(ctx context.Context, c *tdx.Client, code string, 
 }
 
 // dayUntil 指数走 GetIndex、其余走 GetKline，从新到旧拉取直到 f 返回 true。
-func (u *stdUnit) dayUntil(ctx context.Context, c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
+func (u *stdUnit) dayUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	var resp *protocol.KlineResp
 	var err error
-	switch u.kind {
-	case "index":
-		resp, err = c.GetIndexDayUntil(code, f)
-	default:
-		resp, err = c.GetKlineDayUntil(code, f)
+	if u.kind == "index" {
+		resp, err = c.GetIndexUntil(protocol.TypeKlineDay, code, f)
+	} else {
+		resp, err = c.GetKlineUntil(protocol.TypeKlineDay, code, f)
 	}
 	if err != nil {
 		return nil, err
@@ -95,8 +92,8 @@ func (u *stdUnit) dayUntil(ctx context.Context, c *tdx.Client, code string, f fu
 }
 
 // fetchMinAll 一次性拉取全部1分钟线（从 Start 起）。
-func (u *stdUnit) fetchMinAll(ctx context.Context, c *tdx.Client, code string, startAt time.Time) (protocol.Klines, error) {
-	return u.minUntil(ctx, c, code, func(k *protocol.Kline) bool {
+func (u *stdUnit) fetchMinAll(c *tdx.Client, code string, startAt time.Time) (protocol.Klines, error) {
+	return u.minUntil(c, code, func(k *protocol.Kline) bool {
 		if !startAt.IsZero() && k.Time.Before(startAt) {
 			return true
 		}
@@ -105,9 +102,9 @@ func (u *stdUnit) fetchMinAll(ctx context.Context, c *tdx.Client, code string, s
 }
 
 // fetchMinFrom 拉取1分钟线，直到遇到 last 之前的记录（增量）。
-func (u *stdUnit) fetchMinFrom(ctx context.Context, c *tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
+func (u *stdUnit) fetchMinFrom(c *tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
 	stop := time.Unix(last, 0)
-	return u.minUntil(ctx, c, code, func(k *protocol.Kline) bool {
+	return u.minUntil(c, code, func(k *protocol.Kline) bool {
 		if !k.Time.After(stop) { // <= last 已入库，停止
 			return true
 		}
@@ -119,13 +116,12 @@ func (u *stdUnit) fetchMinFrom(ctx context.Context, c *tdx.Client, code string, 
 }
 
 // minUntil 指数走 GetIndex、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
-func (u *stdUnit) minUntil(ctx context.Context, c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
+func (u *stdUnit) minUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	var resp *protocol.KlineResp
 	var err error
-	switch u.kind {
-	case "index":
+	if u.kind == "index" {
 		resp, err = c.GetIndexUntil(protocol.TypeKlineMinute, code, f)
-	default:
+	} else {
 		resp, err = c.GetKlineMinute241Until(code, f)
 	}
 	if err != nil {
@@ -159,7 +155,7 @@ func init() {
 
 // ---- Codes 实现 ----
 
-func (u *AStock) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *AStock) Codes(s *pull.Service) ([]pull.Code, error) {
 	m, err := u.Manage(s)
 	if err != nil {
 		return nil, err
@@ -171,7 +167,7 @@ func (u *AStock) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error
 	return out, nil
 }
 
-func (u *Index) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *Index) Codes(s *pull.Service) ([]pull.Code, error) {
 	m, err := u.Manage(s)
 	if err != nil {
 		return nil, err
@@ -183,7 +179,7 @@ func (u *Index) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error)
 	return out, nil
 }
 
-func (u *EtfLof) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error) {
+func (u *EtfLof) Codes(s *pull.Service) ([]pull.Code, error) {
 	m, err := u.Manage(s)
 	if err != nil {
 		return nil, err
@@ -197,10 +193,17 @@ func (u *EtfLof) Codes(ctx context.Context, s *pull.Service) ([]pull.Code, error
 
 // ---- FetchDay 通用实现（含换手率/股本回填，仅股票有） ----
 
-func (u *stdUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code) error {
+func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	m, err := u.Manage(s)
 	if err != nil {
 		return err
+	}
+	var equity tdx.IGbbq
+	if u.kind == "stock" {
+		equity, err = stockEquity(m)
+		if err != nil {
+			return err
+		}
 	}
 	last, err := s.LastDayUnix(code)
 	if err != nil {
@@ -209,12 +212,12 @@ func (u *stdUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code)
 	start := s.Start()
 
 	var ks protocol.Klines
-	err = m.Do(func(c *tdx.Client) error {
+	err = m.IPool.Do(func(c *tdx.Client) error {
 		var err error
 		if last > 0 {
-			ks, err = u.fetchDayFrom(ctx, c, code.Code, last, start)
+			ks, err = u.fetchDayFrom(c, code.Code, last, start)
 		} else {
-			ks, err = u.fetchDayAll(ctx, c, code.Code, start)
+			ks, err = u.fetchDayAll(c, code.Code, start)
 		}
 		return err
 	})
@@ -239,8 +242,8 @@ func (u *stdUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code)
 			d.Volume = pull.ToShares(k.Volume)
 		}
 		// 换手率/股本回填：仅股票有（Gbbq 非股票返回 nil）
-		if u.kind == "stock" && m.Gbbq != nil {
-			if eq := m.Gbbq.GetEquity(code.Code, k.Time); eq != nil {
+		if equity != nil {
+			if eq := equity.GetEquity(code.Code, k.Time); eq != nil {
 				d.FloatStock = float64(eq.Float)
 				d.TotalStock = float64(eq.Total)
 				d.Turnover = eq.Turnover(d.Volume)
@@ -256,71 +259,30 @@ func (u *stdUnit) FetchDay(ctx context.Context, s *pull.Service, code pull.Code)
 	return s.SaveDay(code, last, out)
 }
 
-// ---- FetchMin 通用实现 ----
-
-func (u *stdUnit) FetchMin(ctx context.Context, s *pull.Service, code pull.Code) error {
+// FetchMin 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
+func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 	m, err := u.Manage(s)
 	if err != nil {
 		return err
 	}
-	start := s.Start()
-	now := time.Now()
-
-	// 历史年份：文件不存在的逐个补全（历史不可变，已存在的跳过；
-	// 若某年文件中途失败留下半库，可删除该文件后重跑触发全量重拉）
-	for y := start.Year(); y < now.Year(); y++ {
-		if s.MinExists(code, y) {
-			continue
-		}
-		if err := u.fetchMinYear(ctx, m, s, code, y, start); err != nil {
+	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
+		var ks protocol.Klines
+		err := m.IPool.Do(func(c *tdx.Client) error {
+			var err error
+			ks, err = u.fetchMinAll(c, code.Code, from)
 			return err
+		})
+		if err != nil {
+			return nil, err
 		}
-	}
-	// 今年：增量更新
-	return u.fetchMinYear(ctx, m, s, code, now.Year(), start)
-}
-
-// fetchMinYear 拉取并写入指定年份的1分钟线。
-func (u *stdUnit) fetchMinYear(ctx context.Context, m *tdx.Manage, s *pull.Service, code pull.Code, year int, start time.Time) error {
-	last, err := s.LastMinUnix(code, year)
-	if err != nil {
-		return err
-	}
-	var ks protocol.Klines
-	err = m.Do(func(c *tdx.Client) error {
-		var err error
-		if last > 0 {
-			ks, err = u.fetchMinFrom(ctx, c, code.Code, last, start)
-		} else {
-			ks, err = u.fetchMinAll(ctx, c, code.Code, start)
+		out := make([]*pull.KlineMinute, 0, len(ks))
+		for _, k := range ks {
+			out = append(out, &pull.KlineMinute{
+				Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
+				Low: k.Low.Float64(), Close: k.Close.Float64(),
+				Volume: pull.ToShares(k.Volume), Amount: k.Amount.Float64(),
+			})
 		}
-		return err
+		return out, nil
 	})
-	if err != nil {
-		return err
-	}
-
-	out := make([]*pull.KlineMinute, 0, len(ks))
-	for _, k := range ks {
-		// 只保留本年的数据（补去年时同理）
-		if k.Time.Year() != year {
-			continue
-		}
-		d := &pull.KlineMinute{
-			Unix:   k.Time.Unix(),
-			Open:   k.Open.Float64(),
-			High:   k.High.Float64(),
-			Low:    k.Low.Float64(),
-			Close:  k.Close.Float64(),
-			Amount: k.Amount.Float64(),
-		}
-		// 成交量统一转股：股票分钟 Decode 后=手×100；指数分钟经 normalize÷100 后=手，再×100=股。
-		d.Volume = pull.ToShares(k.Volume)
-		out = append(out, d)
-	}
-	// 空结果保护：同 FetchDay，避免误删库内最后一根。
-	if last > 0 && len(out) == 0 {
-		return nil
-	}
-	return s.SaveMin(code, year, last, out)
 }

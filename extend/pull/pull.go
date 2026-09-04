@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,8 +28,11 @@ type Service struct {
 	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
 	overrides map[Market][]Code
 
-	mu      sync.Mutex               // 保护 engines 缓存
-	engines map[string]*xorms.Engine // 已打开的 sqlite 引擎缓存（key=文件路径）
+	mu          sync.Mutex               // 保护 engines 缓存
+	engines     map[string]*cachedEngine // 有引用计数的 sqlite 引擎缓存
+	engineLimit int
+	engineClock uint64
+	closed      bool
 }
 
 // NewService 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
@@ -55,6 +57,10 @@ func NewService(cfg *Config) (*Service, error) {
 	retry := cfg.Retry
 	if retry <= 0 {
 		retry = tdx.DefaultRetry
+	}
+	engineLimit := cfg.MaxCachedEngines
+	if engineLimit <= 0 {
+		engineLimit = 32
 	}
 
 	// 代码列表：一次性解析并按市场分组。
@@ -112,17 +118,18 @@ func NewService(cfg *Config) (*Service, error) {
 	}
 
 	return &Service{
-		cfg:       cfg,
-		units:     units,
-		updated:   updated,
-		updatedDB: updatedDB,
-		day:       day,
-		minute:    minute,
-		retry:     retry,
-		goro:      goro,
-		start:     start,
-		overrides: overrides,
-		engines:   map[string]*xorms.Engine{},
+		cfg:         cfg,
+		units:       units,
+		updated:     updated,
+		updatedDB:   updatedDB,
+		day:         day,
+		minute:      minute,
+		retry:       retry,
+		goro:        goro,
+		start:       start,
+		overrides:   overrides,
+		engines:     map[string]*cachedEngine{},
+		engineLimit: engineLimit,
 	}, nil
 }
 
@@ -130,9 +137,15 @@ func NewService(cfg *Config) (*Service, error) {
 func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for path, db := range s.engines {
-		_ = db.Close()
-		delete(s.engines, path)
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	for path, entry := range s.engines {
+		if entry.refs == 0 {
+			_ = entry.db.Close()
+			delete(s.engines, path)
+		}
 	}
 	if s.updatedDB == nil {
 		return nil
@@ -158,9 +171,9 @@ func (s *Service) Manage() *tdx.Manage { return s.cfg.Manage }
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
 func (s *Service) ExPool() tdx.IPool { return s.cfg.ExPool }
 
-// Update 执行一次拉取。must=true 时忽略工作日与当日去重，强制拉取。
+// Update 执行一次拉取。must=true 时跳过工作日与整体标记检查，仍保留市场级去重。
 // 按 Unit 粒度去重：某市场完成后单独标记，中途失败的市场下次重拉，已完成的跳过。
-func (s *Service) Update(ctx context.Context, must ...bool) error {
+func (s *Service) Update(must ...bool) error {
 	if len(must) == 0 || !must[0] {
 		// 非交易日直接跳过（由调用方传入 Workday 判断）
 		if wd, ok := s.workday(); ok {
@@ -191,7 +204,7 @@ func (s *Service) Update(ctx context.Context, must ...bool) error {
 		if done {
 			continue
 		}
-		if err := s.updateUnit(ctx, u); err != nil {
+		if err := s.updateUnit(u); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -219,61 +232,50 @@ func (s *Service) workday() (*tdx.Workday, bool) {
 	return nil, false
 }
 
-// updateUnit 拉取单个市场。返回错误表示存在失败代码（已重试耗尽），
-// Update 据此不标记该市场"当日完成"，下次重跑会继续补拉。
-func (s *Service) updateUnit(ctx context.Context, u Unit) error {
-	codes, err := s.codes(ctx, u)
+// updateUnit 拉取单个市场；失败重试耗尽后返回错误，不标记该市场完成。
+func (s *Service) updateUnit(u Unit) error {
+	codes, err := s.codes(u)
 	if err != nil {
 		return err
 	}
 	if len(codes) == 0 {
 		return nil
 	}
-
 	b := bar.NewCoroutine(len(codes), s.goro, bar.WithPrefix(fmt.Sprintf("[%s]", u.Name())))
 	defer b.Close()
-
-	// 成功计数：成功数=总数表示全部完成；失败时记录首个错误。
-	// 注意 defer 在 GoRetry 每次重试尝试后都会执行，重试成功最终 err=nil 不计数，
-	// 故以"成功数"而非"失败次数"判定（避免重试内多次失败重复计数）。
 	var succCount int64
 	var mu sync.Mutex
 	var firstFail error
-
 	for _, code := range codes {
 		code := code
-		b.GoRetry(func() (err error) {
+		b.Go(func() {
 			b.SetPrefix(fmt.Sprintf("[%s] %s", u.Name(), code.Key()))
 			b.Flush()
-			defer func() {
+			var err error
+			for attempt := 0; attempt < s.retry; attempt++ {
+				err = nil
+				if s.day {
+					err = u.FetchDay(s, code)
+				}
+				if err == nil && s.minute {
+					err = u.FetchMin(s, code)
+				}
 				if err == nil {
 					atomic.AddInt64(&succCount, 1)
 					return
 				}
-				mu.Lock()
-				if firstFail == nil {
-					firstFail = err
-				}
-				mu.Unlock()
 				b.Logf("[错误] [%s] %s\n", code.Key(), err)
-				b.Flush()
-			}()
-			if s.day {
-				if err = u.FetchDay(ctx, s, code); err != nil {
-					return err
-				}
 			}
-			if s.minute {
-				if err = u.FetchMin(ctx, s, code); err != nil {
-					return err
-				}
+			mu.Lock()
+			if firstFail == nil {
+				firstFail = err
 			}
-			return nil
-		}, s.retry)
+			mu.Unlock()
+		})
 	}
 	b.Wait()
 	if n := atomic.LoadInt64(&succCount); n < int64(len(codes)) {
-		return fmt.Errorf("pull: 市场 %s 拉取不完整（成功 %d/%d），首个错误: %v",
+		return fmt.Errorf("pull: 市场 %s 拉取不完整（成功 %d/%d），首个错误: %w",
 			u.Name(), n, len(codes), firstFail)
 	}
 	return nil
@@ -281,37 +283,22 @@ func (s *Service) updateUnit(ctx context.Context, u Unit) error {
 
 // codes 获取市场代码列表；Config.Codes 指定时优先使用（已按市场分组）。
 // 注意：overrides 只包含用户显式列出的市场；其他市场仍走自动发现。
-func (s *Service) codes(ctx context.Context, u Unit) ([]Code, error) {
+func (s *Service) codes(u Unit) ([]Code, error) {
 	if override, ok := s.overrides[Market(u.Name())]; ok {
 		return override, nil
 	}
-	return u.Codes(ctx, s)
+	return u.Codes(s)
 }
 
 // 存储相关快捷方法（供 Unit 实现使用）。
 
-// engine 打开（或复用缓存的）sqlite 引擎并建表；路径为缓存 key。
-func (s *Service) engine(filename string, table any) (*xorms.Engine, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if db, ok := s.engines[filename]; ok {
-		return db, nil
-	}
-	db, err := openDB(filename, table)
-	if err != nil {
-		return nil, err
-	}
-	s.engines[filename] = db
-	return db, nil
-}
-
 // openDay 打开某代码日线库并建表（带引擎缓存）。
-func (s *Service) openDay(code Code) (*xorms.Engine, error) {
+func (s *Service) openDay(code Code) (*xorms.Engine, func(), error) {
 	return s.engine(code.DayFile(s.cfg.Dir), new(KlineDay))
 }
 
 // openMin 打开某代码指定年份分钟线库并建表（带引擎缓存）。
-func (s *Service) openMin(code Code, year int) (*xorms.Engine, error) {
+func (s *Service) openMin(code Code, year int) (*xorms.Engine, func(), error) {
 	return s.engine(code.MinFile(s.cfg.Dir, year), new(KlineMinute))
 }
 
@@ -327,28 +314,37 @@ func (s *Service) QueryDay(code Code, start, end time.Time) ([]*KlineDay, error)
 	if !exists(code.DayFile(s.cfg.Dir)) {
 		return nil, nil
 	}
-	db, err := s.openDay(code)
+	db, release, err := s.openDay(code)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	return queryDay(db, start, end)
 }
 
 // LastDayUnix 查询某代码日线库内最后一条记录的时间戳；空库返回 0。
 func (s *Service) LastDayUnix(code Code) (int64, error) {
-	db, err := s.openDay(code)
+	if !exists(s.DayFile(code)) {
+		return 0, nil
+	}
+	db, release, err := s.openDay(code)
 	if err != nil {
 		return 0, err
 	}
+	defer release()
 	return LastUnix(db, new(KlineDay))
 }
 
 // LastMinUnix 查询某代码指定年份分钟库内最后一条记录的时间戳；空库返回 0。
 func (s *Service) LastMinUnix(code Code, year int) (int64, error) {
-	db, err := s.openMin(code, year)
+	if !s.MinExists(code, year) {
+		return 0, nil
+	}
+	db, release, err := s.openMin(code, year)
 	if err != nil {
 		return 0, err
 	}
+	defer release()
 	return LastUnix(db, new(KlineMinute))
 }
 
@@ -358,10 +354,11 @@ func (s *Service) SaveDay(code Code, from int64, ks []*KlineDay) error {
 	if len(ks) == 0 {
 		return nil
 	}
-	db, err := s.openDay(code)
+	db, release, err := s.openDay(code)
 	if err != nil {
 		return err
 	}
+	defer release()
 	return upsertDay(db, from, ks)
 }
 
@@ -371,10 +368,11 @@ func (s *Service) SaveMin(code Code, year int, from int64, ks []*KlineMinute) er
 	if len(ks) == 0 {
 		return nil
 	}
-	db, err := s.openMin(code, year)
+	db, release, err := s.openMin(code, year)
 	if err != nil {
 		return err
 	}
+	defer release()
 	return upsertMin(db, from, ks)
 }
 
@@ -393,11 +391,12 @@ func (s *Service) QueryMin(code Code, start, end time.Time) ([]*KlineMinute, err
 		if !exists(file) {
 			continue
 		}
-		db, err := s.engine(file, new(KlineMinute))
+		db, release, err := s.engine(file, new(KlineMinute))
 		if err != nil {
 			return nil, err
 		}
 		ls, err := queryMin(db, start, end)
+		release()
 		if err != nil {
 			return nil, err
 		}

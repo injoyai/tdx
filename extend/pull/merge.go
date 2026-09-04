@@ -51,12 +51,26 @@ func fromProtocol(ks protocol.Klines) []*KlineDay {
 // 非日历对齐；首块从传入序列开头起算）。
 // n<=1 时原样返回。
 func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
-	return fromProtocol(toProtocol(ks).Merge(n))
+	if n <= 1 {
+		return ks
+	}
+	out := fromProtocol(toProtocol(ks).Merge(n))
+	for i, k := range out {
+		end := min((i+1)*n, len(ks))
+		k.FloatStock, k.TotalStock = ks[end-1].FloatStock, ks[end-1].TotalStock
+		for _, day := range ks[i*n : end] {
+			k.Turnover += day.Turnover
+		}
+	}
+	return out
 }
 
-// MinuteToPeriod 将1分钟线合并成 N 分钟周期（5/15/30/60 等）。
+// MinuteToPeriod 按固定 N 根合并；不对齐交易日或时段。时段对齐请用 MinuteToSessions。
 // n<=1 时原样返回。
 func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
+	if n <= 1 {
+		return ks
+	}
 	// 先将分钟线转为统一 protocol.Klines（元→厘）
 	in := make(protocol.Klines, 0, len(ks))
 	for _, k := range ks {

@@ -13,13 +13,14 @@ type Config struct {
 	Day    bool     // 是否拉日线（默认 true，见 NewService 归一化）
 	Minute bool     // 是否拉1分钟线（默认 true）
 
-	Goroutines int          // 并发数，默认 8
-	StartAt    string       // 起始日期 YYYYMMDD，首次全量的最早日期；空 = 只拉最近两年
-	Retry      int          // 单条失败重试次数，默认 3
-	Updated    *tdx.Updated // 增量去重库（可选，不传则自动创建于 Dir/updated.db）
-	Manage     *tdx.Manage  // 标准行情(7709)连接源（可选）。沪深股票/指数/ETF/板块 Unit 使用
-	ExPool     tdx.IPool    // 扩展行情(7727)连接池（可选）。期货/港股/美股 Unit 使用
-	Workday    *tdx.Workday // 交易日历（可选，不传则不判断交易日）
+	Goroutines       int          // 并发数，默认 8
+	MaxCachedEngines int          // 空闲时最多缓存的行情数据库引擎数，默认 32；使用中的引擎不淘汰
+	StartAt          string       // 起始日期 YYYYMMDD，首次全量的最早日期；空 = 只拉最近两年
+	Retry            int          // 单条失败重试次数，默认 3
+	Updated          *tdx.Updated // 增量去重库（可选，不传则自动创建于 Dir/updated.db）
+	Manage           *tdx.Manage  // 标准行情(7709)连接源（可选）。沪深股票/指数/ETF/板块 Unit 使用
+	ExPool           tdx.IPool    // 扩展行情(7727)连接池（可选）。期货/港股/美股 Unit 使用
+	Workday          *tdx.Workday // 交易日历（可选，不传则不判断交易日）
 }
 
 // Start 解析起始日期；未设置或非法时返回零值（Service 会归一化为最近两年）。
