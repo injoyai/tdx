@@ -157,6 +157,9 @@ func MinuteToSessions(ks []*KlineMinute, n int, loc *time.Location, sessions []T
 			last.Close, last.Unix = k.Close, k.Unix
 			last.Volume += k.Volume
 			last.Amount += k.Amount
+			if k.Source != "" {
+				last.Source = k.Source
+			}
 		}
 		previous = current
 	}

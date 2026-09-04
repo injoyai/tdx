@@ -101,20 +101,6 @@ func (u *stdUnit) fetchMinAll(c *tdx.Client, code string, startAt time.Time) (pr
 	})
 }
 
-// fetchMinFrom 拉取1分钟线，直到遇到 last 之前的记录（增量）。
-func (u *stdUnit) fetchMinFrom(c *tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
-	stop := time.Unix(last, 0)
-	return u.minUntil(c, code, func(k *protocol.Kline) bool {
-		if !k.Time.After(stop) { // <= last 已入库，停止
-			return true
-		}
-		if !startAt.IsZero() && k.Time.Before(startAt) {
-			return true
-		}
-		return false
-	})
-}
-
 // minUntil 指数走 GetIndex、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
 func (u *stdUnit) minUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	var resp *protocol.KlineResp
@@ -265,6 +251,32 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 	if err != nil {
 		return err
 	}
+	var fallback *minuteFallback
+	if s.TradeFallbackEnabled() && (u.kind == "stock" || u.kind == "etf") {
+		fallback = &minuteFallback{
+			days: func(from time.Time) (protocol.Klines, error) {
+				var days protocol.Klines
+				err := m.IPool.Do(func(c *tdx.Client) error {
+					var err error
+					days, err = u.fetchDayAll(c, code.Code, from)
+					return err
+				})
+				return days, err
+			},
+			trades: func(day time.Time) (protocol.Trades, error) {
+				var trades protocol.Trades
+				err := m.IPool.Do(func(c *tdx.Client) error {
+					resp, err := c.GetHistoryTradeDay(day.Format("20060102"), code.Code)
+					if err != nil {
+						return err
+					}
+					trades = resp.List
+					return nil
+				})
+				return trades, err
+			},
+		}
+	}
 	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
 		var ks protocol.Klines
 		err := m.IPool.Do(func(c *tdx.Client) error {
@@ -284,5 +296,5 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 			})
 		}
 		return out, nil
-	})
+	}, fallback)
 }

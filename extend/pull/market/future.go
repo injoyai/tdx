@@ -240,7 +240,7 @@ func (u *exUnit) FetchMin(s *pull.Service, code pull.Code) error {
 			})
 		}
 		return out, nil
-	})
+	}, nil)
 }
 
 // Future 期货市场（中金/郑商/大商/上期/广期/期货指数）。

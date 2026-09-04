@@ -8,10 +8,11 @@ import (
 
 // Config 拉取配置，通过代码参数传入（本库作为第三方引用，配置不落文件）。
 type Config struct {
-	Dir    string   // 数据根目录（必填）
-	Codes  []string // 拉取代码列表（自动路由市场，见 ParseCode）；空 = 全部注册市场自动发现
-	Day    bool     // 是否拉日线（默认 true，见 NewService 归一化）
-	Minute bool     // 是否拉1分钟线（默认 true）
+	Dir           string   // 数据根目录（必填）
+	Codes         []string // 拉取代码列表（自动路由市场，见 ParseCode）；空 = 全部注册市场自动发现
+	Day           bool     // 是否拉日线（默认 true，见 NewService 归一化）
+	Minute        bool     // 是否拉1分钟线（默认 true）
+	TradeFallback bool     // 是否用历史分笔补充缺失分钟线，仅股票/ETF/LOF；默认 false
 
 	Goroutines       int          // 并发数，默认 8
 	MaxCachedEngines int          // 空闲时最多缓存的行情数据库引擎数，默认 32；使用中的引擎不淘汰

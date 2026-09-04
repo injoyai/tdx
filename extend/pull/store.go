@@ -33,7 +33,11 @@ type KlineMinute struct {
 	Close  float64
 	Volume int64   // 股
 	Amount float64 // 成交额（元）
+	Source string  `xorm:"default ''"` // 空=原生分钟线（含旧库），trade=分笔合成
 }
+
+// MinuteSourceTrade 标识分笔合成的近似分钟线。
+const MinuteSourceTrade = "trade"
 
 // openDB 打开（必要时创建）指定 sqlite 文件并建表。
 func openDB(filename string, table any) (*xorms.Engine, error) {
@@ -129,7 +133,7 @@ func insertBatch(session *xorm.Session, cols int, fn func(start, end int) error,
 // 用于 insertBatch 计算分批大小）。
 const (
 	dayCols = 10 // Unix, Open, High, Low, Close, Volume, Amount, Turnover, FloatStock, TotalStock
-	minCols = 7  // Unix, Open, High, Low, Close, Volume, Amount
+	minCols = 8  // Unix, Open, High, Low, Close, Volume, Amount, Source
 )
 
 // queryDay 按时间范围查询日线（升序）；start/end 为零值时表示不限制该端。

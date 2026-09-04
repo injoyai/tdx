@@ -43,6 +43,10 @@ func NewService(cfg *Config) (*Service, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("pull: 数据根目录 Dir 不能为空")
 	}
+	// 固定配置快照；连接源等依赖仍由调用方持有，不复制其内部状态。
+	snapshot := *cfg
+	snapshot.Codes = append([]string(nil), cfg.Codes...)
+	cfg = &snapshot
 
 	// 归一化默认值
 	day := cfg.Day
@@ -161,6 +165,9 @@ func (s *Service) Config() Config {
 	}
 	return c
 }
+
+// TradeFallbackEnabled 返回是否启用历史分笔补充分钟线。
+func (s *Service) TradeFallbackEnabled() bool { return s.cfg.TradeFallback }
 
 // Start 返回起始日期。
 func (s *Service) Start() time.Time { return s.start }

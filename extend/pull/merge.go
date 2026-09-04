@@ -86,7 +86,13 @@ func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
 	}
 	merged := in.Merge(n)
 	out := make([]*KlineMinute, 0, len(merged))
-	for _, k := range merged {
+	for i, k := range merged {
+		source := ""
+		for _, input := range ks[i*n : min((i+1)*n, len(ks))] {
+			if input.Source != "" {
+				source = input.Source
+			}
+		}
 		out = append(out, &KlineMinute{
 			Unix:   k.Time.Unix(),
 			Open:   k.Open.Float64(),
@@ -95,6 +101,7 @@ func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
 			Close:  k.Close.Float64(),
 			Volume: k.Volume,
 			Amount: k.Amount.Float64(),
+			Source: source,
 		})
 	}
 	return out

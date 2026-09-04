@@ -27,7 +27,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	failure := errors.New("page failed")
-	if err := pullMinutes(s, code, now, func(time.Time) ([]*pull.KlineMinute, error) { return data, failure }); !errors.Is(err, failure) {
+	if err := pullMinutes(s, code, now, func(time.Time) ([]*pull.KlineMinute, error) { return data, failure }, nil); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
 	if done, err := s.MinYearComplete(code, 2024, s.Start().Unix()); done || err != nil {
@@ -41,7 +41,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 		}
 		return data, nil
 	}
-	if err := pullMinutes(s, code, now, fetch); err != nil {
+	if err := pullMinutes(s, code, now, fetch, nil); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -62,7 +62,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 			t.Errorf("增量边界=%v", from)
 		}
 		return []*pull.KlineMinute{{Unix: data[2].Unix, Close: 99}}, nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	rows, err = s.QueryMin(code, time.Time{}, time.Time{})
@@ -85,7 +85,7 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 				t.Fatal("空结果被记为已完成")
 			}
 			return nil, nil
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -95,7 +95,7 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 	failed := errors.New("fetch failed")
 	err = pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) {
 		return []*pull.KlineMinute{{Unix: now.Unix()}}, failed
-	})
+	}, nil)
 	if !errors.Is(err, failed) || s.MinExists(c, 2026) {
 		t.Fatal("失败后仍写库", err)
 	}
