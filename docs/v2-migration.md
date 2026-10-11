@@ -45,6 +45,8 @@ TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断�
 
 真实只读验证按 `PROJECT_RULES.md` 第 8.5 节执行。标准与扩展行情测试共用每秒一次、最多 100 次的写入限流，可用 `TDX_STD_LIVE=1 TDX_EXHQ_LIVE=1 go test -race . -run '^(TestStandardLive|TestExHqLive)$' -count=1 -v -timeout=150s` 启用；分别用 `TDX_STD_HOST` / `TDX_EX_HOST` 指定不含端口的服务器 IP。标准测试只做一次受控重连，普通离线测试跳过真实访问。HTTP 上游验证用 `TDX_HTTP_LIVE=1 go test -race ./extend/httpserver -run '^TestServerLive$' -count=1 -v -timeout=45s`，须在行情测试完成后单独执行，不并行启动。
 
+数据准确性还须按项目规则第 8.6 节对照独立来源，其他来源单线程、请求起始间隔至少 5 秒。`TDX_CROSS_LIVE=1 go test -race . -run '^TestCrossValidationSamplesLive$' -count=1 -v -timeout=45s` 保存小样本到 `output/live-validation/cross/tdx-samples.json`，供另行串行获取独立数据并逐字段比较；该测试成功只表示样本获取成功。港股扩展日线 `ExKline.Trade` 当前按 `×100` 转股与独立来源不一致，不能把它视为已经核实的成交量单位；小时线的来源聚合差异和港股分时的时间标签也须确认，不能因日线价格一致而宣称这些字段准确。
+
 设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用 `Client.Wait.SetTimeout` 的代码需迁移到该方法。`Client.Wait` 仍保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
 
 ## 成交行为
