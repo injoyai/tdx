@@ -15,7 +15,7 @@ type Block struct{ stdUnit }
 var _ pull.Unit = (*Block)(nil)
 
 func init() {
-	pull.Register(&Block{stdUnit{name: pull.MarketBlock, kind: "index"}})
+	pull.Register(&Block{stdUnit{name: pull.MarketBlock}})
 }
 
 // Codes 从板块文件(block_zs.dat)拉取板块指数代码列表。

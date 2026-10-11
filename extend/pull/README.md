@@ -98,6 +98,37 @@ func main() {
 
 > 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
+### 市场 K 线配置
+
+`Market.Info()` 返回行情协议、标准行情解码分类，以及日线、1 分钟线各自的请求类型和**解码后的成交量单位**。内置拉取适配器共用此配置，参数集中在 [`market.go`](market.go)。
+
+```go
+code, err := pull.ParseCode("hk00700")
+if err != nil {
+    panic(err)
+}
+info, ok := code.Market.Info()
+if !ok {
+    panic("没有内置市场配置")
+}
+// extended、4、20422500（股）
+fmt.Println(info.Protocol, info.Day.Category, info.Day.ToStorageVolume(204225))
+```
+
+| 市场 | 日线类型 / 解码量单位 | 1 分钟类型 / 解码量单位 |
+|---|---|---|
+| 股票、ETF/LOF | 9 / 百股 | 7 / 百股 |
+| 指数、板块指数 | 9 / 股 | 7 / 股 |
+| 港股主板 | 4 / 百股 | 8 / 默认 |
+| 期货 | 4 / 默认 | 8 / 默认 |
+| 港股指数、美股 | 9 / 默认 | 8 / 默认 |
+
+`VolumeShares` 直接存储，`VolumeHundredShares` 乘 100；这里的百股是协议单位，与港股交易所每手的实际股数无关。`VolumeDefault` 表示单位尚未确认，暂时沿用 ×100，零值也用这个默认换算。期货的默认数值不能直接视为合约数量。自定义市场的 `Info()` 返回 `false`，继续由自己的 `Unit` 决定请求和换算。
+
+标准行情的 `KindIndex` 需使用 `GetIndex*` 解码。股票/ETF 的分钟拉取继续调用 `GetKlineMinute241Until`（类型 7），保留集合竞价拆分。配置仅覆盖 pull 存储的日线和 1 分钟线，不能用于报价、分笔、本地文件或其他周期。
+
+港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
+
 > `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
 
 ---
@@ -179,11 +210,11 @@ Codes: []string{
 | 字段 | 单位 |
 |---|---|
 | 价格（Open/High/Low/Close） | 元（float64） |
-| Volume | **股**（协议"手"×100，`pull.ToShares`） |
+| Volume | 已确认的股票/ETF/指数/板块及港股日线为**股**；其他项按市场配置的默认倍率存储，单位待确认 |
 | Amount | 元 |
 | Source（分钟线） | 空字符串=原生数据（含旧库）；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 
-> 注意：与本地 `.day/.lc1/.lc5` 文件不同（指数/股票"手/股"混存），pull 库内统一为**股**，上层无需再区分市场。
+> 与本地 `.day/.lc1/.lc5` 文件的量单位不同。使用 `VolumeDefault` 的扩展市场及周期尚未确认单位，不能仅依据存储字段名宣称其成交量为股。
 
 ### 增量写入
 

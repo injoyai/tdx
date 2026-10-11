@@ -176,8 +176,8 @@ func TestManageDoesNotInitializeGbbq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, kind := range []string{"stock", "index", "etf"} {
-		u := &stdUnit{kind: kind}
+	for _, name := range []pull.Market{pull.MarketAStock, pull.MarketIndex, pull.MarketEtfLof} {
+		u := &stdUnit{name: name}
 		if _, err := u.Manage(s); err != nil {
 			t.Fatal(err)
 		}

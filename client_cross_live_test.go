@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 只获取小样本；独立来源的抓取与字段比对按项目规则 8.6 单独串行执行。
@@ -30,7 +32,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	ex := liveTestClient(t, true, false)
-	bars, err := ex.ExBars(9, 31, "00700", 0, 5)
+	bars, err := ex.ExBars(protocol.TypeKlineDay2, 31, "00700", 0, 5)
 	if err != nil || len(bars) != 5 {
 		t.Fatal("extended daily sample", bars, err)
 	}

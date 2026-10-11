@@ -22,12 +22,6 @@ const (
 	marketQHZ = 42 // 期货指数
 )
 
-// 扩展行情 category：日K 用 TypeKlineDay2(=4)（v1 实测，见 MEMORY.md），分钟用 TypeKlineMinute2(=8)。
-const (
-	exDayCategory    = protocol.TypeKlineDay2    // 日K category（期货 v1 实测）
-	exMinuteCategory = protocol.TypeKlineMinute2 // 1分钟K category
-)
-
 // futureMarketNames 期货市场编码→简称（编码进 Code.Code 前缀，区分交易所）。
 var futureMarketNames = map[uint8]string{
 	marketCFF: "cff",
@@ -45,10 +39,6 @@ type exUnit struct {
 	name pull.Market // 市场标识（pull.Market 枚举）
 	// markets 该 Unit 覆盖的扩展市场编码（用于从 ExInstruments 过滤）
 	markets []uint8
-	// dayCategory 日K category；期货=TypeKlineDay2(=4)（v1 实测），港股/美股各自覆盖为 TypeKlineDay(=9)
-	dayCategory uint8
-	// minuteCategory 分钟K category；统一 TypeKlineMinute2(=8)
-	minuteCategory uint8
 }
 
 func (u *exUnit) Name() string { return u.name.String() }
@@ -203,6 +193,10 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 
 // FetchDay 增量拉日线，含最后一根以便重插修复。
 func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
+	info, ok := u.name.Info()
+	if !ok {
+		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	last, err := s.LastDayUnix(code)
 	if err != nil {
 		return err
@@ -211,7 +205,7 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	if last > from.Unix() {
 		from = time.Unix(last, 0)
 	}
-	bars, err := u.bars(s, code, u.dayCategory, from)
+	bars, err := u.bars(s, code, info.Day.Category, from)
 	if err != nil {
 		return err
 	}
@@ -219,7 +213,7 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	for _, k := range bars {
 		out = append(out, &pull.KlineDay{
 			Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
-			Low: k.Low, Close: k.Close, Volume: pull.ToShares(int64(k.Trade)), Amount: k.Amount,
+			Low: k.Low, Close: k.Close, Volume: info.Day.ToStorageVolume(int64(k.Trade)), Amount: k.Amount,
 		})
 	}
 	return saveDays(s, code, from.Unix(), out)
@@ -227,8 +221,12 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 
 // FetchMin 多年份共用一次分页，成功扫描后才提交年度完成标记。
 func (u *exUnit) FetchMin(s *pull.Service, code pull.Code) error {
+	info, ok := u.name.Info()
+	if !ok {
+		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
-		bars, err := u.bars(s, code, u.minuteCategory, from)
+		bars, err := u.bars(s, code, info.Minute.Category, from)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +234,7 @@ func (u *exUnit) FetchMin(s *pull.Service, code pull.Code) error {
 		for _, k := range bars {
 			out = append(out, &pull.KlineMinute{
 				Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
-				Low: k.Low, Close: k.Close, Volume: pull.ToShares(int64(k.Trade)), Amount: k.Amount,
+				Low: k.Low, Close: k.Close, Volume: info.Minute.ToStorageVolume(int64(k.Trade)), Amount: k.Amount,
 			})
 		}
 		return out, nil
@@ -250,9 +248,7 @@ var _ pull.Unit = (*Future)(nil)
 
 func init() {
 	pull.Register(&Future{exUnit{
-		name:           pull.MarketFuture,
-		markets:        []uint8{marketCFF, marketCZC, marketDCE, marketSHF, marketGFE, marketQHZ},
-		dayCategory:    exDayCategory,
-		minuteCategory: exMinuteCategory,
+		name:    pull.MarketFuture,
+		markets: []uint8{marketCFF, marketCZC, marketDCE, marketSHF, marketGFE, marketQHZ},
 	}})
 }

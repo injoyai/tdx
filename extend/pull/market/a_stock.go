@@ -16,7 +16,6 @@ import (
 // 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
 	name pull.Market // 市场标识（pull.Market 枚举）
-	kind string      // 分类：stock / etf / index（决定用 GetKline 还是 GetIndex）
 }
 
 func (u *stdUnit) Name() string { return u.name.String() }
@@ -78,12 +77,16 @@ func (u *stdUnit) fetchDayFrom(c *tdx.Client, code string, last int64, startAt t
 
 // dayUntil 指数走 GetIndex、其余走 GetKline，从新到旧拉取直到 f 返回 true。
 func (u *stdUnit) dayUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
+	info, ok := u.name.Info()
+	if !ok {
+		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	var resp *protocol.KlineResp
 	var err error
-	if u.kind == "index" {
-		resp, err = c.GetIndexUntil(protocol.TypeKlineDay, code, f)
+	if info.Kind == protocol.KindIndex {
+		resp, err = c.GetIndexUntil(info.Day.Category, code, f)
 	} else {
-		resp, err = c.GetKlineUntil(protocol.TypeKlineDay, code, f)
+		resp, err = c.GetKlineUntil(info.Day.Category, code, f)
 	}
 	if err != nil {
 		return nil, err
@@ -103,10 +106,14 @@ func (u *stdUnit) fetchMinAll(c *tdx.Client, code string, startAt time.Time) (pr
 
 // minUntil 指数走 GetIndex、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
 func (u *stdUnit) minUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
+	info, ok := u.name.Info()
+	if !ok {
+		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	var resp *protocol.KlineResp
 	var err error
-	if u.kind == "index" {
-		resp, err = c.GetIndexUntil(protocol.TypeKlineMinute, code, f)
+	if info.Kind == protocol.KindIndex {
+		resp, err = c.GetIndexUntil(info.Minute.Category, code, f)
 	} else {
 		resp, err = c.GetKlineMinute241Until(code, f)
 	}
@@ -134,9 +141,9 @@ var (
 )
 
 func init() {
-	pull.Register(&AStock{stdUnit{name: pull.MarketAStock, kind: "stock"}})
-	pull.Register(&Index{stdUnit{name: pull.MarketIndex, kind: "index"}})
-	pull.Register(&EtfLof{stdUnit{name: pull.MarketEtfLof, kind: "etf"}})
+	pull.Register(&AStock{stdUnit{name: pull.MarketAStock}})
+	pull.Register(&Index{stdUnit{name: pull.MarketIndex}})
+	pull.Register(&EtfLof{stdUnit{name: pull.MarketEtfLof}})
 }
 
 // ---- Codes 实现 ----
@@ -180,12 +187,16 @@ func (u *EtfLof) Codes(s *pull.Service) ([]pull.Code, error) {
 // ---- FetchDay 通用实现（含换手率/股本回填，仅股票有） ----
 
 func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
+	info, ok := u.name.Info()
+	if !ok {
+		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	m, err := u.Manage(s)
 	if err != nil {
 		return err
 	}
 	var equity tdx.IGbbq
-	if u.kind == "stock" {
+	if u.name == pull.MarketAStock {
 		equity, err = stockEquity(m)
 		if err != nil {
 			return err
@@ -220,12 +231,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 			Low:    k.Low.Float64(),
 			Close:  k.Close.Float64(),
 			Amount: k.Amount.Float64(),
-		}
-		// 成交量统一转股：股票/ETF 协议为手×100；指数 Decode 已×100（即股），直接用。
-		if u.kind == "index" {
-			d.Volume = k.Volume
-		} else {
-			d.Volume = pull.ToShares(k.Volume)
+			Volume: info.Day.ToStorageVolume(k.Volume),
 		}
 		// 换手率/股本回填：仅股票有（Gbbq 非股票返回 nil）
 		if equity != nil {
@@ -242,12 +248,16 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 
 // FetchMin 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
 func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
+	info, ok := u.name.Info()
+	if !ok {
+		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	}
 	m, err := u.Manage(s)
 	if err != nil {
 		return err
 	}
 	var fallback *minuteFallback
-	if s.TradeFallbackEnabled() && (u.kind == "stock" || u.kind == "etf") {
+	if s.TradeFallbackEnabled() && (u.name == pull.MarketAStock || u.name == pull.MarketEtfLof) {
 		fallback = &minuteFallback{
 			days: func(from time.Time) (protocol.Klines, error) {
 				var days protocol.Klines
@@ -287,7 +297,7 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 			out = append(out, &pull.KlineMinute{
 				Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
 				Low: k.Low.Float64(), Close: k.Close.Float64(),
-				Volume: pull.ToShares(k.Volume), Amount: k.Amount.Float64(),
+				Volume: info.Minute.ToStorageVolume(k.Volume), Amount: k.Amount.Float64(),
 			})
 		}
 		return out, nil

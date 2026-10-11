@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // TestExHqLive 实连扩展行情验证。需联网,默认跳过;设 TDX_EXHQ_LIVE=1 启用。
@@ -40,7 +42,7 @@ func TestExHqLive(t *testing.T) {
 		t.Errorf("HK quote price invalid: %.2f", q.Price)
 	}
 
-	bars, err := cli.ExBars(9, 31, "00700", 0, 5) // 日K
+	bars, err := cli.ExBars(protocol.TypeKlineDay2, 31, "00700", 0, 5) // 港股日K，Trade 为百股
 	if err != nil || len(bars) == 0 {
 		t.Fatalf("ExBars: n=%d err=%v", len(bars), err)
 	}
