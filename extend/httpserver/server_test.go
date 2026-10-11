@@ -1,11 +1,98 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/injoyai/ios"
+	"github.com/injoyai/ios/client"
+	"github.com/injoyai/tdx/v2"
 )
+
+func TestNewFailureClosesPool(t *testing.T) {
+	previous := tdx.DefaultCodes
+	t.Cleanup(func() { tdx.DefaultCodes = previous })
+	for _, stage := range []string{"codes", "extended"} {
+		t.Run(stage, func(t *testing.T) {
+			tdx.DefaultCodes = nil
+			if stage == "extended" {
+				tdx.DefaultCodes = tdx.NewCodesBase()
+			}
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { listener.Close() })
+			closed := make(chan struct{})
+			go func() {
+				defer close(closed)
+				conn, err := listener.Accept()
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				io.Copy(io.Discard, conn)
+			}()
+			failure := errors.New("initialization failure")
+			var created atomic.Int32
+			op := []Option{
+				WithHosts(listener.Addr().String()),
+				WithOptions(tdx.WithDebug(false), func(c *client.Client) {
+					if created.Add(1) == 2 {
+						c.SetDial(func(context.Context) (ios.ReadWriteCloser, string, error) {
+							return nil, "", failure
+						})
+					}
+				}),
+			}
+			if stage == "extended" {
+				op = append(op, WithExHqHosts(listener.Addr().String()))
+			}
+			if s, err := New(op...); s != nil || !errors.Is(err, failure) {
+				t.Fatal("expected initialization failure", s, err)
+			}
+			select {
+			case <-closed:
+			case <-time.After(2 * time.Second):
+				t.Fatal("initialization failure leaked pool connection")
+			}
+		})
+	}
+}
+
+func TestCloseReleasesPools(t *testing.T) {
+	var closed atomic.Int32
+	newPool := func() *tdx.Pool {
+		p, err := tdx.NewPool(func() (*tdx.Client, error) {
+			c := client.New(nil)
+			c.Closer.Reset()
+			c.SetCloseFunc(func(error) error { closed.Add(1); return nil })
+			return &tdx.Client{Client: c}, nil
+		}, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	s := &Server{pool: newPool(), exPool: newPool(), server: &http.Server{}}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if closed.Load() != 4 {
+		t.Fatalf("closed %d connections, want 4", closed.Load())
+	}
+	if err := s.Close(); err != nil || closed.Load() != 4 {
+		t.Fatal("repeated close changed result", closed.Load(), err)
+	}
+}
 
 func TestRespondOK(t *testing.T) {
 	w := httptest.NewRecorder()

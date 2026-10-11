@@ -54,6 +54,8 @@ func main() {
 
 > `Default()` 会自动添加 `tdx.WithRedial()` 断线重连选项。
 
+使用完成后调用 `s.Close()`，同时关闭 HTTP 服务及其标准、扩展行情连接池。初始化失败会释放已创建的连接池；全局共享的 `tdx.DefaultCodes` 缓存继续保留。
+
 ## 响应格式
 
 所有接口统一返回如下 JSON 结构:

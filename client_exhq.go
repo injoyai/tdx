@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -38,7 +39,7 @@ func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err erro
 		waitTimeout: time.Second * 10,
 		m:           maps.NewSafe(),
 	}
-	cli.Client, err = client.Dial(dial, func(c *client.Client) {
+	cli.Client, err = client.Dial(cli.cancelableDial(dial), func(c *client.Client) {
 		c.Logger.Debug(true)
 		c.Logger.SetLevel(LevelInfo)
 		c.Logger.WithHEX()
@@ -46,23 +47,24 @@ func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err erro
 		c.Event.OnReadFrom = protocol.ReadFrom
 		c.Event.OnDealMessage = cli.handlerDealMessage
 		c.Event.OnConnected = func(c *client.Client) error {
+			w := cli.wrapWriter(c)
+			<-cli.writeGate
 			// 握手(响应忽略)
-			if _, err := c.Write(protocol.MEx.FrameSetup().Bytes()); err != nil {
+			if _, err := cli.Write(protocol.MEx.FrameSetup().Bytes()); err != nil {
 				c.Close()
 				return err
 			}
 			// 心跳:30s 发送品种数量请求(响应无等待者,被丢弃)
-			c.GoTimerWriter(30*time.Second, func(w ios.MoreWriter) error {
-				_, err := w.Write(protocol.MEx.FrameCount().Bytes())
-				return err
-			})
+			cli.goHeartbeat(w, c.Closer.Done(), protocol.MEx.FrameCount().Bytes())
 			return nil
 		}
 	})
 	if err != nil {
 		return nil, err
 	}
-	go cli.Client.Run()
+	ctx, cancel := context.WithCancel(context.Background())
+	cli.cancelRun = cancel
+	go cli.Client.Run(ctx)
 	return cli, nil
 }
 

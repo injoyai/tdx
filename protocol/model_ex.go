@@ -2,24 +2,25 @@ package protocol
 
 import (
 	"encoding/binary"
+	"io"
 )
 
 // 扩展行情协议(TdxExHq)——期货/期权/港股/外汇/全球指数。
 // 移植自 pytdx exhq 解析器。与标准行情共用传输层(0xB1CB7400 响应帧+zlib),
 // 区别仅在请求帧头前缀为 0x01(标准为 0x0C),故复用 Frame{Prefix:0x01,...}。
 const (
-	TypeExSetup        uint16 = 0x2454 // 扩展行情握手(setup)
-	TypeExMarkets      uint16 = 0x23F4 // 市场代码表
-	TypeExCount        uint16 = 0x23F0 // 品种数量
-	TypeExInstrument   uint16 = 0x23F5 // 品种(代码)列表
-	TypeExQuote        uint16 = 0x23FA // 单品种五档行情
-	TypeExQuoteList    uint16 = 0x2400 // 批量行情列表
-	TypeExBars         uint16 = 0x23FF // K线
-	TypeExMinute       uint16 = 0x240B // 当日分时
-	TypeExHistMinute   uint16 = 0x240C // 历史分时
-	TypeExTrade        uint16 = 0x23FC // 分笔成交
-	TypeExHistTrade    uint16 = 0x2406 // 历史分笔成交
-	TypeExBarsRange    uint16 = 0x240D // 历史K线区间
+	TypeExSetup      uint16 = 0x2454 // 扩展行情握手(setup)
+	TypeExMarkets    uint16 = 0x23F4 // 市场代码表
+	TypeExCount      uint16 = 0x23F0 // 品种数量
+	TypeExInstrument uint16 = 0x23F5 // 品种(代码)列表
+	TypeExQuote      uint16 = 0x23FA // 单品种五档行情
+	TypeExQuoteList  uint16 = 0x2400 // 批量行情列表
+	TypeExBars       uint16 = 0x23FF // K线
+	TypeExMinute     uint16 = 0x240B // 当日分时
+	TypeExHistMinute uint16 = 0x240C // 历史分时
+	TypeExTrade      uint16 = 0x23FC // 分笔成交
+	TypeExHistTrade  uint16 = 0x2406 // 历史分笔成交
+	TypeExBarsRange  uint16 = 0x240D // 历史K线区间
 )
 
 const exPrefix byte = 0x01
@@ -116,7 +117,7 @@ type ExRangeKline struct {
 type ExQuoteListItem struct {
 	Market    uint8      `json:"market"`
 	Code      string     `json:"code"`
-	PreClose  float64    `json:"preClose"`  // 昨收/昨结
+	PreClose  float64    `json:"preClose"` // 昨收/昨结
 	Open      float64    `json:"open"`
 	High      float64    `json:"high"`
 	Low       float64    `json:"low"`
@@ -175,15 +176,15 @@ func (exHq) FrameMarkets() *Frame { return exFrame(TypeExMarkets, Control01, nil
 // DecodeMarkets 解析市场代码表。
 func (exHq) DecodeMarkets(bs []byte) ([]ExMarket, error) {
 	if len(bs) < 2 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	r := &exReader{b: bs, p: 2}
 	cnt := int(Uint16(bs[0:2]))
+	if cnt > r.remain()/64 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExMarket, 0, cnt)
 	for i := 0; i < cnt; i++ {
-		if r.remain() < 64 {
-			break
-		}
 		category := r.u8()
 		name := exGBK(r.bytes(32))
 		market := r.u8()
@@ -205,7 +206,7 @@ func (exHq) FrameCount() *Frame { return exFrame(TypeExCount, Control01, nil) }
 // DecodeCount 解析品种数量。
 func (exHq) DecodeCount(bs []byte) (int, error) {
 	if len(bs) < 23 {
-		return 0, nil
+		return 0, io.ErrUnexpectedEOF
 	}
 	return int(Uint32(bs[19:23])), nil
 }
@@ -223,15 +224,15 @@ func (exHq) FrameInstrument(start uint32, count uint16) *Frame {
 // DecodeInstrument 解析品种列表。每项占 64 字节(仅前 40 字节有效)。
 func (exHq) DecodeInstrument(bs []byte) ([]ExInstrument, error) {
 	if len(bs) < 6 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	count := int(Uint16(bs[4:6]))
 	r := &exReader{b: bs, p: 6}
+	if count > r.remain()/64 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExInstrument, 0, count)
 	for i := 0; i < count; i++ {
-		if r.remain() < 64 {
-			break
-		}
 		base := r.p
 		category := r.u8()
 		market := r.u8()
@@ -257,14 +258,11 @@ func (exHq) FrameQuote(market uint8, code string) *Frame {
 
 // DecodeQuote 解析单品种五档。
 func (exHq) DecodeQuote(bs []byte) (*ExQuote, error) {
-	if len(bs) < 20 {
-		return &ExQuote{}, nil
+	if len(bs) < 150 {
+		return nil, io.ErrUnexpectedEOF
 	}
 	q := &ExQuote{Market: bs[0], Code: cutAtNull(bs[1:10])}
 	r := &exReader{b: bs, p: 14} // 跳过 10(market+code) + 4
-	if r.remain() < 136 {
-		return q, nil
-	}
 	q.PreClose = r.f32()
 	q.Open = r.f32()
 	q.High = r.f32()
@@ -314,15 +312,15 @@ func (exHq) FrameBars(category uint8, market uint8, code string, start, count ui
 // DecodeBars 解析K线。
 func (exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
 	if len(bs) < 20 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	r := &exReader{b: bs, p: 18}
 	cnt := int(r.u16())
+	if cnt > r.remain()/32 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExKline, 0, cnt)
 	for i := 0; i < cnt; i++ {
-		if r.remain() < 32 {
-			break
-		}
 		var dt [4]byte
 		copy(dt[:], r.bytes(4))
 		t := GetTime(dt, c.Category)
@@ -375,15 +373,15 @@ func (exHq) DecodeHistMinute(bs []byte) ([]ExMinuteTick, error) {
 
 func decodeExMinute(bs []byte, headerLen int) ([]ExMinuteTick, error) {
 	if len(bs) < headerLen {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	num := int(Uint16(bs[headerLen-2 : headerLen]))
 	r := &exReader{b: bs, p: headerLen}
+	if num > r.remain()/18 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExMinuteTick, 0, num)
 	for i := 0; i < num; i++ {
-		if r.remain() < 18 {
-			break
-		}
 		raw := int(r.u16())
 		price := r.f32()
 		avg := r.f32()
@@ -435,15 +433,15 @@ func (exHq) DecodeHistTrade(bs []byte, c ExTradeCache) ([]ExTradeTick, error) {
 
 func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 	if len(bs) < 16 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	num := int(Uint16(bs[14:16]))
 	r := &exReader{b: bs, p: 16}
+	if num > r.remain()/16 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExTradeTick, 0, num)
 	for i := 0; i < num; i++ {
-		if r.remain() < 16 {
-			break
-		}
 		raw := int(r.u16())
 		price := r.u32()
 		volume := r.u32()
@@ -549,15 +547,15 @@ func (exHq) FrameBarsRange(market uint8, code string, date, date2 uint32) *Frame
 // DecodeBarsRange 解析历史K线区间。
 func (exHq) DecodeBarsRange(bs []byte) ([]ExRangeKline, error) {
 	if len(bs) < 14 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	r := &exReader{b: bs, p: 12}
 	cnt := int(r.u16())
+	if cnt > r.remain()/32 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExRangeKline, 0, cnt)
 	for i := 0; i < cnt; i++ {
-		if r.remain() < 32 {
-			break
-		}
 		d1 := int(r.u16())
 		d2 := int(r.u16())
 		open := r.f32()
@@ -600,18 +598,18 @@ func (exHq) FrameQuoteList(market uint8, start, count uint16) *Frame {
 // DecodeQuoteList 解析批量行情列表(仅支持期货 cat3 / 港股 cat2)。每项 300 字节。
 func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]ExQuoteListItem, error) {
 	if len(bs) < 2 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	num := int(Uint16(bs[0:2]))
 	if num == 0 || (c.Category != 2 && c.Category != 3) {
 		return nil, nil
 	}
 	r := &exReader{b: bs, p: 2}
+	if num > r.remain()/300 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]ExQuoteListItem, 0, num)
 	for i := 0; i < num; i++ {
-		if r.remain() < 300 {
-			break
-		}
 		market := r.u8()
 		code := exGBK(r.bytes(9))
 		base := r.p // 数据块 140 字节有效,整体步进 290
@@ -678,9 +676,9 @@ func parseExFutures(bs []byte, p int, it *ExQuoteListItem) {
 	it.ZongLiang = rd.u32()
 	rd.skip(4) // XianLiang
 	it.Amount = rd.f32()
-	it.Inner = rd.u32()  // NeiPan
-	it.Outer = rd.u32()  // WaiPan
-	rd.skip(4)           // 未知 float
+	it.Inner = rd.u32()   // NeiPan
+	it.Outer = rd.u32()   // WaiPan
+	rd.skip(4)            // 未知 float
 	it.ChiCang = rd.u32() // ChiCangLiang
 	it.Ask[0] = rd.f32()  // MaiRuJia
 	rd.skip(16)           // 4 未知
@@ -726,7 +724,7 @@ func (r *exReader) u32() uint32 {
 	r.p += 4
 	return v
 }
-func (r *exReader) i32() int32  { return int32(r.u32()) }
+func (r *exReader) i32() int32 { return int32(r.u32()) }
 func (r *exReader) f32() float64 {
 	v := Float32(r.b[r.p : r.p+4])
 	r.p += 4
@@ -737,8 +735,8 @@ func (r *exReader) bytes(n int) []byte {
 	r.p += n
 	return v
 }
-func (r *exReader) skip(n int)    { r.p += n }
-func (r *exReader) remain() int   { return len(r.b) - r.p }
+func (r *exReader) skip(n int)  { r.p += n }
+func (r *exReader) remain() int { return len(r.b) - r.p }
 
 // exGBK 去尾随 null 并 GBK 解码(复用标准行情同款解码)。
 func exGBK(b []byte) string {

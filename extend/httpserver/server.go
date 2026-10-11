@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/injoyai/ios/client"
@@ -53,8 +54,8 @@ func WithOptions(opts ...client.Option) Option {
 
 // Server HTTP 服务
 type Server struct {
-	pool   tdx.IPool
-	exPool tdx.IPool
+	pool   *tdx.Pool
+	exPool *tdx.Pool
 	server *http.Server
 }
 
@@ -75,6 +76,13 @@ func New(opts ...Option) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 后续初始化失败时归还已创建的标准行情连接。
+	ready := false
+	defer func() {
+		if !ready {
+			_ = pool.Close()
+		}
+	}()
 
 	// 初始化 DefaultCodes(ETF/可转债等非股票行情需要查 Decimal 修正价格, 见 Client.GetQuote)
 	if tdx.DefaultCodes == nil {
@@ -82,10 +90,12 @@ func New(opts ...Option) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		tdx.DefaultCodes, err = tdx.NewCodesSqlite(tdx.WithCodesClient(codesClient))
+		codes, err := tdx.NewCodesSqlite(tdx.WithCodesClient(codesClient))
 		if err != nil {
+			_ = codesClient.CloseAll()
 			return nil, err
 		}
+		tdx.DefaultCodes = codes
 	}
 
 	s := &Server{pool: pool}
@@ -110,6 +120,7 @@ func New(opts ...Option) (*Server, error) {
 		Addr:    cfg.addr,
 		Handler: mux,
 	}
+	ready = true
 	return s, nil
 }
 
@@ -126,7 +137,14 @@ func (s *Server) Run() error {
 
 // Close 关闭 HTTP 服务
 func (s *Server) Close() error {
-	return s.server.Close()
+	err := s.server.Close()
+	if s.pool != nil {
+		err = errors.Join(err, s.pool.Close())
+	}
+	if s.exPool != nil {
+		err = errors.Join(err, s.exPool.Close())
+	}
+	return err
 }
 
 // registerRoutes 注册所有路由

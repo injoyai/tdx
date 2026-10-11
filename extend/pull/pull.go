@@ -46,6 +46,10 @@ func NewService(cfg *Config) (*Service, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("pull: 数据根目录 Dir 不能为空")
 	}
+	start, err := cfg.parseStart()
+	if err != nil {
+		return nil, fmt.Errorf("pull: 无效起始日期 %q，须为 YYYYMMDD: %w", cfg.StartAt, err)
+	}
 	// 固定配置快照；连接源等依赖仍由调用方持有，不复制其内部状态。
 	snapshot := *cfg
 	snapshot.Codes = append([]string(nil), cfg.Codes...)
@@ -121,8 +125,7 @@ func NewService(cfg *Config) (*Service, error) {
 	}
 
 	// 起始日期：未设置时默认最近两年（首拉全量的最早日期）
-	start := cfg.Start()
-	if start.IsZero() {
+	if cfg.StartAt == "" {
 		now := time.Now()
 		start = time.Date(now.Year()-2, now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	}

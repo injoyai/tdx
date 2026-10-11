@@ -21,13 +21,16 @@ type frameTestWriter func([]byte) (int, error)
 func (w frameTestWriter) Write(data []byte) (int, error) { return w(data) }
 
 func TestSendFrameLifecycle(t *testing.T) {
-	for _, mode := range []string{"immediate", "timeout", "write failure"} {
+	for _, mode := range []string{"immediate", "timeout", "write failure", "short write"} {
 		t.Run(mode, func(t *testing.T) {
 			c := &Client{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 			c.SetTimeout(10 * time.Millisecond)
-			c.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
+			c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
 				if mode == "write failure" {
 					return 0, io.ErrClosedPipe
+				}
+				if mode == "short write" {
+					return len(data) - 1, nil
 				}
 				if mode == "immediate" {
 					key := conv.String(binary.LittleEndian.Uint32(data[1:5]))
@@ -37,6 +40,7 @@ func TestSendFrameLifecycle(t *testing.T) {
 				}
 				return len(data), nil
 			}))
+			c.wrapWriter(c.Client)
 			f := &protocol.Frame{Type: protocol.TypeTrade}
 			value, err := c.SendFrame(f, "cached request")
 			switch mode {
@@ -51,6 +55,10 @@ func TestSendFrameLifecycle(t *testing.T) {
 			case "write failure":
 				if !errors.Is(err, io.ErrClosedPipe) {
 					t.Fatalf("expected write failure, got %v", err)
+				}
+			case "short write":
+				if !errors.Is(err, io.ErrShortWrite) {
+					t.Fatalf("expected short write, got %v", err)
 				}
 			}
 			key := conv.String(f.MsgID)
@@ -75,7 +83,8 @@ func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
 		return len(data), nil
 	}))
 	writer.OnWrite = func(write func() error) error { return write() }
-	c.MoreWriter = writer
+	c.Client.MoreWriter = writer
+	c.wrapWriter(c.Client)
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)
@@ -89,4 +98,42 @@ func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestSendFrameTimeoutWithBlockedWriter(t *testing.T) {
+	c := &Client{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+	c.SetTimeout(20 * time.Millisecond)
+	release := make(chan struct{})
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(bs []byte) (int, error) {
+		close(started)
+		<-release
+		defer close(finished)
+		return len(bs), nil
+	}))
+	c.wrapWriter(c.Client)
+	t.Cleanup(func() {
+		close(release)
+		<-finished
+	})
+	f := protocol.MCount.Frame(protocol.ExchangeSZ)
+	done := make(chan error, 1)
+	go func() { _, err := c.SendFrame(f, "request cache"); done <- err }()
+	<-started
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != "超时" {
+			t.Fatal("expected timeout", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("blocked writer prevented timeout")
+	}
+	key := conv.String(f.MsgID)
+	if c.Wait.IsWait(key) {
+		t.Fatal("timed-out request callback leaked")
+	}
+	if _, ok := c.m.Get(key); ok {
+		t.Fatal("timed-out request cache leaked")
+	}
 }

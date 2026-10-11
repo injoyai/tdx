@@ -3,6 +3,7 @@ package tdx
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -86,7 +87,7 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 		m:           maps.NewSafe(),
 	}
 
-	cli.Client, err = client.Dial(dial, func(c *client.Client) {
+	cli.Client, err = client.Dial(cli.cancelableDial(dial), func(c *client.Client) {
 		c.Logger.Debug(true)                           //关闭日志打印
 		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
 		c.Logger.WithHEX()                             //以HEX显示
@@ -94,35 +95,54 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 		c.Event.OnReadFrom = protocol.ReadFrom         //分包
 		c.Event.OnDealMessage = cli.handlerDealMessage //解析数据并处理
 		c.Event.OnConnected = func(c *client.Client) error {
+			w := cli.wrapWriter(c)
+			<-cli.writeGate // 连接初始化完成，允许写入。
 			//无数据超时时间是60秒,30秒发送一个心跳包
-			c.GoTimerWriter(30*time.Second, func(w ios.MoreWriter) error {
-				bs := protocol.MHeart.Frame().Bytes()
-				_, err := w.Write(bs)
-				return err
-			})
 			f := protocol.MConnect.Frame()
-			if _, err = c.Write(f.Bytes()); err != nil {
-				c.Close()
+			_, err := cli.Write(f.Bytes())
+			if err == nil {
+				cli.goHeartbeat(w, c.Closer.Done(), protocol.MHeart.Frame().Bytes())
 			}
-			return nil
+			return err
 		}
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	go cli.Client.Run()
+	ctx, cancel := context.WithCancel(context.Background())
+	cli.cancelRun = cancel
+	go cli.Client.Run(ctx)
 
 	return cli, err
 }
 
 type Client struct {
 	*client.Client              //客户端实例
+	ios.MoreWriter              // 稳定写入口，重连只替换内部连接快照。
 	Wait           *wait.Entity //内部响应关联；请求超时通过 SetTimeout 配置
 	m              *maps.Safe   //有部分解析需要用到代码,返回数据获取不到,固请求的时候缓存下
 	msgID          uint32       //消息id,使用SendFrame自动累加
 	waitMu         sync.Mutex
 	waitTimeout    time.Duration
+	writer         *frameWriter
+	writeGate      chan struct{}
+	cancelRun      context.CancelFunc
+}
+
+// CloseAll 取消整个连接生命周期，避免并发修改底层库的重连开关。
+func (c *Client) CloseAll() error {
+	if c.cancelRun != nil {
+		c.cancelRun()
+		c.waitMu.Lock()
+		w := c.writer
+		c.waitMu.Unlock()
+		if w != nil && w.conn != nil {
+			_ = w.conn.Close() // 解除读取阻塞，由读取协程结束当次连接。
+		}
+		<-c.Client.Done()
+	}
+	return c.Client.Close()
 }
 
 // handlerDealMessage 处理服务器响应的数据
@@ -135,9 +155,17 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 		}
 	}()
 
-	f, err := protocol.Decode(msg.Payload())
+	payload := msg.Payload()
+	f, err := protocol.Decode(payload)
 	if err != nil {
 		logs.Err(err)
+		if len(payload) >= 16 {
+			key := conv.String(protocol.Uint32(payload[5:9]))
+			this.waitMu.Lock()
+			this.Wait.Done(key, nil, err)
+			this.m.GetAndDel(key)
+			this.waitMu.Unlock()
+		}
 		return
 	}
 	this.waitMu.Lock()
@@ -245,6 +273,7 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 
 	if err != nil {
 		logs.Err(err)
+		this.Wait.Done(conv.String(f.MsgID), nil, err)
 		return
 	}
 
@@ -275,6 +304,7 @@ func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	// 先注册完整回调再发送；注册和响应处理互斥，避免依赖内部的 list 竞争。
 	this.waitMu.Lock()
 	timeout := this.waitTimeout
+	w := this.writer
 	this.Wait.Async(key, func(value any, err error) { done <- result{value, err} }, 1, 0)
 	this.waitMu.Unlock()
 	defer func() {
@@ -283,15 +313,29 @@ func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 		this.Wait.Done(key, nil)
 		this.m.GetAndDel(key)
 	}()
-	if _, err := this.Client.Write(f.Bytes()); err != nil {
-		return nil, err
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	data := f.Bytes()
+	written := make(chan error, 1)
+	go func() {
+		_, err := w.write(ctx, data)
+		written <- err
+	}()
+	select {
+	case err := <-written:
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, errors.New("超时")
+			}
+			return nil, err
+		}
+	case <-ctx.Done():
+		return nil, errors.New("超时")
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	select {
 	case r := <-done:
 		return r.value, r.err
-	case <-timer.C:
+	case <-ctx.Done():
 		return nil, errors.New("超时")
 	}
 }
@@ -340,15 +384,21 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 		return resp, nil
 	}
 
-	size := uint16(1000)
-	for start := uint16(0); ; start += size {
-		r, err := this.GetCode(exchange, start)
+	size := 1000
+	for start := 0; ; start += size {
+		if start > 65535 {
+			return nil, errors.New("分页偏移超过协议 uint16 上限")
+		}
+		r, err := this.GetCode(exchange, uint16(start))
 		if err != nil {
 			return nil, err
 		}
+		if int(resp.Count)+int(r.Count) > 65535 {
+			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+		}
 		resp.Count += r.Count
 		resp.List = append(resp.List, r.List...)
-		if r.Count < size {
+		if int(r.Count) < size {
 			break
 		}
 	}
@@ -561,7 +611,10 @@ func (this *Client) GetBlockFileRaw(file string) ([]byte, error) {
 		}
 		info, ok := r.(*protocol.BlockInfoResp)
 		if !ok || len(info.Data) == 0 {
-			break
+			return nil, fmt.Errorf("文件 %s 下载不完整: 预期 %d 字节，收到 %d: %w", file, meta.Size, start, io.ErrUnexpectedEOF)
+		}
+		if uint32(len(info.Data)) > n {
+			return nil, fmt.Errorf("文件 %s 分块过长: 预期最多 %d 字节，收到 %d", file, n, len(info.Data))
 		}
 		buf = append(buf, info.Data...)
 		start += uint32(len(info.Data))
@@ -783,16 +836,22 @@ func (this *Client) GetTrade(code string, start, count uint16) (*protocol.TradeR
 // GetTradeAll 获取分时全部交易详情,只能盘后调用,因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
 func (this *Client) GetTradeAll(code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
-	size := uint16(1800)
-	for start := uint16(0); ; start += size {
-		r, err := this.GetTrade(code, start, size)
+	size := 1800
+	for start := 0; ; start += size {
+		if start > 65535 {
+			return nil, errors.New("分页偏移超过协议 uint16 上限")
+		}
+		r, err := this.GetTrade(code, uint16(start), uint16(size))
 		if err != nil {
 			return nil, err
+		}
+		if int(resp.Count)+int(r.Count) > 65535 {
+			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
 		}
 		resp.Count += r.Count
 		resp.List = append(r.List, resp.List...)
 
-		if r.Count < size {
+		if int(r.Count) < size {
 			break
 		}
 	}
@@ -855,15 +914,21 @@ func (this *Client) GetHistoryTradeBefore(code string, w *Workday, before time.T
 // 历史数据只能查到20000609
 func (this *Client) GetHistoryTradeDay(date, code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
-	size := uint16(2000)
-	for start := uint16(0); ; start += size {
-		r, err := this.GetHistoryTrade(date, code, start, size)
+	size := 2000
+	for start := 0; ; start += size {
+		if start > 65535 {
+			return nil, errors.New("分页偏移超过协议 uint16 上限")
+		}
+		r, err := this.GetHistoryTrade(date, code, uint16(start), uint16(size))
 		if err != nil {
 			return nil, err
 		}
+		if int(resp.Count)+int(r.Count) > 65535 {
+			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+		}
 		resp.Count += r.Count
 		resp.List = append(r.List, resp.List...)
-		if r.Count < size {
+		if int(r.Count) < size {
 			break
 		}
 	}
@@ -893,10 +958,13 @@ func (this *Client) GetIndex(Type uint8, code string, start, count uint16) (*pro
 // GetIndexUntil 获取指数k线数据，通过多次请求来拼接,直到满足func返回true
 func (this *Client) GetIndexUntil(Type uint8, code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
 	resp := &protocol.KlineResp{}
-	size := uint16(800)
+	size := 800
 	var last *protocol.Kline
-	for start := uint16(0); ; start += size {
-		r, err := this.GetIndex(Type, code, start, size)
+	for start := 0; ; start += size {
+		if start > 65535 {
+			return nil, errors.New("分页偏移超过协议 uint16 上限")
+		}
+		r, err := this.GetIndex(Type, code, uint16(start), uint16(size))
 		if err != nil {
 			return nil, err
 		}
@@ -908,14 +976,20 @@ func (this *Client) GetIndexUntil(Type uint8, code string, f func(k *protocol.Kl
 		}
 		for i := len(r.List) - 1; i >= 0; i-- {
 			if f(r.List[i]) {
+				if int(resp.Count)+int(r.Count)-i > 65535 {
+					return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+				}
 				resp.Count += r.Count - uint16(i)
 				resp.List = append(r.List[i:], resp.List...)
 				return resp, nil
 			}
 		}
+		if int(resp.Count)+int(r.Count) > 65535 {
+			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+		}
 		resp.Count += r.Count
 		resp.List = append(r.List, resp.List...)
-		if r.Count < size {
+		if int(r.Count) < size {
 			break
 		}
 	}
@@ -997,10 +1071,13 @@ func (this *Client) GetKline(Type uint8, code string, start, count uint16) (*pro
 // GetKlineUntil 获取k线数据，通过多次请求来拼接,直到满足func返回true
 func (this *Client) GetKlineUntil(Type uint8, code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
 	resp := &protocol.KlineResp{}
-	size := uint16(800)
+	size := 800
 	var last *protocol.Kline
-	for start := uint16(0); ; start += size {
-		r, err := this.GetKline(Type, code, start, size)
+	for start := 0; ; start += size {
+		if start > 65535 {
+			return nil, errors.New("分页偏移超过协议 uint16 上限")
+		}
+		r, err := this.GetKline(Type, code, uint16(start), uint16(size))
 		if err != nil {
 			return nil, err
 		}
@@ -1012,14 +1089,20 @@ func (this *Client) GetKlineUntil(Type uint8, code string, f func(k *protocol.Kl
 		}
 		for i := len(r.List) - 1; i >= 0; i-- {
 			if f(r.List[i]) {
+				if int(resp.Count)+int(r.Count)-i > 65535 {
+					return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+				}
 				resp.Count += r.Count - uint16(i)
 				resp.List = append(r.List[i:], resp.List...)
 				return resp, nil
 			}
 		}
+		if int(resp.Count)+int(r.Count) > 65535 {
+			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
+		}
 		resp.Count += r.Count
 		resp.List = append(r.List, resp.List...)
-		if r.Count < size {
+		if int(r.Count) < size {
 			break
 		}
 	}

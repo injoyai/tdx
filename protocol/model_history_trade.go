@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"errors"
-	"time"
 
 	"github.com/injoyai/conv"
 )
@@ -31,30 +30,5 @@ func (historyTrade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 		return nil, errors.New("数据长度不足")
 	}
 
-	resp := &TradeResp{
-		Count: Uint16(bs[:2]),
-	}
-
-	//第2-6字节不知道是啥
-	bs = bs[2+4:]
-
-	lastPrice := Price(0)
-	for i := uint16(0); i < resp.Count; i++ {
-		timeStr := GetHourMinute([2]byte(bs[:2]))
-		t, err := time.Parse("2006010215:04", c.Date+timeStr)
-		if err != nil {
-			return nil, err
-		}
-		mt := &Trade{Time: t}
-		var sub Price
-		bs, sub = GetPrice(bs[2:])
-		lastPrice += sub * 10 //把分转成厘
-		mt.Price = lastPrice / basePrice(c.Code)
-		bs, mt.Volume = CutInt(bs)
-		bs, mt.Status = CutInt(bs)
-		bs, _ = CutInt(bs) //这个得到的是0，不知道是啥
-		resp.List = append(resp.List, mt)
-	}
-
-	return resp, nil
+	return decodeTrades(bs[6:], Uint16(bs[:2]), c, true)
 }

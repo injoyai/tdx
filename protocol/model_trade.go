@@ -88,32 +88,59 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 		return nil, errors.New("数据长度不足")
 	}
 
-	resp := &TradeResp{
-		Count: Uint16(bs[:2]),
+	return decodeTrades(bs[2:], Uint16(bs[:2]), c, false)
+}
+
+func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*TradeResp, error) {
+	resp := &TradeResp{Count: count}
+	fields := 5
+	if historical {
+		fields = 4
 	}
-
-	bs = bs[2:]
-
 	lastPrice := Price(0)
 	for i := uint16(0); i < resp.Count; i++ {
+		if len(bs) < 2 {
+			return nil, fmt.Errorf("成交记录 %d: 时间数据不足", i)
+		}
 		timeStr := GetHourMinute([2]byte(bs[:2]))
 		t, err := time.Parse("2006010215:04", c.Date+timeStr)
 		if err != nil {
 			return nil, err
 		}
 		mt := &Trade{Time: t}
-		var sub Price
-		bs, sub = GetPrice(bs[2:])
-		lastPrice += sub * 10 //把分转换成厘
+		bs = bs[2:]
+		var values [5]int
+		for field := 0; field < fields; field++ {
+			bs, values[field], err = cutTradeInt(bs)
+			if err != nil {
+				return nil, fmt.Errorf("成交记录 %d 字段 %d: %w", i, field, err)
+			}
+		}
+		lastPrice += Price(values[0]) * 10 //把分转换成厘
 		mt.Price = lastPrice / basePrice(c.Code)
-		bs, mt.Volume = CutInt(bs)
-		bs, mt.Number = CutInt(bs)
-		bs, mt.Status = CutInt(bs)
-		bs, _ = CutInt(bs) //这个得到的是0，不知道是啥
+		mt.Volume = values[1]
+		mt.Status = values[2]
+		if !historical {
+			mt.Number = values[2]
+			mt.Status = values[3]
+		}
 		resp.List = append(resp.List, mt)
 	}
 
 	return resp, nil
+}
+
+func cutTradeInt(bs []byte) ([]byte, int, error) {
+	for i, b := range bs {
+		// getData 使用 int32；第五字节只剩四个有效数值位。
+		if i >= 5 || (i == 4 && b&0x7f > 0x0f) {
+			return nil, 0, errors.New("成交整数超出 int32 范围")
+		}
+		if b&0x80 == 0 {
+			return bs[i+1:], int(getData(bs[:i+1])), nil
+		}
+	}
+	return nil, 0, errors.New("成交整数数据不足或未结束")
 }
 
 type Trades []*Trade

@@ -24,14 +24,15 @@ type Config struct {
 	Workday          *tdx.Workday // 交易日历（可选，不传则不判断交易日）
 }
 
-// Start 解析起始日期；未设置或非法时返回零值（Service 会归一化为最近两年）。
+// Start 解析起始日期；未设置或非法时返回零值。NewService 会拒绝非法日期。
 func (c Config) Start() time.Time {
-	if c.StartAt == "" {
-		return time.Time{}
-	}
-	t, err := time.ParseInLocation("20060102", c.StartAt, time.Local)
-	if err != nil {
-		return time.Time{}
-	}
+	t, _ := c.parseStart()
 	return t
+}
+
+func (c Config) parseStart() (time.Time, error) {
+	if c.StartAt == "" {
+		return time.Time{}, nil
+	}
+	return time.ParseInLocation("20060102", c.StartAt, time.Local)
 }
