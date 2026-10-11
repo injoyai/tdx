@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net"
+	"sync"
 	"time"
 
 	"github.com/injoyai/ios"
@@ -18,6 +20,18 @@ type frameWriter struct {
 	gate   chan struct{}
 }
 
+// TCP 重复 Close 会报错，底层库因此跳过断开回调和读缓存清理。
+type closeOnceConn struct {
+	net.Conn
+	once sync.Once
+	err  error
+}
+
+func (c *closeOnceConn) Close() error {
+	c.once.Do(func() { c.err = c.Conn.Close() })
+	return c.err
+}
+
 func (c *Client) cancelableDial(dial ios.DialFunc) ios.DialFunc {
 	if dial == nil {
 		return nil
@@ -30,6 +44,9 @@ func (c *Client) cancelableDial(dial ios.DialFunc) ios.DialFunc {
 		r, key, err := dial(ctx)
 		if err != nil {
 			return r, key, err
+		}
+		if conn, ok := r.(net.Conn); ok {
+			r = &closeOnceConn{Conn: conn}
 		}
 		// 底层 Dial 在连接回调之前替换共享状态；门控须从此处覆盖到回调。
 		select {

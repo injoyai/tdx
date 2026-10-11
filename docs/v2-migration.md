@@ -41,6 +41,10 @@
 
 扩展行情响应的头部或声明的记录不足时返回 `io.ErrUnexpectedEOF`，不再返回部分记录或把损坏响应当成空结果；合法的零记录响应仍正常返回。HTTP 服务的 `Close()` 同时释放自建的标准与扩展行情连接池，初始化失败也会清理已建连接池。
 
+TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断开回调与缓存清理；`Origin()` 返回值仍支持 `net.Conn` 接口，调用方应依赖接口而非断言具体的 `*net.TCPConn` 类型。
+
+真实只读验证按 `PROJECT_RULES.md` 第 8.5 节执行。标准与扩展行情测试共用每秒一次、最多 100 次的写入限流，可用 `TDX_STD_LIVE=1 TDX_EXHQ_LIVE=1 go test -race . -run '^(TestStandardLive|TestExHqLive)$' -count=1 -v -timeout=150s` 启用；分别用 `TDX_STD_HOST` / `TDX_EX_HOST` 指定不含端口的服务器 IP。标准测试只做一次受控重连，普通离线测试跳过真实访问。HTTP 上游验证用 `TDX_HTTP_LIVE=1 go test -race ./extend/httpserver -run '^TestServerLive$' -count=1 -v -timeout=45s`，须在行情测试完成后单独执行，不并行启动。
+
 设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用 `Client.Wait.SetTimeout` 的代码需迁移到该方法。`Client.Wait` 仍保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
 
 ## 成交行为

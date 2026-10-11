@@ -464,3 +464,42 @@ func TestNilDialReturnsError(t *testing.T) {
 		}
 	}
 }
+
+type strictCloseConn struct {
+	net.Conn
+	closes atomic.Int32
+}
+
+func (c *strictCloseConn) Close() error {
+	if c.closes.Add(1) > 1 {
+		return net.ErrClosed
+	}
+	return c.Conn.Close()
+}
+
+func TestCloseAllRunsDisconnectCleanup(t *testing.T) {
+	a, b := net.Pipe()
+	transport := &strictCloseConn{Conn: a}
+	serverDone := make(chan struct{})
+	go func() { defer close(serverDone); io.Copy(io.Discard, b) }()
+	var disconnected atomic.Int32
+	c, err := DialWith(func(context.Context) (ios.ReadWriteCloser, string, error) {
+		return transport, "strict-close", nil
+	}, WithRedial(false), WithDebug(false), client.WithDisconnect(func(*client.Client, error) {
+		disconnected.Add(1)
+	}))
+	if err != nil {
+		b.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.CloseAll(); b.Close(); <-serverDone })
+	if err := c.CloseAll(); err != nil {
+		t.Fatal(err)
+	}
+	if transport.closes.Load() != 1 || disconnected.Load() != 1 {
+		t.Fatalf("transport closes=%d disconnect callbacks=%d", transport.closes.Load(), disconnected.Load())
+	}
+	if err := c.CloseAll(); err != nil || disconnected.Load() != 1 {
+		t.Fatal("repeated close changed cleanup", err)
+	}
+}
