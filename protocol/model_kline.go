@@ -250,7 +250,7 @@ type Klines []*Kline
 
 // MA 均线
 func (ks Klines) MA(n int) Price {
-	if len(ks) < n {
+	if n <= 0 || len(ks) < n {
 		return 0
 	}
 	sum := Price(0)
@@ -326,8 +326,11 @@ func (ks Klines) RSI(n int) int64 {
 			}
 		}
 
-		if i >= n && loss > 0 {
-			rsi = 100 * gain / (gain + loss)
+		if i >= n {
+			rsi = 0
+			if gain+loss > 0 {
+				rsi = 100 * gain / (gain + loss)
+			}
 		}
 	}
 	return rsi
@@ -367,16 +370,19 @@ func (ks Klines) ATR(n int) Price {
 		tr := max(h-l, max((h-pc).Abs(), (l-pc).Abs()))
 		sum += int64(tr)
 
-		if i >= n {
-			prev := max(ks[i-n+1].High-ks[i-n+1].Low,
-				max((ks[i-n+1].High-ks[i-n].Close).Abs(), (ks[i-n+1].Low-ks[i-n].Close).Abs()))
+		if i > n {
+			prev := max(ks[i-n].High-ks[i-n].Low,
+				max((ks[i-n].High-ks[i-n-1].Close).Abs(), (ks[i-n].Low-ks[i-n-1].Close).Abs()))
 			sum -= int64(prev)
+		}
+		if i >= n {
 			atr = Price(sum / int64(n))
 		}
 	}
 	return atr
 }
 
+// VWAP 成交量加权均价；Volume 为手，Amount 为实际成交额（厘）。
 func (ks Klines) VWAP() Price {
 	if len(ks) == 0 {
 		return 0
@@ -388,7 +394,7 @@ func (ks Klines) VWAP() Price {
 		volSum += ks[i].Volume
 		amtSum += int64(ks[i].Amount)
 		if volSum > 0 {
-			vwap = Price(amtSum / volSum)
+			vwap = Price(amtSum / volSum / 100)
 		}
 	}
 	return vwap

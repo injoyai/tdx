@@ -224,7 +224,7 @@ type XRXDs []*XRXD
 //
 // 复权模型为【仿射变换】 price_adj = A*price_raw + B (不是纯比例缩放):
 //   - A 由送股/转增/配股累积, B 由现金分红累积并随后续送配缩放。
-//   - 纯比例口径(旧实现 PreLast/Last 逐日累乘)在有现金分红时会系统性偏离通达信,
+//   - 纯比例口径在有现金分红时会系统性偏离通达信,
 //     因此这里改为仿射, 与通达信桌面端逐分对齐。
 //
 // 关键: 事件按【日期位置】施加, 而不是按"ex-day 是否命中交易日"。
@@ -232,8 +232,6 @@ type XRXDs []*XRXD
 // 旧实现会整体跳过该事件(或只施加一个), 污染该 ex-day 及之前所有历史的复权因子。
 // 正确做法: 自今向过去遍历交易日, 把所有 exday > 当前交易日 且尚未施加的事件【依次复合】,
 // 同一停牌缺口内的多个事件自动合成 m=m1*m2、加法项链式缩放。
-//
-// PreLast 仍按 XRXD.Pre 填充(向后兼容), 但复权因子改由 Factors() 用仿射系数给出。
 func (this XRXDs) Pre(ks []*Kline) PreKlines {
 	if len(ks) == 0 {
 		return PreKlines{}
@@ -252,17 +250,7 @@ func (this XRXDs) Pre(ks []*Kline) PreKlines {
 		// 把全部 ex-day 事件挂到每个 PreKline 上(共享同一切片),
 		// 供 Factors() 按"日期位置"复合; 不依赖 ex-day 是否命中交易日, 故停牌缺口内的
 		// 多个事件都不会丢失。
-		ls[i] = &PreKline{Kline: k, PreLast: k.Last, events: this}
-	}
-
-	// 把每个 ex-day 落到"第一个 >= ex-day 的交易日"上, 用于填充 PreLast(向后兼容展示用)。
-	for _, x := range this {
-		for _, k := range ls {
-			if !k.Time.Before(x.Time) { // k.Time >= x.Time
-				k.PreLast = x.Pre(k.Last)
-				break
-			}
-		}
+		ls[i] = &PreKline{Kline: k, events: this}
 	}
 
 	return ls
@@ -270,22 +258,7 @@ func (this XRXDs) Pre(ks []*Kline) PreKlines {
 
 type PreKline struct {
 	*Kline
-	PreLast Price
-	events  XRXDs // 该股全部除权除息事件(按时间升序), 各 PreKline 共享同一引用
-}
-
-func (this *PreKline) QFQFactor() float64 {
-	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
-		return 1
-	}
-	return this.PreLast.Float64() / this.Last.Float64()
-}
-
-func (this *PreKline) HFQFactor() float64 {
-	if this.Last == this.PreLast || this.Last == 0 || this.PreLast == 0 {
-		return 1
-	}
-	return this.Last.Float64() / this.PreLast.Float64()
+	events XRXDs // 该股全部除权除息事件(按时间升序), 各 PreKline 共享同一引用
 }
 
 type PreKlines []*PreKline
@@ -300,9 +273,6 @@ type PreKlines []*PreKline
 // 即对任意 raw 价: hfq_price = (A/A0)*raw + (B-B0)/A0。
 //
 // 复权价 = round_half_up(QFQMul*raw + QFQAdd) , 由 Factor.QFQPrice / HFQPrice 完成。
-//
-// 兼容字段 QFQ/HFQ(纯比例因子)仍按"当日仿射相对最新/最早日的比例"近似填充,
-// 仅在纯送转(无分红)时与仿射一致; 有分红时请改用 QFQPrice/HFQPrice。
 //
 // ───────── 已知无法对齐的特例(诚实记录) ─────────
 // 600519 茅台 2006-05-26 开盘: 本算法 qfq=-260.97, 通达信桌面端=-260.98(差 0.005)。
@@ -359,11 +329,10 @@ func (this PreKlines) Factors() []*Factor {
 			ei--
 		}
 		ls[i] = &Factor{
-			Time:    k.Time,
-			Last:    k.Last,
-			PreLast: k.PreLast,
-			QFQMul:  a,
-			QFQAdd:  b,
+			Time:   k.Time,
+			Last:   k.Last,
+			QFQMul: a,
+			QFQAdd: b,
 		}
 	}
 
@@ -376,28 +345,20 @@ func (this PreKlines) Factors() []*Factor {
 		} else {
 			f.HFQMul, f.HFQAdd = 1, 0
 		}
-		// 兼容字段: 纯比例因子(仅纯送转无分红时等于仿射, 有分红时为近似)。
-		f.QFQ = f.QFQMul
-		f.HFQ = f.HFQMul
 	}
 
 	return ls
 }
 
 type Factor struct {
-	Time    time.Time //日期
-	Last    Price     //昨收价
-	PreLast Price     //除权除息后昨收价
+	Time time.Time //日期
+	Last Price     //昨收价
 
 	// 仿射复权系数: price_adj = round_half_up(Mul*price_raw + Add)
 	QFQMul float64 //前复权乘法因子 A
 	QFQAdd float64 //前复权加法偏移 B(单位:元)
 	HFQMul float64 //后复权乘法因子
 	HFQAdd float64 //后复权加法偏移(单位:元)
-
-	// 兼容旧字段: 纯比例因子(仅纯送转无分红时与仿射一致, 有现金分红时为近似, 勿用于精确复权)
-	QFQ float64 //前复权因子(比例, 已弃用, 请用 QFQPrice)
-	HFQ float64 //后复权因子(比例, 已弃用, 请用 HFQPrice)
 }
 
 // QFQPrice 前复权价格(对不复权原始价 raw 做仿射 + 四舍五入到 2 位小数)。

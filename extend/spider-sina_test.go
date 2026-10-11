@@ -1,11 +1,15 @@
 package extend
 
 import (
+	"os"
 	"testing"
 	"time"
 )
 
 func TestGetSinaFactor(t *testing.T) {
+	if os.Getenv("TDX_SPIDER_LIVE") != "1" {
+		t.Skip("set TDX_SPIDER_LIVE=1 to run live spider tests")
+	}
 	res, err := GetSinaFactor("sz000001", Sina_HFQ)
 	if err != nil {
 		t.Fatal(err)
@@ -17,6 +21,9 @@ func TestGetSinaFactor(t *testing.T) {
 }
 
 func TestGetSinaFactorFull(t *testing.T) {
+	if os.Getenv("TDX_SPIDER_LIVE") != "1" {
+		t.Skip("set TDX_SPIDER_LIVE=1 to run live spider tests")
+	}
 	res, err := GetSinaFactorFull("sz000001")
 	if err != nil {
 		t.Fatal(err)

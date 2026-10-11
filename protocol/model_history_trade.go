@@ -7,9 +7,6 @@ import (
 	"github.com/injoyai/conv"
 )
 
-// HistoryTradeResp 兼容之前的版本
-type HistoryTradeResp = TradeResp
-
 type historyTrade struct{}
 
 func (historyTrade) Frame(date, code string, start, count uint16) (*Frame, error) {
@@ -24,7 +21,7 @@ func (historyTrade) Frame(date, code string, start, count uint16) (*Frame, error
 	dataBs = append(dataBs, Bytes(count)...)
 	return &Frame{
 		Control: Control01,
-		Type:    TypeHistoryMinuteTrade,
+		Type:    TypeHistoryTrade,
 		Data:    dataBs,
 	}, nil
 }

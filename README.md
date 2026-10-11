@@ -1,6 +1,7 @@
 # 📈 通达信协议解析
 
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org)  
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://golang.org)
+
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -43,6 +44,8 @@
 ## 🚀 快速开始
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
+
+v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
 
 ```go
 package main
@@ -326,3 +329,21 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ⭐ 喜欢这个项目吗？点个 Star 支持一下吧！  
 
+
+## 验证
+
+默认测试使用离线样本，覆盖协议解析、指标、导出与拉取存储：
+
+```sh
+go test . ./protocol/... ./extend/... ./lib/...
+go test ./example/... -run '^$'
+```
+
+爬虫和扩展行情的实连测试需显式启用：
+
+```sh
+TDX_SPIDER_LIVE=1 go test ./extend -run '^Test(GetSinaFactor.*|NewSpiderTHS)$'
+TDX_EXHQ_LIVE=1 go test . -run '^TestExHqLive$'
+```
+
+首次使用新默认缓存目录前，请查看 [v2 迁移指南](docs/v2-migration.md)。

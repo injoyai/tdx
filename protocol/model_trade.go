@@ -77,7 +77,7 @@ func (trade) Frame(code string, start, count uint16) (*Frame, error) {
 	codeBs = append(codeBs, Bytes(count)...)
 	return &Frame{
 		Control: Control01,
-		Type:    TypeMinuteTrade,
+		Type:    TypeTrade,
 		Data:    append([]byte{exchange.Uint8(), 0x0}, codeBs...),
 	}, nil
 }

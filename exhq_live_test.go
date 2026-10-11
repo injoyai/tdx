@@ -8,7 +8,7 @@ import (
 
 // TestExHqLive 实连扩展行情验证。需联网,默认跳过;设 TDX_EXHQ_LIVE=1 启用。
 //
-//	TDX_EXHQ_LIVE=1 go test ./internal/tdx/ -run TestExHqLive -v
+//	TDX_EXHQ_LIVE=1 go test . -run TestExHqLive -v
 func TestExHqLive(t *testing.T) {
 	if os.Getenv("TDX_EXHQ_LIVE") == "" {
 		t.Skip("set TDX_EXHQ_LIVE=1 to run live extended-market test")

@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	//filename, err := gbbq.Download("./data/temp")
+	//filename, err := gbbq.Download("./output/gbbq")
 	//logs.PanicErr(err)
 
-	filename := "./data/temp/gbbq/gbbq"
+	filename := "./output/gbbq/gbbq/gbbq"
 	bs, err := os.ReadFile(filename)
 	logs.PanicErr(err)
 

@@ -116,8 +116,7 @@ gbbq 文件常含**已公告但 ex-day 在未来**的除权记录。前复权锚
   - `PreKlines.Factors()` 输出每日仿射系数 `Factor{QFQMul,QFQAdd,HFQMul,HFQAdd}`
   - `Factor.QFQPrice(raw)` / `Factor.HFQPrice(raw)` 仿射 + 四舍五入得复权价
   - `roundHalfUpYuan` 逢五进一到 2 位小数
-- 兼容字段:`Factor.QFQ/HFQ`(旧的纯比例因子)保留,仅纯送转无分红时与仿射一致,
-  有现金分红时为近似,精确复权请用 `QFQPrice/HFQPrice`。
+- v2 仅保留仿射复权入口；旧比例字段与方法已删除，精确复权使用 `QFQPrice/HFQPrice`。
 - 对外接口:`gbbq.go`(`IGbbq.GetFactors` → `GetXRXDs(code).Pre(ks).Factors()`),未改签名。
 - 测试:`protocol/model_gbbq_test.go`(600519 股改复合 / 000651 配股+大送转 / 舍入边界 /
   已知特例 / HFQ 一致性),全部用通达信实盘值断言。

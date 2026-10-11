@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -80,8 +81,9 @@ func DialHostsRange(hosts []string, op ...client.Option) (cli *Client, err error
 func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 
 	cli = &Client{
-		Wait: wait.New(time.Second * 2),
-		m:    maps.NewSafe(),
+		Wait:        wait.New(time.Second * 2),
+		waitTimeout: time.Second * 2,
+		m:           maps.NewSafe(),
 	}
 
 	cli.Client, err = client.Dial(dial, func(c *client.Client) {
@@ -116,9 +118,11 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 
 type Client struct {
 	*client.Client              //客户端实例
-	Wait           *wait.Entity //异步回调,设置超时时间,超时则返回错误
+	Wait           *wait.Entity //内部响应关联；请求超时通过 SetTimeout 配置
 	m              *maps.Safe   //有部分解析需要用到代码,返回数据获取不到,固请求的时候缓存下
 	msgID          uint32       //消息id,使用SendFrame自动累加
+	waitMu         sync.Mutex
+	waitTimeout    time.Duration
 }
 
 // handlerDealMessage 处理服务器响应的数据
@@ -135,6 +139,11 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 	if err != nil {
 		logs.Err(err)
 		return
+	}
+	this.waitMu.Lock()
+	defer this.waitMu.Unlock()
+	if f.MsgID != 0 && !this.Wait.IsWait(conv.String(f.MsgID)) {
+		return // 超时或写入失败的请求已清理，忽略迟到响应。
 	}
 
 	//从缓存中获取数据,响应数据中不同类型有不同的处理方式,但是响应无返回该类型,固根据消息id进行缓存
@@ -165,10 +174,10 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 	case protocol.TypeCallAuction:
 		resp, err = protocol.MCallAuction.Decode(f.Data)
 
-	case protocol.TypeMinuteTrade:
+	case protocol.TypeTrade:
 		resp, err = protocol.MTrade.Decode(f.Data, val.(protocol.TradeCache))
 
-	case protocol.TypeHistoryMinuteTrade:
+	case protocol.TypeHistoryTrade:
 		resp, err = protocol.MHistoryTrade.Decode(f.Data, val.(protocol.TradeCache))
 
 	case protocol.TypeKline:
@@ -245,19 +254,46 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 
 // SetTimeout 设置超时时间
 func (this *Client) SetTimeout(t time.Duration) {
+	this.waitMu.Lock()
+	defer this.waitMu.Unlock()
+	this.waitTimeout = t
 	this.Wait.SetTimeout(t)
 }
 
 // SendFrame 发送数据,并等待响应
 func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	f.MsgID = atomic.AddUint32(&this.msgID, 1)
+	key := conv.String(f.MsgID)
 	if len(cache) > 0 {
-		this.m.Set(conv.String(f.MsgID), cache[0])
+		this.m.Set(key, cache[0])
 	}
+	type result struct {
+		value any
+		err   error
+	}
+	done := make(chan result, 1)
+	// 先注册完整回调再发送；注册和响应处理互斥，避免依赖内部的 list 竞争。
+	this.waitMu.Lock()
+	timeout := this.waitTimeout
+	this.Wait.Async(key, func(value any, err error) { done <- result{value, err} }, 1, 0)
+	this.waitMu.Unlock()
+	defer func() {
+		this.waitMu.Lock()
+		defer this.waitMu.Unlock()
+		this.Wait.Done(key, nil)
+		this.m.GetAndDel(key)
+	}()
 	if _, err := this.Client.Write(f.Bytes()); err != nil {
 		return nil, err
 	}
-	return this.Wait.Wait(conv.String(f.MsgID))
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.value, r.err
+	case <-timer.C:
+		return nil, errors.New("超时")
+	}
 }
 
 // GetCount 获取市场内的股票数量
@@ -727,12 +763,8 @@ func (this *Client) GetHistoryMinute(date, code string) (*protocol.MinuteResp, e
 	return result.(*protocol.MinuteResp), nil
 }
 
+// GetTrade 获取分时交易详情,服务器最多返回1800条,count-start<=1800
 func (this *Client) GetTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
-	return this.GetMinuteTrade(code, start, count)
-}
-
-// GetMinuteTrade 获取分时交易详情,服务器最多返回1800条,count-start<=1800
-func (this *Client) GetMinuteTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MTrade.Frame(code, start, count)
 	if err != nil {
@@ -748,16 +780,12 @@ func (this *Client) GetMinuteTrade(code string, start, count uint16) (*protocol.
 	return result.(*protocol.TradeResp), nil
 }
 
+// GetTradeAll 获取分时全部交易详情,只能盘后调用,因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
 func (this *Client) GetTradeAll(code string) (*protocol.TradeResp, error) {
-	return this.GetMinuteTradeAll(code)
-}
-
-// GetMinuteTradeAll 获取分时全部交易详情,只能盘后调用,因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
-func (this *Client) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
 	size := uint16(1800)
 	for start := uint16(0); ; start += size {
-		r, err := this.GetMinuteTrade(code, start, size)
+		r, err := this.GetTrade(code, start, size)
 		if err != nil {
 			return nil, err
 		}
@@ -771,14 +799,10 @@ func (this *Client) GetMinuteTradeAll(code string) (*protocol.TradeResp, error) 
 	return resp, nil
 }
 
-func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
-	return this.GetHistoryMinuteTrade(date, code, start, count)
-}
-
-// GetHistoryMinuteTrade 获取历史分时交易
+// GetHistoryTrade 获取历史分时交易
 // 只能获取昨天及之前的数据,服务器最多返回2000条,count-start<=2000,如果日期输入错误,则返回0
 // 历史数据只能查到20000609
-func (this *Client) GetHistoryMinuteTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
+func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
 	if err != nil {
@@ -828,17 +852,12 @@ func (this *Client) GetHistoryTradeBefore(code string, w *Workday, before time.T
 }
 
 // GetHistoryTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
-func (this *Client) GetHistoryTradeDay(date, code string) (*protocol.TradeResp, error) {
-	return this.GetHistoryMinuteTradeDay(date, code)
-}
-
-// GetHistoryMinuteTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
 // 历史数据只能查到20000609
-func (this *Client) GetHistoryMinuteTradeDay(date, code string) (*protocol.TradeResp, error) {
+func (this *Client) GetHistoryTradeDay(date, code string) (*protocol.TradeResp, error) {
 	resp := &protocol.TradeResp{}
 	size := uint16(2000)
 	for start := uint16(0); ; start += size {
-		r, err := this.GetHistoryMinuteTrade(date, code, start, size)
+		r, err := this.GetHistoryTrade(date, code, start, size)
 		if err != nil {
 			return nil, err
 		}
@@ -1129,26 +1148,12 @@ func (this *Client) GetKline60Minute(code string, start, count uint16) (*protoco
 	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
 }
 
-// GetKlineHour 获取小时k线数据
-func (this *Client) GetKlineHour(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
-}
-
 // GetKline60MinuteAll 获取60分钟k线全部数据
 func (this *Client) GetKline60MinuteAll(code string) (*protocol.KlineResp, error) {
 	return this.GetKlineAll(protocol.TypeKline60Minute, code)
 }
 
-// GetKlineHourAll 获取小时k线全部数据
-func (this *Client) GetKlineHourAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKline60Minute, code)
-}
-
 func (this *Client) GetKline60MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
-}
-
-func (this *Client) GetKlineHourUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
 	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
 }
 

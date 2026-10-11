@@ -16,13 +16,16 @@ import (
 
 func main() {
 	m, err := tdx.NewManage()
-	logs.PrintErr(err)
+	logs.PanicErr(err)
+	if closer, ok := m.IPool.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
 
 	// 扩展行情连接池（期货/港股/美股必需）
 	ex, err := tdx.NewPool(func() (*tdx.Client, error) {
 		return tdx.DialExHqDefault()
 	}, 4)
-	logs.PrintErr(err)
+	logs.PanicErr(err)
 
 	defer ex.Close()
 
@@ -41,11 +44,13 @@ func main() {
 			"hk.HSI",
 		},
 	})
-	logs.PrintErr(err)
+	logs.PanicErr(err)
+	defer s.Close()
 
 	logs.Debug("开始拉取")
 	err = s.Update(true)
-	logs.Debug("拉取完成, err=", err)
+	logs.PanicErr(err)
+	logs.Debug("拉取完成")
 }
 
 // pullAll 全市场拉取示例。
@@ -79,6 +84,7 @@ func pullAll() error {
 	if err != nil {
 		return err
 	}
+	defer s.Close()
 	logs.Debug("开始全市场拉取，日线+1分钟线，成交量单位=股")
 	err = s.Update()
 	logs.Debug("全市场拉取完成, err=", err)
@@ -124,6 +130,7 @@ func pullCustom() error {
 	if err != nil {
 		return err
 	}
+	defer s.Close()
 	return s.Update()
 }
 
@@ -154,5 +161,6 @@ func pullDayOnly() error {
 	if err != nil {
 		return err
 	}
+	defer s.Close()
 	return s.Update()
 }

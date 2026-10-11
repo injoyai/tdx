@@ -10,8 +10,8 @@ import (
 const (
 	DefaultClients     = 1
 	DefaultRetry       = 3
-	DefaultDataDir     = "./data"
-	DefaultDatabaseDir = "./data/database"
+	DefaultDataDir     = "./output/data"
+	DefaultDatabaseDir = DefaultDataDir + "/database"
 	DefaultCodesSpec   = "0 1 9 * * *"
 	DefaultWorkdaySpec = "0 3 9 * * *"
 	DefaultGbbqSpec    = "0 5 9 * * *"

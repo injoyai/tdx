@@ -343,7 +343,7 @@ func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetMinuteTrade(code, start, count)
+		resp, err = c.GetTrade(code, start, count)
 		return err
 	})
 	if err != nil {
@@ -361,7 +361,7 @@ func (s *Server) handleTradeAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetMinuteTradeAll(code)
+		resp, err = c.GetTradeAll(code)
 		return err
 	})
 	if err != nil {
@@ -394,7 +394,7 @@ func (s *Server) handleHistoryTrade(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetHistoryMinuteTrade(date, code, start, count)
+		resp, err = c.GetHistoryTrade(date, code, start, count)
 		return err
 	})
 	if err != nil {
@@ -417,7 +417,7 @@ func (s *Server) handleHistoryTradeDay(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetHistoryMinuteTradeDay(date, code)
+		resp, err = c.GetHistoryTradeDay(date, code)
 		return err
 	})
 	if err != nil {

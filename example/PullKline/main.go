@@ -1,12 +1,12 @@
 package main
 
 import (
-	"path/filepath"
 	"time"
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 )
 
 func main() {
@@ -14,24 +14,31 @@ func main() {
 
 	m, err := tdx.NewManage(tdx.WithDialGbbqDefault())
 	logs.PanicErr(err)
+	if closer, ok := m.IPool.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
 
-	p, err := extend.NewPullKline(extend.PullKlineConfig{
+	s, err := pull.NewService(&pull.Config{
 		Codes:      []string{code},
-		Types:      []string{extend.Day, extend.Minute},
-		Dir:        filepath.Join(tdx.DefaultDatabaseDir),
+		Day:        true,
+		Minute:     true,
+		Dir:        "./output/pullv2",
 		Goroutines: 1,
-		StartAt:    time.Time{},
+		Manage:     m,
+		Workday:    m.Workday,
 	})
 	logs.PanicErr(err)
+	defer s.Close()
 
-	err = p.Update(m)
+	err = s.Update()
 	logs.PanicErr(err)
 
-	ks, err := p.DayKlines(code, time.Time{}, time.Now())
+	c, err := pull.ParseCode(code)
+	logs.PanicErr(err)
+	ks, err := s.QueryDay(c, time.Time{}, time.Now())
 	logs.PanicErr(err)
 
 	for _, v := range ks {
-		_ = v
 		logs.Debug(v)
 	}
 

@@ -2,7 +2,7 @@ package protocol
 
 import "testing"
 
-func TestVWAPUsesShares(t *testing.T) {
+func TestVWAPConvertsLotsToShares(t *testing.T) {
 	tests := []struct {
 		name string
 		ks   Klines
@@ -76,5 +76,39 @@ func TestRSINoLossAndWindowChanges(t *testing.T) {
 				t.Fatalf("RSI=%d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestKlineIndicators(t *testing.T) {
+	ks := Klines{
+		{High: 11000, Low: 9000, Close: 10000, Volume: 1, Amount: Yuan(1000)},
+		{High: 13000, Low: 11000, Close: 12000, Volume: 3, Amount: Yuan(3600)},
+		{High: 12000, Low: 10000, Close: 11000},
+		{High: 14000, Low: 12000, Close: 13000},
+		{High: 15000, Low: 13000, Close: 14000},
+	}
+	if got := ks.VWAP(); got != Yuan(11.5) {
+		t.Fatalf("VWAP=%v, want 11.5", got)
+	}
+	if got := ks[:2].ATR(1); got != Yuan(3) {
+		t.Fatalf("ATR(1)=%v, want 3", got)
+	}
+	if got := ks.ATR(2); got != Yuan(2.5) {
+		t.Fatalf("ATR(2)=%v, want 2.5", got)
+	}
+	if got := ks[:3].RSI(2); got != 66 {
+		t.Fatalf("mixed RSI=%d, want 66", got)
+	}
+	if got := ks.RSI(2); got != 100 {
+		t.Fatalf("rising window RSI=%d, want 100", got)
+	}
+}
+
+func TestMAInvalidPeriod(t *testing.T) {
+	ks := Klines{{Close: Yuan(10)}}
+	for _, n := range []int{-1, 0, 2} {
+		if got := ks.MA(n); got != 0 {
+			t.Fatalf("MA(%d)=%v, want 0", n, got)
+		}
 	}
 }

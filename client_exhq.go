@@ -34,8 +34,9 @@ func DialExHqHosts(hosts []string, op ...client.Option) (*Client, error) {
 // dialExHqWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。
 func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 	cli = &Client{
-		Wait: wait.New(time.Second * 10),
-		m:    maps.NewSafe(),
+		Wait:        wait.New(time.Second * 10),
+		waitTimeout: time.Second * 10,
+		m:           maps.NewSafe(),
 	}
 	cli.Client, err = client.Dial(dial, func(c *client.Client) {
 		c.Logger.Debug(true)

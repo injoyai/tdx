@@ -10,10 +10,13 @@ import (
 
 func main() {
 
-	pt := extend.NewPullTrade("./data/trade")
+	pt := extend.NewPullTrade("./output/trade")
 
 	m, err := tdx.NewManage()
 	logs.PanicErr(err)
+	if closer, ok := m.IPool.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
 
 	err = pt.PullYear(context.Background(), m, 2025, "sz000001")
 	logs.Err(err)

@@ -2,17 +2,24 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func main() {
-	ls, err := extend.GetBjCodes()
+	c, err := tdx.DialDefault()
 	if err != nil {
 		logs.Err(err)
 		return
 	}
-	for _, v := range ls {
-		logs.Debug(v)
+	defer c.CloseAll()
+	resp, err := c.GetCodeAll(protocol.ExchangeBJ)
+	if err != nil {
+		logs.Err(err)
+		return
 	}
-	logs.Debug("总数量:", len(ls))
+	for _, v := range resp.List {
+		logs.Debug("bj" + v.Code)
+	}
+	logs.Debug("总数量:", len(resp.List))
 }

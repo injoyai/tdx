@@ -3,66 +3,109 @@ package extend
 import (
 	"encoding/binary"
 	"math"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func TestReadDay(t *testing.T) {
-	ks, err := ReadDay("D:\\软件\\通达信\\", "sz000001")
-	if err != nil {
+func writeLocalFixture(t *testing.T, dir, code, sub, ext string, data []byte) {
+	t.Helper()
+	filename := filepath.Join(dir, "vipdoc", code[:2], sub, code+ext)
+	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("日线数量: %d", len(ks))
-	for _, v := range ks[len(ks)-5:] {
-		t.Logf("%s 开:%.3f 高:%.3f 低:%.3f 收:%.3f 额:%.0f 量:%d手",
-			v.Time.Format("2006-01-02"),
-			v.Open.Float64(), v.High.Float64(), v.Low.Float64(), v.Close.Float64(),
-			v.Amount.Float64(), v.Volume)
+	if err := os.WriteFile(filename, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadDay(t *testing.T) {
+	for _, code := range []string{"sz000001", "bj920000", "sh000001"} {
+		t.Run(code, func(t *testing.T) {
+			dir := t.TempDir()
+			data := make([]byte, 32)
+			binary.LittleEndian.PutUint32(data[0:4], 20260708)
+			for i, price := range []uint32{1050, 1100, 1000, 1080} {
+				binary.LittleEndian.PutUint32(data[4+i*4:8+i*4], price)
+			}
+			binary.LittleEndian.PutUint32(data[20:24], math.Float32bits(216000))
+			volume := uint32(20000)
+			if code == "sh000001" {
+				volume = 200
+			}
+			binary.LittleEndian.PutUint32(data[24:28], volume)
+			writeLocalFixture(t, dir, code, "lday", ".day", data)
+			ks, err := ReadDay(dir, code)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ks) != 1 {
+				t.Fatalf("records=%d, want 1", len(ks))
+			}
+			k := ks[0]
+			if k.Time.Format("20060102") != "20260708" || k.Open != protocol.Yuan(10.5) ||
+				k.High != protocol.Yuan(11) || k.Low != protocol.Yuan(10) || k.Close != protocol.Yuan(10.8) ||
+				k.Volume != 200 || k.Amount != protocol.Yuan(216000) {
+				t.Fatalf("unexpected daily record: %+v", k)
+			}
+		})
 	}
 }
 
 func TestReadMinute(t *testing.T) {
-	// 1分钟 .lc1
-	ks, err := ReadMinute1("D:\\软件\\通达信\\", "sz000001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("1分钟数量: %d", len(ks))
-	for _, v := range ks[len(ks)-3:] {
-		t.Logf("  %s 开:%.3f 高:%.3f 低:%.3f 收:%.3f 额:%.0f 量:%d手",
-			v.Time.Format("2006-01-02 15:04"),
-			v.Open.Float64(), v.High.Float64(), v.Low.Float64(), v.Close.Float64(),
-			v.Amount.Float64(), v.Volume)
-	}
-	// 5分钟 .lc5
-	ks5, err := ReadMinute5("D:\\软件\\通达信\\", "sz000001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("5分钟数量: %d", len(ks5))
-	for _, v := range ks5[len(ks5)-3:] {
-		t.Logf("  %s 开:%.3f 高:%.3f 低:%.3f 收:%.3f 额:%.0f 量:%d手",
-			v.Time.Format("2006-01-02 15:04"),
-			v.Open.Float64(), v.High.Float64(), v.Low.Float64(), v.Close.Float64(),
-			v.Amount.Float64(), v.Volume)
+	for _, code := range []string{"sz000001", "sh000001"} {
+		for _, period := range []int{1, 5} {
+			t.Run(code+"/"+strconv.Itoa(period), func(t *testing.T) {
+				dir := t.TempDir()
+				data := make([]byte, 64)
+				date := uint16((2026-2004)*2048 + 7*100 + 8)
+				for i, minute := range []uint16{571, 899} {
+					rec := data[i*32 : (i+1)*32]
+					binary.LittleEndian.PutUint16(rec[0:2], date)
+					binary.LittleEndian.PutUint16(rec[2:4], minute)
+					for j, price := range []float32{10.5, 11, 10, 10.8} {
+						binary.LittleEndian.PutUint32(rec[4+j*4:8+j*4], math.Float32bits(price))
+					}
+				}
+				binary.LittleEndian.PutUint32(data[20:24], math.Float32bits(216000))
+				volume := uint32(20000)
+				if code == "sh000001" {
+					volume = 200
+				}
+				binary.LittleEndian.PutUint32(data[24:28], volume)
+				sub, ext := "minline", ".lc1"
+				if period == 5 {
+					sub, ext = "fzline", ".lc5"
+				}
+				writeLocalFixture(t, dir, code, sub, ext, data)
+				read := ReadMinute1
+				if period == 5 {
+					read = ReadMinute5
+				}
+				ks, err := read(dir, code)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 1
+				if period == 5 {
+					want = 2
+				}
+				if len(ks) != want {
+					t.Fatalf("records=%d, want %d", len(ks), want)
+				}
+				k := ks[0]
+				if k.Time.Format("2006010215:04") != "2026070809:31" ||
+					(k.Close-protocol.Yuan(10.8)).Abs() > 1 || k.Volume != 200 || k.Amount != protocol.Yuan(216000) {
+					t.Fatalf("unexpected minute record: %+v", k)
+				}
+			})
+		}
 	}
 }
-
-func TestReadDayBJ(t *testing.T) {
-	ks, err := ReadDay("D:\\软件\\通达信\\", "bj920000")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("北交所日线数量: %d", len(ks))
-	if len(ks) > 0 {
-		last := ks[len(ks)-1]
-		t.Logf("  最新: %s 收:%.3f", last.Time.Format("2006-01-02"), last.Close.Float64())
-	}
-}
-
-var _ = protocol.ExchangeSZ
 
 // TestWriteMinutePlaceholder 验证 .lc1 生成时每个交易日最后一条真实数据(15:00)前补 14:59 占位记录,.lc5 不补
 func TestWriteMinutePlaceholder(t *testing.T) {

@@ -57,9 +57,3 @@ func newFile(filename string, v ...interface{}) error {
 	}
 	return nil
 }
-
-// exists 是否存在
-func exists(name string) bool {
-	stat, err := os.Stat(name)
-	return stat != nil && !os.IsNotExist(err)
-}

@@ -72,9 +72,9 @@ func (this *PullTrade) PullYear(ctx context.Context, m *tdx.Manage, year int, co
 
 		kss1 = append(kss1, ks...)
 		kss5 = append(kss5, ks.Merge(5)...)
-		kss15 = append(kss5, ks.Merge(15)...)
-		kss30 = append(kss5, ks.Merge(30)...)
-		kss60 = append(kss5, ks.Merge(60)...)
+		kss15 = append(kss15, ks.Merge(15)...)
+		kss30 = append(kss30, ks.Merge(30)...)
+		kss60 = append(kss60, ks.Merge(60)...)
 
 		return true
 	})
