@@ -101,6 +101,44 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 	}
 }
 
+func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
+	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20260101", Codes: []string{"sz000001"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	old := &pull.KlineMinute{Unix: time.Date(2026, 3, 2, 15, 0, 0, 0, time.Local).Unix(), Close: 10}
+	if err := s.SaveMin(c, 2026, 0, []*pull.KlineMinute{old}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
+	newer := &pull.KlineMinute{Unix: now.Add(-time.Hour - time.Minute).Unix(), Close: 11}
+	newest := &pull.KlineMinute{Unix: now.Add(-time.Hour).Unix(), Close: 12}
+	if err := pullMinutes(s, c, now, func(from time.Time) ([]*pull.KlineMinute, error) {
+		if from.Unix() != old.Unix {
+			t.Fatalf("unexpected incremental boundary %v", from)
+		}
+		// 服务器已不保留旧记录，且返回顺序是从新到旧。
+		return []*pull.KlineMinute{newest, newer}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.QueryMin(c, time.Time{}, time.Time{})
+	if err != nil || len(rows) != 3 || rows[0].Unix != old.Unix || rows[1].Unix != newer.Unix {
+		t.Fatalf("local history lost: rows=%v, err=%v", rows, err)
+	}
+	if err := pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) {
+		return []*pull.KlineMinute{{Unix: newest.Unix, Close: 99}}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = s.QueryMin(c, time.Time{}, time.Time{})
+	if err != nil || len(rows) != 3 || rows[2].Close != 99 {
+		t.Fatal("incremental boundary was not refreshed", rows, err)
+	}
+}
+
 func TestReadExBarsBoundaryFailureAndLimit(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local)
 	page := make([]protocol.ExKline, 800)
@@ -146,5 +184,65 @@ func TestManageDoesNotInitializeGbbq(t *testing.T) {
 		if m.Gbbq != g || !g.IsEmpty() {
 			t.Fatal("取连接源触发了股本初始化")
 		}
+	}
+}
+
+func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
+	cfg := pull.Config{Dir: t.TempDir(), StartAt: "20240101", Codes: []string{"sz000001"}}
+	s, err := pull.NewService(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
+	row := &pull.KlineMinute{Unix: now.Add(-time.Hour).Unix(), Close: 10}
+	failed := errors.New("scan failed")
+	if err := pullMinutes(s, code, now, func(time.Time) ([]*pull.KlineMinute, error) {
+		return []*pull.KlineMinute{row}, failed
+	}, nil); !errors.Is(err, failed) {
+		t.Fatal(err)
+	}
+	if empty, err := s.MinYearRecentlyEmpty(code, 2024, s.Start().Unix(), now); err != nil || empty {
+		t.Fatal("请求失败被缓存为空历史", empty, err)
+	}
+	if err := pullMinutes(s, code, now, func(from time.Time) ([]*pull.KlineMinute, error) {
+		if !from.Equal(s.Start()) {
+			t.Fatal("首次未扫描完整范围", from)
+		}
+		return []*pull.KlineMinute{row}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.MinExists(code, 2024) || s.MinExists(code, 2025) {
+		t.Fatal("空历史创建了行情库")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = pull.NewService(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := pullMinutes(s, code, now.AddDate(0, 0, 1), func(from time.Time) ([]*pull.KlineMinute, error) {
+		if from.Unix() != row.Unix {
+			t.Fatal("重启后仍重复扫描空年份", from)
+		}
+		return []*pull.KlineMinute{{Unix: row.Unix, Close: 99}}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	old := &pull.KlineMinute{Unix: s.Start().Add(9*time.Hour + 31*time.Minute).Unix(), Close: 11}
+	if err := pullMinutes(s, code, now.AddDate(0, 0, 7), func(from time.Time) ([]*pull.KlineMinute, error) {
+		if !from.Equal(s.Start()) {
+			t.Fatal("到期未复查历史", from)
+		}
+		return []*pull.KlineMinute{row, old}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.QueryMin(code, time.Time{}, time.Time{})
+	if err != nil || len(rows) != 2 || rows[0].Unix != old.Unix {
+		t.Fatal("重新出现的历史数据未补入", rows, err)
 	}
 }

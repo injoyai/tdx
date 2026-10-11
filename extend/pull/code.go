@@ -3,6 +3,7 @@ package pull
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/injoyai/tdx/protocol"
@@ -70,24 +71,111 @@ func yearToString(year int) string {
 }
 
 // SplitKey 从完整键还原 Market 与 Code；无法识别时返回原样。
-// 完整键形如 cn/future.cff/IF2609 / hk/index.HSI / US.AAPL / HK00700 /
-// cn/stock.sh600000（市场值+"."+代码，US/HK 为历史兼容前缀）。
+// 支持市场前缀的直接拼接和点分隔形式，以及原有的完整市场键。
 func SplitKey(key string) Code {
-	if strings.HasPrefix(key, "US.") {
-		return Code{Market: MarketUS, Code: strings.TrimPrefix(key, "US.")}
-	}
-	if strings.HasPrefix(key, "HK") && len(key) > 2 {
-		return Code{Market: MarketHK, Code: strings.TrimPrefix(key, "HK")}
+	key = strings.TrimSpace(key)
+	if code, ok, err := parseMarketPrefix(key); ok {
+		if err == nil {
+			return code
+		}
+		return Code{Code: key}
 	}
 	if i := strings.IndexByte(key, '.'); i > 0 {
-		return Code{Market: Market(key[:i]), Code: key[i+1:]}
+		return Code{Market: Market(strings.ToLower(key[:i])), Code: key[i+1:]}
 	}
 	return Code{Code: key}
 }
 
+var marketPrefixes = []string{
+	MarketAStock.String(), MarketIndex.String(), MarketEtfLof.String(), MarketBlock.String(),
+	MarketFuture.String(), MarketHK.String(), MarketHKIndex.String(), MarketUS.String(),
+	"sh", "sz", "bj", "hk", "us", "cff", "czc", "dce", "shf", "gfe", "qhz",
+}
+
+// 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
+func parseMarketPrefix(s string) (Code, bool, error) {
+	// 裸 HKL 是完整指数代码，不能拆成 hk + L。
+	if _, ok := hkIndexCodes[strings.ToUpper(s)]; ok {
+		return Code{Market: MarketHKIndex, Code: strings.ToUpper(s)}, true, nil
+	}
+	prefixes := append([]string(nil), marketPrefixes...)
+	for _, u := range Units() {
+		prefixes = append(prefixes, u.Name())
+	}
+	sort.SliceStable(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
+	for _, prefix := range prefixes {
+		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
+			continue
+		}
+		body := s[len(prefix):]
+		dotted := strings.HasPrefix(body, ".")
+		lower := strings.ToLower(prefix)
+		future := lower == "cff" || lower == "czc" || lower == "dce" || lower == "shf" || lower == "gfe" || lower == "qhz"
+		slashed := future && strings.HasPrefix(body, "/")
+		if dotted || slashed {
+			body = body[1:]
+		}
+		code, err := codeInMarket(prefix, body)
+		if err == nil || dotted || slashed || strings.Contains(prefix, "/") {
+			return code, true, err
+		}
+		// 无分隔形式只有主体合法才拆分，保留 SHOP 等裸美股代码。
+	}
+	return Code{}, false, nil
+}
+
+func codeInMarket(prefix, body string) (Code, error) {
+	if body == "" {
+		return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
+	}
+	lower := strings.ToLower(prefix)
+	switch lower {
+	case "sh", "sz", "bj":
+		if len(body) == 6 && isAllDigit(body) {
+			if market, ok := classifyStd(lower + body); ok {
+				return Code{Market: market, Code: lower + body}, nil
+			}
+		}
+	case "hk":
+		body = strings.ToUpper(body)
+		if len(body) == 5 && isAllDigit(body) {
+			return Code{Market: MarketHK, Code: body}, nil
+		}
+		if isAlphanumeric(body) && !isAllDigit(body) {
+			return Code{Market: MarketHKIndex, Code: body}, nil
+		}
+	case "us":
+		for _, part := range strings.Split(strings.ReplaceAll(body, "-", "."), ".") {
+			if !isAlphanumeric(part) {
+				return Code{}, fmt.Errorf("pull: 非法美股代码 %q", body)
+			}
+		}
+		return Code{Market: MarketUS, Code: strings.ToUpper(body)}, nil
+	case "cff", "czc", "dce", "shf", "gfe", "qhz":
+		if isAlphanumeric(body) && !isAllLetter(body) {
+			return Code{Market: MarketFuture, Code: lower + "/" + body}, nil
+		}
+	default:
+		market := Market(prefix)
+		switch Market(lower) {
+		case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
+			market, body = Market(lower), strings.ToLower(body)
+		case MarketHK, MarketHKIndex, MarketUS:
+			market, body = Market(lower), strings.ToUpper(body)
+		case MarketFuture:
+			market = MarketFuture
+			if exchange, code, ok := strings.Cut(body, "/"); ok {
+				body = strings.ToLower(exchange) + "/" + code
+			}
+		}
+		return Code{Market: market, Code: body}, nil
+	}
+	return Code{}, fmt.Errorf("pull: 市场 %s 的代码 %q 无效", prefix, body)
+}
+
 // hkIndexCodes 知名港股指数白名单（扩展行情市场27实测品种）。
 // 纯字母/字母数字代码与美股形态相同，需白名单区分；其余 HZ50xx/CESxxx
-// 等可用完整键 "hk/index.CES120" 指定。
+// 等可用 "hk.CES120" 指定。
 var hkIndexCodes = map[string]struct{}{
 	"HSI":    {}, // 恒生指数
 	"HKL":    {}, // 大型股指数
@@ -99,11 +187,11 @@ var hkIndexCodes = map[string]struct{}{
 // ParseCode 将用户输入的代码字符串自动路由为 Code（识别所属市场）。
 // 支持的输入形式（宽松匹配，便于 Config.Codes 直接写裸代码）：
 //
-//	sz000001 / sh600000 / bj920001      带交易所前缀，自动分类为 cn/stock / cn/etf / cn/index / cn/block
+//	sz000001 / sh.600000 / bj920001     带交易所前缀，可直接拼接或用点分隔；前缀不区分大小写
 //	600000                               6 位裸数字，自动补交易所前缀后再分类
-//	HK00700 / 00700                      港股（5 位数字）
-//	AAPL                                 美股（纯字母）
-//	cff/IF2609                           期货（"交易所/" 前缀）
+//	hk00700 / hk.HSI / 00700              港股股票或指数
+//	usAAPL / us.BRK.B / AAPL              美股
+//	cffIF2609 / cff.IF2609 / cff/IF2609   期货（兼容原有斜线形式）
 //	cn/future.cff/IF2609 / hk/stock.00700 / US.AAPL / hk/index.HSI  完整键（SplitKey 也可解析）
 //
 // 无法识别时返回错误。
@@ -112,29 +200,16 @@ func ParseCode(s string) (Code, error) {
 	if s == "" {
 		return Code{}, fmt.Errorf("pull: 空代码")
 	}
-	// 完整键（market.code 或 US. 前缀）优先
+	if code, ok, err := parseMarketPrefix(s); ok {
+		return code, err
+	}
+	// 保留自定义市场的完整键形式。
 	if i := strings.IndexByte(s, '.'); i > 0 {
-		m := Market(s[:i])
-		switch m {
-		case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
-			return Code{Market: m, Code: s[i+1:]}, nil
-		default:
-			c := SplitKey(s)
-			if c.Market != "" {
-				return c, nil
-			}
-		}
+		return SplitKey(s), nil
 	}
 	// 期货：交易所前缀 "cff/IF2609"
 	if i := strings.IndexByte(s, '/'); i > 0 {
 		return Code{Market: MarketFuture, Code: s}, nil
-	}
-	// 带交易所前缀的 8 位标准行情代码（sh600000/sz000001/bj920001/sh880001...）
-	if len(s) == 8 {
-		m, ok := classifyStd(s)
-		if ok {
-			return Code{Market: m, Code: strings.ToLower(s)}, nil
-		}
 	}
 	// 6 位裸数字：补交易所前缀后分类（AddPrefix 已覆盖股票/ETF/指数/板块/债券）
 	if len(s) == 6 && isAllDigit(s) {
@@ -149,16 +224,9 @@ func ParseCode(s string) (Code, error) {
 			return Code{Market: MarketIndex, Code: "bj" + s}, nil
 		}
 	}
-	// 港股：HK 前缀或 5 位数字
-	if strings.HasPrefix(s, "HK") && isAllDigit(s[2:]) && len(s) == 7 {
-		return Code{Market: MarketHK, Code: s[2:]}, nil
-	}
+	// 裸港股代码：5 位数字。
 	if len(s) == 5 && isAllDigit(s) {
 		return Code{Market: MarketHK, Code: s}, nil
-	}
-	// 知名港股指数（纯字母/字母数字，扩展行情市场27）：优先于美股纯字母判断
-	if _, ok := hkIndexCodes[s]; ok {
-		return Code{Market: MarketHKIndex, Code: s}, nil
 	}
 	// 美股：纯字母
 	if isAllLetter(s) {
@@ -212,4 +280,13 @@ func isAllLetter(s string) bool {
 		}
 	}
 	return len(s) > 0
+}
+
+func isAlphanumeric(s string) bool {
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') {
+			return false
+		}
+	}
+	return s != ""
 }

@@ -1,9 +1,12 @@
 package pull
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,6 +82,9 @@ func NewService(cfg *Config) (*Service, error) {
 			}
 			overrides[c.Market] = append(overrides[c.Market], c)
 		}
+	}
+	for market, codes := range overrides {
+		overrides[market] = uniqueCodes(codes)
 	}
 
 	// 需要更新的市场：白名单模式取涉及的市场，全量模式取全部注册
@@ -181,6 +187,7 @@ func (s *Service) ExPool() tdx.IPool { return s.cfg.ExPool }
 // Update 执行一次拉取。must=true 时跳过工作日与整体标记检查，仍保留市场级去重。
 // 按 Unit 粒度去重：某市场完成后单独标记，中途失败的市场下次重拉，已完成的跳过。
 func (s *Service) Update(must ...bool) error {
+	key := s.updateKey("pull")
 	if len(must) == 0 || !must[0] {
 		// 非交易日直接跳过（由调用方传入 Workday 判断）
 		if wd, ok := s.workday(); ok {
@@ -189,7 +196,7 @@ func (s *Service) Update(must ...bool) error {
 			}
 		}
 		// 当日已拉过则跳过（整体增量去重）
-		done, err := s.updated.Updated("pull")
+		done, err := s.updated.Updated(key)
 		if err != nil {
 			return err
 		}
@@ -200,7 +207,7 @@ func (s *Service) Update(must ...bool) error {
 
 	var firstErr error
 	for _, u := range s.units {
-		key := "pull:" + u.Name()
+		key := s.updateKey("pull:" + u.Name())
 		done, err := s.updated.Updated(key)
 		if err != nil {
 			if firstErr == nil {
@@ -228,7 +235,29 @@ func (s *Service) Update(must ...bool) error {
 	}
 
 	// 全部完成，标记当日已拉取
-	return s.updated.Update("pull")
+	return s.updated.Update(key)
+}
+
+// updateKey 将去重标记限定到实际配置；代码和市场顺序不影响任务身份。
+func (s *Service) updateKey(prefix string) string {
+	var codes, units []string
+	for market, override := range s.overrides {
+		for _, code := range override {
+			codes = append(codes, market.String()+"."+code.Code)
+		}
+	}
+	for _, unit := range s.units {
+		units = append(units, unit.Name())
+	}
+	sort.Strings(codes)
+	sort.Strings(units)
+	// 仅字符串、布尔值与字符串切片，Marshal 不会失败。
+	data, _ := json.Marshal(struct {
+		Dir, StartAt               string
+		Day, Minute, TradeFallback bool
+		Codes, Units               []string
+	}{filepath.Clean(s.cfg.Dir), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units})
+	return fmt.Sprintf("%s:%x", prefix, sha256.Sum256(data))
 }
 
 // workday 若调用方配置了交易日对象则返回，否则 ok=false。
@@ -258,20 +287,26 @@ func (s *Service) updateUnit(u Unit) error {
 		b.Go(func() {
 			b.SetPrefix(fmt.Sprintf("[%s] %s", u.Name(), code.Key()))
 			b.Flush()
+			fetchWithRetry := func(fetch func(*Service, Code) error) (err error) {
+				for attempt := 0; attempt < s.retry; attempt++ {
+					err = fetch(s, code)
+					if err == nil {
+						return nil
+					}
+					b.Logf("[错误] [%s] %s\n", code.Key(), err)
+				}
+				return err
+			}
 			var err error
-			for attempt := 0; attempt < s.retry; attempt++ {
-				err = nil
-				if s.day {
-					err = u.FetchDay(s, code)
-				}
-				if err == nil && s.minute {
-					err = u.FetchMin(s, code)
-				}
-				if err == nil {
-					atomic.AddInt64(&succCount, 1)
-					return
-				}
-				b.Logf("[错误] [%s] %s\n", code.Key(), err)
+			if s.day {
+				err = fetchWithRetry(u.FetchDay)
+			}
+			if err == nil && s.minute {
+				err = fetchWithRetry(u.FetchMin)
+			}
+			if err == nil {
+				atomic.AddInt64(&succCount, 1)
+				return
 			}
 			mu.Lock()
 			if firstFail == nil {
@@ -294,7 +329,25 @@ func (s *Service) codes(u Unit) ([]Code, error) {
 	if override, ok := s.overrides[Market(u.Name())]; ok {
 		return override, nil
 	}
-	return u.Codes(s)
+	codes, err := u.Codes(s)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueCodes(codes), nil
+}
+
+// uniqueCodes 保留首次出现的名称与顺序，避免同一数据库被重复调度。
+func uniqueCodes(codes []Code) []Code {
+	out := make([]Code, 0, len(codes))
+	seen := make(map[Code]bool, len(codes))
+	for _, code := range codes {
+		key := Code{Market: code.Market, Code: code.Code}
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, code)
+		}
+	}
+	return out
 }
 
 // 存储相关快捷方法（供 Unit 实现使用）。
@@ -392,7 +445,7 @@ func (s *Service) MinExists(code Code, year int) bool {
 // start/end 为零值时表示不限制该端。
 func (s *Service) QueryMin(code Code, start, end time.Time) ([]*KlineMinute, error) {
 	out := []*KlineMinute{}
-	startYear, endYear := minMaxYear(start, end)
+	startYear, endYear := minMaxYear(start, end, s.Start().Location())
 	for y := startYear; y <= endYear; y++ {
 		file := code.MinFile(s.cfg.Dir, y)
 		if !exists(file) {
@@ -413,13 +466,13 @@ func (s *Service) QueryMin(code Code, start, end time.Time) ([]*KlineMinute, err
 }
 
 // minMaxYear 返回查询区间覆盖的年份范围；零值端点不限制。
-func minMaxYear(start, end time.Time) (int, int) {
-	startYear, endYear := 1990, time.Now().Year()
+func minMaxYear(start, end time.Time, loc *time.Location) (int, int) {
+	startYear, endYear := 1990, time.Now().In(loc).Year()
 	if !start.IsZero() {
-		startYear = start.Year()
+		startYear = start.In(loc).Year()
 	}
 	if !end.IsZero() {
-		endYear = end.Year()
+		endYear = end.In(loc).Year()
 	}
 	return startYear, endYear
 }

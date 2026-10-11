@@ -2,6 +2,7 @@ package pull
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -33,7 +34,7 @@ func init() {
 	registry.units = map[string]Unit{}
 }
 
-// Register 注册一个市场 Unit；重名 panic。
+// Register 注册一个市场 Unit；忽略大小写后重名 panic。
 func Register(u Unit) {
 	if u == nil {
 		panic("pull: 注册的市场 Unit 不能为 nil")
@@ -42,20 +43,35 @@ func Register(u Unit) {
 	if name == "" {
 		panic("pull: 注册的市场 Unit 缺少 Name")
 	}
+	for _, prefix := range marketPrefixes {
+		if !strings.Contains(prefix, "/") && strings.EqualFold(name, prefix) {
+			panic(fmt.Sprintf("pull: 市场 Unit %q 占用内置简称", name))
+		}
+	}
 	registry.Lock()
 	defer registry.Unlock()
-	if _, ok := registry.units[name]; ok {
-		panic(fmt.Sprintf("pull: 市场 Unit %q 重复注册", name))
+	for registered := range registry.units {
+		if strings.EqualFold(registered, name) {
+			panic(fmt.Sprintf("pull: 市场 Unit %q 重复注册", name))
+		}
 	}
 	registry.units[name] = u
 }
 
-// Get 按名称获取已注册的市场 Unit。
+// Get 按名称获取已注册的市场 Unit，不区分大小写。
 func Get(name string) (Unit, bool) {
 	registry.RLock()
 	defer registry.RUnlock()
 	u, ok := registry.units[name]
-	return u, ok
+	if ok {
+		return u, true
+	}
+	for registered, unit := range registry.units {
+		if strings.EqualFold(registered, name) {
+			return unit, true
+		}
+	}
+	return nil, false
 }
 
 // Units 返回全部已注册的市场 Unit。

@@ -237,12 +237,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		}
 		out = append(out, d)
 	}
-	// 空结果保护：已有数据但本次一条未拉到（退市/长期停牌/服务端异常），
-	// 跳过写入，避免 upsert "先删后插" 误删库内最后一根。
-	if last > 0 && len(out) == 0 {
-		return nil
-	}
-	return s.SaveDay(code, last, out)
+	return saveDays(s, code, max(last, start.Unix()), out)
 }
 
 // FetchMin 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。

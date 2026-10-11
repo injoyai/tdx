@@ -222,7 +222,7 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 			Low: k.Low, Close: k.Close, Volume: pull.ToShares(int64(k.Trade)), Amount: k.Amount,
 		})
 	}
-	return s.SaveDay(code, last, out)
+	return saveDays(s, code, from.Unix(), out)
 }
 
 // FetchMin 多年份共用一次分页，成功扫描后才提交年度完成标记。

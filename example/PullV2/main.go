@@ -38,7 +38,7 @@ func main() {
 			"sh000001",
 			"HK00700",
 			"US.AAPL",
-			"HK.HSI",
+			"hk.HSI",
 		},
 	})
 	logs.PrintErr(err)

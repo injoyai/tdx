@@ -46,6 +46,15 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				(supplement == nil || coverage.TradeFallback) {
 				continue
 			}
+			if supplement == nil {
+				empty, err := s.MinYearRecentlyEmpty(code, year, from.Unix(), now)
+				if err != nil {
+					return err
+				}
+				if empty {
+					continue
+				}
+			}
 		} else {
 			last, err := s.LastMinUnix(code, year)
 			if err != nil {
@@ -125,12 +134,25 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				out = append(out, k)
 			}
 		}
+		if len(out) == 0 {
+			if target.historical && supplement == nil && len(ks) > 0 {
+				if err := s.SaveMinEmptyScan(code, target.year, target.from, now); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		if supplement != nil && !fallbackFailed[target.year] {
 			err = s.SaveMinFallbackComplete(code, target.year, target.from, target.through, out)
 		} else if target.historical && supplement == nil {
 			err = s.SaveMinComplete(code, target.year, target.from, out)
 		} else {
-			err = s.SaveMin(code, target.year, target.from, out)
+			// 保留服务器滚动历史窗口之前的本地记录。
+			writeFrom := out[0].Unix
+			for _, k := range out[1:] {
+				writeFrom = min(writeFrom, k.Unix)
+			}
+			err = s.SaveMin(code, target.year, writeFrom, out)
 		}
 		if err != nil {
 			if supplement == nil {

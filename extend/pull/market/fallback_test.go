@@ -292,3 +292,40 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 		t.Fatal("关闭兜底后没有继续原生扫描", called, err)
 	}
 }
+
+func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
+	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	day := s.Start()
+	now := time.Date(2026, 1, 6, 16, 0, 0, 0, time.Local)
+	if err := s.SaveMinEmptyScan(code, 2025, day.Unix(), now); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	fallback := &minuteFallback{
+		days: func(time.Time) (protocol.Klines, error) {
+			return protocol.Klines{{Time: day, Volume: 1}}, nil
+		},
+		trades: func(d time.Time) (protocol.Trades, error) {
+			calls++
+			return fallbackTrades(d), nil
+		},
+	}
+	err = pullMinutes(s, code, now, func(from time.Time) ([]*pull.KlineMinute, error) {
+		if !from.Equal(day) {
+			t.Fatal("空原生历史缓存阻止了分笔兜底", from)
+		}
+		return []*pull.KlineMinute{{Unix: now.Add(-time.Hour).Unix(), Close: 20}}, nil
+	}, fallback)
+	if err != nil || calls != 1 {
+		t.Fatal("未补缺失历史交易日", calls, err)
+	}
+	rows, err := s.QueryMin(code, time.Time{}, time.Time{})
+	if err != nil || len(rows) != 242 {
+		t.Fatal("分笔兜底数据未写入", len(rows), err)
+	}
+}

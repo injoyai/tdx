@@ -146,8 +146,11 @@ func (ks Klines) RSI(n int) int64 {
 			}
 		}
 
-		if i >= n && loss > 0 {
-			rsi = 100 * gain / (gain + loss)
+		if i >= n {
+			rsi = 0
+			if gain+loss > 0 {
+				rsi = 100 * gain / (gain + loss)
+			}
 		}
 	}
 	return rsi
@@ -187,16 +190,19 @@ func (ks Klines) ATR(n int) protocol.Price {
 		tr := max(h-l, max((h-pc).Abs(), (l-pc).Abs()))
 		sum += int64(tr)
 
-		if i >= n {
-			prev := max(ks[i-n+1].High-ks[i-n+1].Low,
-				max((ks[i-n+1].High-ks[i-n].Close).Abs(), (ks[i-n+1].Low-ks[i-n].Close).Abs()))
+		if i > n {
+			prev := max(ks[i-n].High-ks[i-n].Low,
+				max((ks[i-n].High-ks[i-n-1].Close).Abs(), (ks[i-n].Low-ks[i-n-1].Close).Abs()))
 			sum -= int64(prev)
+		}
+		if i >= n {
 			atr = protocol.Price(sum / int64(n))
 		}
 	}
 	return atr
 }
 
+// VWAP 成交量加权均价，Volume 需为手，Amount 为实际成交额。
 func (ks Klines) VWAP() protocol.Price {
 	if len(ks) == 0 {
 		return 0
@@ -208,7 +214,7 @@ func (ks Klines) VWAP() protocol.Price {
 		volSum += ks[i].Volume
 		amtSum += int64(ks[i].Amount)
 		if volSum > 0 {
-			vwap = protocol.Price(amtSum / volSum)
+			vwap = protocol.Price(amtSum / volSum / 100)
 		}
 	}
 	return vwap

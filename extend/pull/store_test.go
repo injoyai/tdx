@@ -226,7 +226,7 @@ func TestSplitKey(t *testing.T) {
 		{"cn/future.cff/IF2609", MarketFuture, "cff/IF2609"},
 		{"cn/stock.sh600000", MarketAStock, "sh600000"},
 		{"hk/index.HSI", MarketHKIndex, "HSI"},
-		{"sh600000", "", "sh600000"}, // 无法识别市场，保留原样
+		{"sh600000", MarketAStock, "sh600000"},
 	}
 	for _, c := range cases {
 		got := SplitKey(c.key)
