@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ---- 代码/数量 ----

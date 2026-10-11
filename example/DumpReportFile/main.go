@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 真实连接通达信服务器，演示 report file(0x06B9) 文件下载能力：

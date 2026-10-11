@@ -1,4 +1,4 @@
-module github.com/injoyai/tdx
+module github.com/injoyai/tdx/v2
 
 go 1.25.0
 

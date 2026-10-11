@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend"
 )
 
 func main() {

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 实时拉取股票/指数 1分钟(.lc1)与5分钟(.lc5)K线,生成通达信本地文件供客户端导入测试

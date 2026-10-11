@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 演示财务/基本面(GetFinanceInfo) 与 F10 公司资料(GetCompanyCategory/Content)。

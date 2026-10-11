@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 拉取通达信全量板块数据(概念/风格/行业/指数/专业板块), 并演示板块指数(880xxx)行情。

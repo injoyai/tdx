@@ -29,9 +29,9 @@ package main
 
 import (
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	_ "github.com/injoyai/tdx/extend/pull/market" // 注册全部内置市场 Unit
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	_ "github.com/injoyai/tdx/v2/extend/pull/market" // 注册全部内置市场 Unit
 )
 
 func main() {
@@ -96,7 +96,7 @@ func main() {
 
 > 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
-> `import _ "github.com/injoyai/tdx/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
+> `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
 
 ---
 

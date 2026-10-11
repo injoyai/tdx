@@ -3,8 +3,8 @@
 package market
 
 import (
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 美股市场编码（扩展行情 ExInstruments.Market）。

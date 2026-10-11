@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/lib/gbbq"
+	"github.com/injoyai/tdx/v2/lib/gbbq"
 )
 
 func main() {

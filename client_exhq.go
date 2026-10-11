@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/tcp"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // DialExHqDefault 连接默认扩展行情服务器(轮询 ExHosts)。

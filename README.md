@@ -42,12 +42,14 @@
 
 ## 🚀 快速开始
 
+当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
+
 ```go
 package main
 
 import (
 	"fmt"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 func main() {

@@ -9,9 +9,9 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	_ "github.com/injoyai/tdx/extend/pull/market" // 注册全部内置市场 Unit
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	_ "github.com/injoyai/tdx/v2/extend/pull/market" // 注册全部内置市场 Unit
 )
 
 func main() {

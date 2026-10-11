@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Code 统一的代码模型，跨市场通用。

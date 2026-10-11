@@ -1,6 +1,6 @@
 package market
 
-import "github.com/injoyai/tdx/extend/pull"
+import "github.com/injoyai/tdx/v2/extend/pull"
 
 // saveDays 排除 Until 返回的界外停止记录，仅覆盖实际返回的尾部。
 func saveDays(s *pull.Service, code pull.Code, from int64, rows []*pull.KlineDay) error {

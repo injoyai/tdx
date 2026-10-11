@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/example/common"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/example/common"
 )
 
 func main() {

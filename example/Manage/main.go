@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 func main() {

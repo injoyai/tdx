@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type minuteTarget struct {

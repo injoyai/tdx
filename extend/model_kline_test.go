@@ -3,7 +3,7 @@ package extend
 import (
 	"testing"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestKlineIndicators(t *testing.T) {

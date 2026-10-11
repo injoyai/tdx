@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 // 演示一站式获取复权日线(对齐通达信桌面端, 四舍五入到分)。

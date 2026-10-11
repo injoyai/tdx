@@ -17,7 +17,7 @@ import (
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/common"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 const (

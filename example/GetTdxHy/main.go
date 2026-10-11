@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 // 演示行业归属(通达信新行业/申万行业)。

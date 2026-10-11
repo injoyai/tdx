@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 下载概念板块成分并回填板块指数代码(id, 经 tdxzs.cfg + tdxbk.cfg 关联)。

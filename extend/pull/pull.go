@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/injoyai/bar"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 // Service 拉取服务：编排市场 Unit、增量去重、并发、重试、落库。

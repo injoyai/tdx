@@ -3,7 +3,7 @@ package pull
 import (
 	"time"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 周期合并：只存日线 + 1分钟线，其余周期（5/15/30/60分钟、周/月/季/年）由二者派生，

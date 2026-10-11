@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func DoIncomes(ks protocol.Klines, startAt time.Time, days ...int) Incomes {

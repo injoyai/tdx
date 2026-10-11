@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/robfig/cron/v3"
 )
 

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // minuteFallback 仅供股票/ETF 使用；协议请求仍由已有客户端接口完成。

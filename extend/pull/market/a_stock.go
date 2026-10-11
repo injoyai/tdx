@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // stdUnit 标准行情(7709)市场的基础实现：通过 tdx.Manage 连接源取连接。

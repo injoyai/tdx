@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func fallbackTrades(day time.Time) protocol.Trades {

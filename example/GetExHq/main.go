@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 // 扩展行情(TdxExHq, 期货/港股/外盘, 端口 7727)示例。

@@ -10,8 +10,8 @@ import (
 
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 	"github.com/robfig/cron/v3"
 )
 

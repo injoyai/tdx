@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 	"xorm.io/xorm"
 )
 

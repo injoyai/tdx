@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 期货市场编码（扩展行情 ExInstruments.Market）。

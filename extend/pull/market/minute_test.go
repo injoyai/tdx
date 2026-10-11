@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestPullMinutesOneScanAndRecovery(t *testing.T) {

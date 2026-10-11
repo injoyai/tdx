@@ -10,8 +10,8 @@ package main
 import (
 	"log"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/httpserver"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/httpserver"
 )
 
 func main() {

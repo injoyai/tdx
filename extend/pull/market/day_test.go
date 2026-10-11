@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/extend/pull"
+	"github.com/injoyai/tdx/v2/extend/pull"
 )
 
 func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {

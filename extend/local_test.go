@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestReadDay(t *testing.T) {

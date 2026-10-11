@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/v2/extend"
 )
 
 func main() {

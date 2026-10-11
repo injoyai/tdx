@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/injoyai/ios/client"
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 // Option HTTP 服务配置选项

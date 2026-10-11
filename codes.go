@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 	"xorm.io/xorm"
 )
 

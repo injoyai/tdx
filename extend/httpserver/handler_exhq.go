@@ -3,8 +3,8 @@ package httpserver
 import (
 	"net/http"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ---- 扩展行情 ----

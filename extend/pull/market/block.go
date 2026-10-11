@@ -3,9 +3,9 @@
 package market
 
 import (
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/extend/pull"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Block 板块市场：板块指数(880xxx/881xxx) 走标准行情 GetIndex 拉取。

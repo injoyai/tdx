@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/injoyai/tdx/lib/zip"
+	"github.com/injoyai/tdx/v2/lib/zip"
 )
 
 /*

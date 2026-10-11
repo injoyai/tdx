@@ -3,7 +3,7 @@ package pull
 import (
 	"time"
 
-	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/v2"
 )
 
 // Config 拉取配置，通过代码参数传入（本库作为第三方引用，配置不落文件）。

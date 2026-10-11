@@ -1,6 +1,6 @@
 package extend
 
-import "github.com/injoyai/tdx/protocol"
+import "github.com/injoyai/tdx/v2/protocol"
 
 type Info struct {
 	Code       string         `json:"code"`       //代码

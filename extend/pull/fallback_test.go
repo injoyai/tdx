@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestMinuteFallbackSchemaAndSource(t *testing.T) {
