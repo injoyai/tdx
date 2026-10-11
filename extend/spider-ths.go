@@ -179,7 +179,7 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 				High:   protocol.Price(conv.Float64(prices[i*4+2])*1000/priceFactor) + low,
 				Low:    low,
 				Close:  protocol.Price(conv.Float64(prices[i*4+3])*1000/priceFactor) + low,
-				Volume: (conv.Int64(volumes[i]) + 50) / 100,
+				Volume: protocol.FromShares(conv.Int64(volumes[i]) + protocol.SharesPerLot/2),
 			})
 			i++
 		}

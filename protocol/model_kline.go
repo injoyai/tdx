@@ -147,22 +147,19 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 	resp := &KlineResp{
 		Count: Uint16(bs[:2]),
 	}
-	bs = bs[2:]
+	d := wireDecoder{bs: bs[2:]}
 
 	var last Price //上条数据(昨天)的收盘价
 	for i := uint16(0); i < resp.Count; i++ {
-		k := &Kline{
-			Time: GetTime([4]byte(bs[:4]), c.Type),
+		date := d.take(4)
+		if d.err != nil {
+			return nil, fmt.Errorf("K线记录 %d: %w", i, d.err)
 		}
-
-		var open Price
-		bs, open = GetPrice(bs[4:])
-		var _close Price
-		bs, _close = GetPrice(bs)
-		var high Price
-		bs, high = GetPrice(bs)
-		var low Price
-		bs, low = GetPrice(bs)
+		k := &Kline{Time: GetTime([4]byte(date), c.Type)}
+		open := Price(d.number())
+		_close := Price(d.number())
+		high := Price(d.number())
+		low := Price(d.number())
 
 		k.Last = last
 		k.Open = open + last
@@ -185,21 +182,21 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 			年: 不需要操作
 
 		*/
-		k.Volume = int64(getVolume(Uint32(bs[:4])))
-		bs = bs[4:]
+		k.Volume = int64(getVolume(d.uint32()))
 		k.Volume = normalizeKlineVolume(k.Volume, c)
-		k.Amount = Price(getVolume(Uint32(bs[:4])) * 1000) //从元转为厘,并去除多余的小数
-		bs = bs[4:]
+		k.Amount = Price(getVolume(d.uint32()) * 1000) //从元转为厘,并去除多余的小数
 
 		switch c.Kind {
 		case KindIndex:
 			//指数和股票的差别,指数多解析4字节,并处理成交量*100
-			k.Volume *= 100
-			k.UpCount = conv.Int([]byte{bs[1], bs[0]})
-			k.DownCount = conv.Int([]byte{bs[3], bs[2]})
-			bs = bs[4:]
+			k.Volume = ToShares(k.Volume)
+			k.UpCount = int(d.uint16())
+			k.DownCount = int(d.uint16())
 		}
 
+		if d.err != nil {
+			return nil, fmt.Errorf("K线记录 %d: %w", i, d.err)
+		}
 		resp.List = append(resp.List, k)
 	}
 	resp.List = FixKlineTime(resp.List)
@@ -216,7 +213,7 @@ func normalizeKlineVolume(volume int64, c KlineCache) int64 {
 	switch c.Type {
 	case TypeKlineMinute, TypeKline5Minute, TypeKlineMinute2, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute, TypeKlineDay2:
 		if !IsConvertibleBond(c.Code) {
-			return volume / 100
+			return FromShares(volume)
 		}
 	}
 	return volume
@@ -394,7 +391,7 @@ func (ks Klines) VWAP() Price {
 		volSum += ks[i].Volume
 		amtSum += int64(ks[i].Amount)
 		if volSum > 0 {
-			vwap = Price(amtSum / volSum / 100)
+			vwap = Price(amtSum / volSum / SharesPerLot)
 		}
 	}
 	return vwap

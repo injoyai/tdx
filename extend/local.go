@@ -54,7 +54,7 @@ func ReadDay(dir string, code string) (protocol.Klines, error) {
 		t := time.Date(int(d/10000), time.Month(d/100%100), int(d%100), 0, 0, 0, 0, time.Local)
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {
-			vol /= 100 //股票成交量单位"股"转"手"
+			vol = protocol.FromShares(vol)
 		}
 		ks = append(ks, &protocol.Kline{
 			Open:   priceFromInt(binary.LittleEndian.Uint32(rec[4:8])),
@@ -108,7 +108,7 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 		amount := math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {
-			vol /= 100 //股票成交量单位"股"转"手"
+			vol = protocol.FromShares(vol)
 		}
 		// 1分钟线(.lc1)每个交易日 14:59(偶见14:58)有一条"量=0额=0"的占位记录,
 		// 尾盘无真实成交,这里跳过;5分钟线(.lc5)无占位,全保留。
@@ -307,5 +307,5 @@ func toFileVolume(vol int64, index bool) uint32 {
 	if index {
 		return uint32(vol)
 	}
-	return uint32(vol * 100)
+	return uint32(protocol.ToShares(vol))
 }

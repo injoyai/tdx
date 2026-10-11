@@ -36,6 +36,7 @@
 11. **manage.go `RangeIndexes` 修复(2026-09)**：历史 bug——曾误遍历 `GetETFs()`，已改为 `GetIndexes()`。若外部代码曾依赖错误行为（遍历出 ETF 列表），需注意语义变化。
 
 - **v2 指标与复权契约**：指标统一由 `protocol.Klines` 实现；VWAP 输入量为手、金额为厘，pull 存储与标准行情指数日线的股数须先换算。复权使用仿射 Mul/Add 和 QFQPrice/HFQPrice，不再提供旧纯比例入口；第三方爬虫的比例模型独立保留。
+- **数据库支持边界**：内置存储统一使用 SQLite；已移除 MySQL 专用构造函数和驱动注册。外部调用须使用默认构造函数或传入 SQLite 引擎，MySQL 存量数据需单独转换，见 `docs/v2-migration.md`。
 - **默认缓存路径**：元数据缓存位于 `./output/data/database`。历史 `./data/database` 不自动搬迁，使用旧缓存时须显式配置 DB 或在停机后完整复制（含 SQLite WAL/SHM），见 `docs/v2-migration.md`。
 
 - **请求等待依赖约束**：`base/maps/wait` 的等待注册与响应完成不能并发修改同一回调列表。Client 在发送前完整注册异步回调，并由同一互斥锁保护注册/处理/清理；超时通过 `Client.SetTimeout` 配置，直接修改 `Client.Wait` 不调整请求计时器。

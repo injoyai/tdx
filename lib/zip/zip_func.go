@@ -2,8 +2,11 @@ package zip
 
 import (
 	"archive/zip"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -90,29 +93,45 @@ func Decode(zipName, filePath string) error {
 		return err
 	}
 	defer r.Close()
+	if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(filePath)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for _, k := range r.Reader.File {
+		name, err := filepath.Localize(path.Clean(k.Name))
+		if err != nil || strings.Contains(k.Name, "\\") {
+			return fmt.Errorf("zip: invalid path %q", k.Name)
+		}
 		if k.FileInfo().IsDir() {
-			if err := os.MkdirAll(filepath.Join(filePath, k.Name), os.ModePerm); err != nil {
+			if err := root.MkdirAll(name, os.ModePerm); err != nil {
 				return err
 			}
-		} else {
-			err := func() error {
-				f, err := k.Open()
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-				w, err := os.Create(filepath.Join(filePath, k.Name))
-				if err != nil {
-					return err
-				}
-				defer w.Close()
-				_, err = io.Copy(w, f)
-				return err
-			}()
+			continue
+		}
+		if !k.Mode().IsRegular() {
+			return fmt.Errorf("zip: unsupported file type %q", k.Name)
+		}
+		if err := root.MkdirAll(filepath.Dir(name), os.ModePerm); err != nil {
+			return err
+		}
+		if err := func() error {
+			f, err := k.Open()
 			if err != nil {
 				return err
 			}
+			defer f.Close()
+			w, err := root.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(w, f)
+			return errors.Join(err, w.Close())
+		}(); err != nil {
+			return err
 		}
 	}
 	return nil

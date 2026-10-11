@@ -6,15 +6,10 @@ import (
 	"time"
 
 	_ "github.com/glebarez/go-sqlite"
-	_ "github.com/go-sql-driver/mysql"
 	"xorm.io/core"
 	"xorm.io/xorm"
 	"xorm.io/xorm/schemas"
 )
-
-func NewMysql(dsn string, options ...Option) (*Engine, error) {
-	return New("mysql", dsn, options...)
-}
 
 func NewSqlite(filename string, options ...Option) (*Engine, error) {
 	dir, _ := filepath.Split(filename)
@@ -26,7 +21,6 @@ func NewSqlite(filename string, options ...Option) (*Engine, error) {
 
 /*
 New 需要手动引用驱动
-mysql _ "github.com/go-sql-driver/mysql"
 sqlite _ "github.com/glebarez/go-sqlite"
 sqlserver _ "github.com/denisenkom/go-mssqldb"
 */

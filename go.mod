@@ -4,7 +4,6 @@ go 1.25.0
 
 require (
 	github.com/glebarez/go-sqlite v1.22.0
-	github.com/go-sql-driver/mysql v1.7.0
 	github.com/injoyai/bar v0.0.12
 	github.com/injoyai/base v1.2.23
 	github.com/injoyai/conv v1.2.8

@@ -80,15 +80,6 @@ func WithCodesOption(op ...CodesOption) CodesOption {
 	}
 }
 
-func NewCodesMysql(dsn string, op ...CodesOption) (*Codes, error) {
-	return NewCodes(
-		WithCodesDialDB(func() (*xorms.Engine, error) {
-			return xorms.NewMysql(dsn)
-		}),
-		WithCodesOption(op...),
-	)
-}
-
 func NewCodesSqlite(op ...CodesOption) (*Codes, error) {
 	return NewCodes(op...)
 }
@@ -185,7 +176,10 @@ func (this *Codes) update() ([]*CodeModel, error) {
 
 	//如果更新过,则不更新
 	updated, err := this.updated.Updated(this.updateKey)
-	if err == nil && updated {
+	if err != nil {
+		return nil, err
+	}
+	if updated {
 		return list, nil
 	}
 
@@ -212,61 +206,44 @@ func (this *Codes) update() ([]*CodeModel, error) {
 				LastPrice: v.LastPrice,
 			}
 			if val, ok := mCode[exchange.String()+v.Code]; ok {
-				if val.Name != v.Name {
+				if val.Name != code.Name || val.Multiple != code.Multiple || val.Decimal != code.Decimal || val.LastPrice != code.LastPrice {
 					update = append(update, code)
 				}
 				delete(mCode, exchange.String()+v.Code)
 			} else {
 				insert = append(insert, code)
-				list = append(list, code)
 			}
 		}
 	}
 
-	switch this.db.Dialect().URI().DBType {
-	case "mysql":
-		// 1️⃣ 清空
-		if _, err := this.db.Exec("TRUNCATE TABLE codes"); err != nil {
-			return nil, err
-		}
-
-		data := append(insert, update...)
-		// 2️⃣ 直接批量插入
-		batchSize := 3000 // 8000(2m16s) 5000(43s) 3000(11s) 1000(59s)
-		for i := 0; i < len(data); i += batchSize {
-			end := i + batchSize
-			if end > len(data) {
-				end = len(data)
-			}
-
-			slice := conv.Array(data[i:end])
-			if _, err := this.db.Insert(slice); err != nil {
-				return nil, err
+	// 增量操作统一放在事务中，保留未变化记录和已有主键。
+	err = this.db.SessionFunc(func(session *xorm.Session) error {
+		for _, v := range mCode {
+			if _, err := session.Where("Exchange=? and Code=?", v.Exchange, v.Code).Delete(v); err != nil {
+				return err
 			}
 		}
-	default: //"sqlite3":
-		//4. 插入或者更新数据库
-		err = this.db.SessionFunc(func(session *xorm.Session) error {
-			for _, v := range mCode {
-				if _, err = session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Delete(v); err != nil {
-					return err
-				}
+		batchSize := 100 // SQLite 每批不超过 999 个参数。
+		for start := 0; start < len(insert); start += batchSize {
+			end := min(start+batchSize, len(insert))
+			if _, err := session.Insert(insert[start:end]); err != nil {
+				return err
 			}
-			for _, v := range insert {
-				if _, err := session.Insert(v); err != nil {
-					return err
-				}
-			}
-			for _, v := range update {
-				if _, err = session.Where("Exchange=? and Code=? ", v.Exchange, v.Code).Cols("Name,LastPrice").Update(v); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
 		}
+		for _, v := range update {
+			if _, err := session.Where("Exchange=? and Code=?", v.Exchange, v.Code).
+				Cols("Name", "Multiple", "Decimal", "LastPrice").Update(v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	list = nil
+	if err := this.db.Find(&list); err != nil {
+		return nil, err
 	}
 
 	//更新时间
@@ -338,7 +315,7 @@ type CodesBase struct {
 func (this *CodesBase) Update(ls []*CodeModel) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	this.list = ls
+	this.list = append([]*CodeModel(nil), ls...)
 	this.m = make(map[string]*CodeModel)
 	for _, v := range ls {
 		this.m[v.FullCode()] = v
@@ -347,7 +324,10 @@ func (this *CodesBase) Update(ls []*CodeModel) {
 
 func (this *CodesBase) Iter() iter.Seq2[string, *CodeModel] {
 	return func(yield func(string, *CodeModel) bool) {
-		for _, v := range this.list {
+		this.mu.Lock()
+		list := this.list
+		this.mu.Unlock()
+		for _, v := range list {
 			if !yield(v.FullCode(), v) {
 				return
 			}
@@ -372,6 +352,8 @@ func (this *CodesBase) GetName(code string) string {
 
 // GetStocks 获取股票代码,sh6xxx sz0xx sz30xx
 func (this *CodesBase) GetStocks(limits ...int) CodeModels {
+	this.mu.Lock()
+	defer this.mu.Unlock()
 	limit := conv.Default(-1, limits...)
 	ls := []*CodeModel(nil)
 	for _, m := range this.list {
@@ -393,6 +375,8 @@ func (this *CodesBase) GetStockCodes(limits ...int) []string {
 
 // GetETFs 获取基金代码,sz159xxx,sh510xxx,sh511xxx
 func (this *CodesBase) GetETFs(limits ...int) CodeModels {
+	this.mu.Lock()
+	defer this.mu.Unlock()
 	limit := conv.Default(-1, limits...)
 	ls := []*CodeModel(nil)
 	for _, m := range this.list {
@@ -414,6 +398,8 @@ func (this *CodesBase) GetETFCodes(limits ...int) []string {
 
 // GetIndexes 获取基金代码,sz159xxx,sh510xxx,sh511xxx
 func (this *CodesBase) GetIndexes(limits ...int) CodeModels {
+	this.mu.Lock()
+	defer this.mu.Unlock()
 	limit := conv.Default(-1, limits...)
 	ls := []*CodeModel(nil)
 	for _, m := range this.list {

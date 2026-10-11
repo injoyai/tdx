@@ -243,6 +243,8 @@ Codes: []string{
 
 ### 执行与资源释放
 
+同一个 `Service.Update` 中，港股、港股指数、美股和期货共享一次完整的 `ExInstruments` 分页发现，再各自过滤市场代码；成功的空列表也仅缓存到本轮结束，失败不缓存。下一轮更新重新查询，不跨 Service 或连接池共享。在 `Update` 之外调用 `Service.ExInstruments()` 时重新查询；返回切片可修改，不影响其他市场的快照。同一个 Service 的并发 `Update` 调用顺序执行，仍按市场完成标记去重。
+
 `Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
 失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
 标准行情直接复用根包 `GetIndexUntil`、`GetKlineUntil`、`GetKlineMinute241Until`；连接池直接使用 `IPool.Do`。

@@ -45,7 +45,7 @@
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
 
-v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
+v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。内置数据库使用 SQLite，已移除 MySQL 专用入口和驱动注册。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
 
 ```go
 package main

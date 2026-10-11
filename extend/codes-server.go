@@ -18,11 +18,11 @@ import (
 func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.GbbqOption) error {
 	code, err := tdx.NewCodes(codesOption...)
 	if err != nil {
-		return nil
+		return err
 	}
 	gbbq, err := tdx.NewGbbq(equityOption...)
 	if err != nil {
-		return nil
+		return err
 	}
 	succ := func(w http.ResponseWriter, data any) {
 		w.WriteHeader(http.StatusOK)
@@ -53,7 +53,7 @@ func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOptio
 func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
 	code, err := tdx.NewCodes(op...)
 	if err != nil {
-		return nil
+		return err
 	}
 	succ := func(w http.ResponseWriter, data any) {
 		w.WriteHeader(http.StatusOK)

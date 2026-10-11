@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 type CodeResp struct {
@@ -42,6 +43,9 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 		Count: Uint16(bs[:2]),
 	}
 	bs = bs[2:]
+	if len(bs) < int(resp.Count)*29 {
+		return nil, io.ErrUnexpectedEOF
+	}
 
 	for i := uint16(0); i < resp.Count; i++ {
 		sec := &Code{

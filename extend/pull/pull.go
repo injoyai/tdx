@@ -14,6 +14,7 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Service 拉取服务：编排市场 Unit、增量去重、并发、重试、落库。
@@ -36,6 +37,11 @@ type Service struct {
 	engineLimit int
 	engineClock uint64
 	closed      bool
+
+	updateMu    sync.Mutex
+	discoveryMu sync.Mutex
+	discovering bool
+	instruments []protocol.ExInstrument
 }
 
 // NewService 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
@@ -187,9 +193,56 @@ func (s *Service) Manage() *tdx.Manage { return s.cfg.Manage }
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
 func (s *Service) ExPool() tdx.IPool { return s.cfg.ExPool }
 
+// ExInstruments Update 期间共用一次发现；Update 之外每次重新查询。
+func (s *Service) ExInstruments() ([]protocol.ExInstrument, error) {
+	s.discoveryMu.Lock()
+	defer s.discoveryMu.Unlock()
+	if s.discovering && s.instruments != nil {
+		return append([]protocol.ExInstrument(nil), s.instruments...), nil
+	}
+	p := s.ExPool()
+	if p == nil {
+		return nil, fmt.Errorf("pull: 需要配置 ExPool（扩展行情7727连接池）")
+	}
+	out := []protocol.ExInstrument{}
+	err := p.Do(func(c *tdx.Client) error {
+		for start := uint32(0); ; {
+			ins, err := c.ExInstruments(start, 800)
+			if err != nil {
+				return err
+			}
+			out = append(out, ins...)
+			if len(ins) < 800 {
+				return nil
+			}
+			start += uint32(len(ins))
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if s.discovering {
+		s.instruments = out
+	}
+	return append([]protocol.ExInstrument(nil), out...), nil
+}
+
 // Update 执行一次拉取。must=true 时跳过工作日与整体标记检查，仍保留市场级去重。
 // 按 Unit 粒度去重：某市场完成后单独标记，中途失败的市场下次重拉，已完成的跳过。
 func (s *Service) Update(must ...bool) error {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	s.discoveryMu.Lock()
+	s.discovering = true
+	s.instruments = nil
+	s.discoveryMu.Unlock()
+	defer func() {
+		s.discoveryMu.Lock()
+		s.discovering = false
+		s.instruments = nil
+		s.discoveryMu.Unlock()
+	}()
+
 	key := s.updateKey("pull")
 	if len(must) == 0 || !must[0] {
 		// 非交易日直接跳过（由调用方传入 Workday 判断）

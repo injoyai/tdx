@@ -30,7 +30,7 @@ func (this *Trade) String() string {
 
 // Amount 成交额
 func (this *Trade) Amount() Price {
-	return this.Price * Price(this.Volume*100)
+	return this.Price * Price(ToShares(int64(this.Volume)))
 }
 
 func (this *Trade) StatusString() string {
@@ -51,7 +51,7 @@ func (this *Trade) AvgVolume() float64 {
 
 // AvgPrice 平均每单成交金额
 func (this *Trade) AvgPrice() Price {
-	return Price(this.AvgVolume() * float64(this.Price) * 100)
+	return Price(this.AvgVolume() * float64(this.Price) * SharesPerLot)
 }
 
 // IsBuy 是否是买单
@@ -111,7 +111,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 		bs = bs[2:]
 		var values [5]int
 		for field := 0; field < fields; field++ {
-			bs, values[field], err = cutTradeInt(bs)
+			bs, values[field], err = cutIntChecked(bs)
 			if err != nil {
 				return nil, fmt.Errorf("成交记录 %d 字段 %d: %w", i, field, err)
 			}
@@ -130,19 +130,6 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 	return resp, nil
 }
 
-func cutTradeInt(bs []byte) ([]byte, int, error) {
-	for i, b := range bs {
-		// getData 使用 int32；第五字节只剩四个有效数值位。
-		if i >= 5 || (i == 4 && b&0x7f > 0x0f) {
-			return nil, 0, errors.New("成交整数超出 int32 范围")
-		}
-		if b&0x80 == 0 {
-			return bs[i+1:], int(getData(bs[:i+1])), nil
-		}
-	}
-	return nil, 0, errors.New("成交整数数据不足或未结束")
-}
-
 type Trades []*Trade
 
 // Volume2 内(主动卖)外(主动买)盘成交量,不准确,能用
@@ -150,9 +137,9 @@ func (this Trades) Volume2() (sell int64, buy int64) {
 	for _, v := range this {
 		switch v.Status {
 		case 0: //买
-			buy += int64(v.Volume) * 100
+			buy += ToShares(int64(v.Volume))
 		case 1: //卖
-			sell += int64(v.Volume) * 100
+			sell += ToShares(int64(v.Volume))
 		}
 	}
 	return
@@ -212,7 +199,7 @@ func (this Trades) Kline(t time.Time, last Price) *Kline {
 		k.Close = v.Price
 		k.Volume += int64(v.Volume)
 		k.Order += v.Number
-		k.Amount += v.Price * Price(v.Volume) * 100
+		k.Amount += v.Amount()
 		first++
 	}
 	return k

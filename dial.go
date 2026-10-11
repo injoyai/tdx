@@ -34,7 +34,7 @@ func NewHostDial(hosts []string) ios.DialFunc {
 		if !strings.Contains(addr, ":") {
 			addr += ":7709"
 		}
-		c, err := net.Dial("tcp", addr)
+		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 		return c, addr, err
 	}
 }
@@ -49,7 +49,7 @@ func NewRandomDial(hosts []string) ios.DialFunc {
 		if !strings.Contains(addr, ":") {
 			addr += ":7709"
 		}
-		c, err := net.Dial("tcp", addr)
+		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 		return c, addr, err
 	}
 }
@@ -68,14 +68,18 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 			if !strings.Contains(addr, ":") {
 				addr += ":7709"
 			}
-			c, err = net.Dial("tcp", addr)
+			c, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 			if err == nil {
 				return c, addr, nil
 			}
 			if i < len(hosts)-1 {
 				//最后一个错误返回出去
 				logs.Err(err, "等待2秒后尝试下一个服务地址...")
-				<-time.After(time.Second * 2)
+				select {
+				case <-ctx.Done():
+					return nil, "", ctx.Err()
+				case <-time.After(2 * time.Second):
+				}
 			}
 		}
 		return
@@ -97,14 +101,18 @@ func NewExRangeDial(hosts []string) ios.DialFunc {
 			if !strings.Contains(addr, ":") {
 				addr += ":" + ExPort
 			}
-			c, err = net.Dial("tcp", addr)
+			c, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 			if err == nil {
 				return c, addr, nil
 			}
 			if i < len(hosts)-1 {
 				//最后一个错误返回出去
 				logs.Err(err, "等待2秒后尝试下一个扩展行情服务地址...")
-				<-time.After(time.Second * 2)
+				select {
+				case <-ctx.Done():
+					return nil, "", ctx.Err()
+				case <-time.After(2 * time.Second):
+				}
 			}
 		}
 		return

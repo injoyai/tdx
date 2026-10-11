@@ -47,6 +47,12 @@ TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断�
 
 数据准确性还须按项目规则第 8.6 节对照独立来源，其他来源单线程、请求起始间隔至少 5 秒。`TDX_CROSS_LIVE=1 go test -race . -run '^TestCrossValidationSamplesLive$' -count=1 -v -timeout=45s` 保存小样本到 `output/live-validation/cross/tdx-samples.json`，供另行串行获取独立数据并逐字段比较；该测试成功只表示样本获取成功。港股主板日线现用 category=4，腾讯控股样本的 `ExKline.Trade` 为百股，×100 与独立来源在整数百股精度内一致；不能将该单位推广到其他扩展接口。小时线的来源聚合差异和港股分时的时间标签仍须确认。
 
+标准行情代码、K 线与五档报价也检查记录边界和变长整数；截断或溢出响应直接返回解码错误。`protocol.MQuote.Decode` 保留原返回类型，异常数据返回 `nil`；需要错误详情时改用 `protocol.MQuote.DecodeChecked`。
+
+`NewHostDial`、`NewRandomDial`、`NewRangeDial`、`NewExRangeDial` 使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。`NewManage` 初始化失败会关闭内部创建的、支持 `Close()` 的连接池；`WithPool` 传入的外部池仍由调用方关闭。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化失败会返回错误。
+
+代码元数据刷新使用 SQLite 增量事务，保留未变化记录和原主键，更新名称、倍数、小数位与昨收价，删除退市项；内存缓存使用提交后的数据库快照。
+
 设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用 `Client.Wait.SetTimeout` 的代码需迁移到该方法。`Client.Wait` 仍保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
 
 ## 成交行为
@@ -88,6 +94,19 @@ import (
 内置市场的 K 线参数和成交量换算现集中于 `Market.Info()`；由 `ParseCode` 得到市场后可直接查询。未知单位设为 `VolumeDefault`，暂按旧倍率 ×100，不能据此认定这些扩展市场的量单位为股或合约。配置只覆盖日线和 1 分钟线。
 
 港股主板日线由 category=9 改为 4，修正成交量请求口径；标准行情指数及板块分钟线直接使用解码后的股数，取消拉取层重复 ×100。已有数据库不会自动修正历史记录；旧港股日线首条的异常量不能靠整体乘倍数恢复，重新获取时请保留旧库，并考虑服务器历史保留范围。
+
+## 数据库支持
+
+内置数据库支持统一使用 SQLite，已移除 MySQL 驱动注册、直接依赖和专用示例。以下入口不再提供：
+
+| 已移除的入口 | SQLite 用法 |
+|---|---|
+| `tdx.NewManageMysql` | `tdx.NewManage` |
+| `tdx.NewCodesMysql` | `tdx.NewCodes` / `tdx.NewCodesSqlite` |
+| `tdx.NewWorkdayMysql` | `tdx.NewWorkday` / `tdx.NewWorkdaySqlite` |
+| `xorms.NewMysql` | `xorms.NewSqlite(filename)` |
+
+通过 `WithCodesDB`、`WithWorkdayDB`、`WithGbbqDB` 或对应 `DialDB` 选项传入 SQLite 引擎，可自定义数据库路径。已有 MySQL 数据不会自动转换为 SQLite；需要保留数据时另行导出转换，不能直接将 MySQL DSN 当作 SQLite 文件名。
 
 ## 存量数据库
 

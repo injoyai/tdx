@@ -30,6 +30,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // rec 一条退市股缓存日线记录
@@ -96,7 +98,7 @@ func main() {
 			name, len(ks), ks[0].Date.Format("2006-01-02"), ks[len(ks)-1].Date.Format("2006-01-02"))
 		show := func(k rec) {
 			fmt.Printf("  %s 开:%.3f 高:%.3f 低:%.3f 收:%.3f 额:%.0f 量:%d手\n",
-				k.Date.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close, k.Amount, k.Volume/100)
+				k.Date.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close, k.Amount, protocol.FromShares(int64(k.Volume)))
 		}
 		fmt.Println("  前 3 条:")
 		for _, k := range ks[:min(3, len(ks))] {

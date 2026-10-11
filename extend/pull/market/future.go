@@ -55,45 +55,22 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.IPool, error) {
 // Codes 从 ExInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
 // 多交易所市场（期货）时 Code.Code 带交易所前缀，如 "cff/IF2609"。
 func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
-	p, err := u.Ex(s)
+	ins, err := s.ExInstruments()
 	if err != nil {
 		return nil, err
 	}
 	out := []pull.Code{}
-	err = p.Do(func(c *tdx.Client) error {
-		var start uint32
-		for {
-			ins, err := c.ExInstruments(start, 800)
-			if err != nil {
-				return err
-			}
-			if len(ins) == 0 {
-				break
-			}
-			for _, it := range ins {
-				if !u.isMarket(it.Market) {
-					continue
-				}
-				code := it.Code
-				if u.multiMarket() {
-					code = futureMarketNames[it.Market] + "/" + it.Code
-				}
-				out = append(out, pull.Code{
-					Market: u.name,
-					Code:   code,
-					Name:   it.Name,
-				})
-			}
-			start += uint32(len(ins))
-			if len(ins) < 800 {
-				break
-			}
+	for _, it := range ins {
+		if !u.isMarket(it.Market) {
+			continue
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		code := it.Code
+		if u.multiMarket() {
+			code = futureMarketNames[it.Market] + "/" + it.Code
+		}
+		out = append(out, pull.Code{Market: u.name, Code: code, Name: it.Name})
 	}
+
 	return out, nil
 }
 

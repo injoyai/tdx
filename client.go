@@ -191,7 +191,7 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 		resp, err = protocol.MCode.Decode(f.Data)
 
 	case protocol.TypeQuote:
-		resp = protocol.MQuote.Decode(f.Data)
+		resp, err = protocol.MQuote.DecodeChecked(f.Data)
 
 	case protocol.TypeMinute:
 		resp, err = protocol.MMinute.Decode(f.Data)

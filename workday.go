@@ -7,7 +7,6 @@ import (
 	"time"
 
 	_ "github.com/glebarez/go-sqlite"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
@@ -62,13 +61,6 @@ func WithWorkdayOption(op ...WorkdayOption) WorkdayOption {
 			v(w)
 		}
 	}
-}
-
-func NewWorkdayMysql(dsn string, op ...WorkdayOption) (*Workday, error) {
-	return NewWorkday(
-		WithWorkdayDialDB(func() (*xorms.Engine, error) { return xorms.NewMysql(dsn) }),
-		WithWorkdayOption(op...),
-	)
 }
 
 func NewWorkdaySqlite(op ...WorkdayOption) (*Workday, error) {

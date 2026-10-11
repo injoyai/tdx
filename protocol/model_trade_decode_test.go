@@ -62,7 +62,7 @@ func TestTradeIntegerLimits(t *testing.T) {
 		{[]byte{0xbf, 0xff, 0xff, 0xff, 0x0f}, 2147483647},
 		{[]byte{0xff, 0xff, 0xff, 0xff, 0x0f}, -2147483647},
 	} {
-		rest, got, err := cutTradeInt(tc.bs)
+		rest, got, err := cutIntChecked(tc.bs)
 		if err != nil || got != tc.want || len(rest) != 0 {
 			t.Fatal(tc.bs, got, err)
 		}

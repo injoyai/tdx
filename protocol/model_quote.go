@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 type QuotesResp []*Quote
@@ -104,67 +105,66 @@ b212 昨天收盘价1186
 8defd10c 服务时间
 c005bed2668e05be15804d8ba12cb3b13a0083c3034100badc029d014201bc990384f70443029da503b7af074403a6e501b9db044504a6e2028dd5048d050000000000005909
 */
+// Decode 保留原接口；畸形数据返回 nil。需要错误详情时使用 DecodeChecked。
 func (this quote) Decode(bs []byte) QuotesResp {
+	resp, _ := this.DecodeChecked(bs)
+	return resp
+}
 
-	//logs.Debug(hex.EncodeToString(bs))
-
+func (this quote) DecodeChecked(bs []byte) (QuotesResp, error) {
+	d := wireDecoder{bs: bs}
+	d.take(2) // 响应前缀
+	number := d.uint16()
+	if d.err != nil {
+		return nil, d.err
+	}
 	resp := QuotesResp{}
-
-	//前2字节是什么?
-	bs = bs[2:]
-
-	number := Uint16(bs[:2])
-	bs = bs[2:]
-
 	for i := uint16(0); i < number; i++ {
+		prefix := d.take(9)
+		if d.err != nil {
+			return nil, fmt.Errorf("报价记录 %d: %w", i, d.err)
+		}
 		sec := &Quote{
-			Exchange: Exchange(bs[0]),
-			Code:     string(UTF8ToGBK(bs[1:7])),
-			Active1:  Uint16(bs[7:9]),
+			Exchange: Exchange(prefix[0]),
+			Code:     string(UTF8ToGBK(prefix[1:7])),
+			Active1:  Uint16(prefix[7:9]),
 		}
-		bs, sec.Kline = DecodeKline(bs[9:])
-		bs, sec.ReversedBytes0 = CutInt(bs)
+		closePrice := Price(d.number()) * 10
+		sec.Kline = &Kline{
+			Time: time.Now(), Close: closePrice,
+			Last: closePrice + Price(d.number())*10,
+			Open: closePrice + Price(d.number())*10,
+			High: closePrice + Price(d.number())*10,
+			Low:  closePrice + Price(d.number())*10,
+		}
+		sec.ReversedBytes0 = d.number()
 		sec.ServerTime = fmt.Sprintf("%d", sec.ReversedBytes0)
-		bs, sec.ReversedBytes1 = CutInt(bs)
-		bs, sec.Kline.Volume = CutInt64(bs)
-		bs, sec.Intuition = CutInt(bs)
-		sec.Kline.Amount = Yuan(getVolume(Uint32(bs[:4])))
-		bs, sec.InsideDish = CutInt(bs[4:])
-		bs, sec.OuterDisc = CutInt(bs)
-		bs, sec.ReversedBytes2 = CutInt(bs)
-		bs, sec.ReversedBytes3 = CutInt(bs)
-
-		var p Price
-		for i := 0; i < 5; i++ {
-			buyLevel := PriceLevel{Buy: true}
-			sellLevel := PriceLevel{}
-
-			bs, p = GetPrice(bs)
-			buyLevel.Price = p*10 + sec.Kline.Close
-			bs, p = GetPrice(bs)
-			sellLevel.Price = p*10 + sec.Kline.Close
-
-			bs, buyLevel.Number = CutInt(bs)
-			bs, sellLevel.Number = CutInt(bs)
-
-			sec.BuyLevel[i] = buyLevel
-			sec.SellLevel[i] = sellLevel
+		sec.ReversedBytes1 = d.number()
+		sec.Kline.Volume = int64(d.number())
+		sec.Intuition = d.number()
+		sec.Kline.Amount = Yuan(getVolume(d.uint32()))
+		sec.InsideDish = d.number()
+		sec.OuterDisc = d.number()
+		sec.ReversedBytes2 = d.number()
+		sec.ReversedBytes3 = d.number()
+		for level := 0; level < 5; level++ {
+			buyPrice := closePrice + Price(d.number())*10
+			sellPrice := closePrice + Price(d.number())*10
+			sec.BuyLevel[level] = PriceLevel{Buy: true, Price: buyPrice, Number: d.number()}
+			sec.SellLevel[level] = PriceLevel{Price: sellPrice, Number: d.number()}
 		}
-
-		sec.ReversedBytes4 = Uint16(bs[:2])
-		bs, sec.ReversedBytes5 = CutInt(bs[2:])
-		bs, sec.ReversedBytes6 = CutInt(bs)
-		bs, sec.ReversedBytes7 = CutInt(bs)
-		bs, sec.ReversedBytes8 = CutInt(bs)
-		sec.ReversedBytes9 = Uint16(bs[:2])
-
+		sec.ReversedBytes4 = d.uint16()
+		sec.ReversedBytes5 = d.number()
+		sec.ReversedBytes6 = d.number()
+		sec.ReversedBytes7 = d.number()
+		sec.ReversedBytes8 = d.number()
+		sec.ReversedBytes9 = d.uint16()
 		sec.Rate = float64(sec.ReversedBytes9) / 100
-		sec.Active2 = Uint16(bs[2:4])
-
-		bs = bs[4:]
-
+		sec.Active2 = d.uint16()
+		if d.err != nil {
+			return nil, fmt.Errorf("报价记录 %d: %w", i, d.err)
+		}
 		resp = append(resp, sec)
 	}
-
-	return resp
+	return resp, nil
 }

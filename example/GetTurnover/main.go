@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func main() {
@@ -24,5 +25,5 @@ func main() {
 
 	logs.Debugf("总股本: %d  流通股本: %d\n", eq.Total, eq.Float)
 
-	logs.Debug("换手率:", e.GetTurnover(code, time.Now(), resp.List[0].Volume*100))
+	logs.Debug("换手率:", e.GetTurnover(code, time.Now(), protocol.ToShares(resp.List[0].Volume)))
 }

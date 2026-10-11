@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/injoyai/tdx/v2/lib/xorms"
@@ -16,18 +17,6 @@ const (
 	DefaultWorkdaySpec = "0 3 9 * * *"
 	DefaultGbbqSpec    = "0 5 9 * * *"
 )
-
-func NewManageMysql(dsn string, op ...Option) (*Manage, error) {
-	return NewManage(
-		WithDialCodes(func(c *Client) (ICodes, error) {
-			return NewCodesMysql(dsn, WithCodesClient(c))
-		}),
-		WithDialWorkday(func(c *Client) (*Workday, error) {
-			return NewWorkdayMysql(dsn, WithWorkdayClient(c))
-		}),
-		WithOption(op...),
-	)
-}
 
 func NewManage(op ...Option) (m *Manage, err error) {
 
@@ -49,6 +38,14 @@ func NewManage(op ...Option) (m *Manage, err error) {
 				return NewPool(func() (*Client, error) { return DialDefault() }, m.poolClients)
 			}
 		}
+		owner := m
+		defer func() {
+			if err != nil {
+				if closer, ok := owner.IPool.(interface{ Close() error }); ok {
+					err = errors.Join(err, closer.Close())
+				}
+			}
+		}()
 		m.IPool, err = m.dialPool()
 		if err != nil {
 			return nil, err
