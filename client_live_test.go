@@ -24,7 +24,7 @@ var liveLimit struct {
 func liveWrite(bs []byte) ([]byte, error) {
 	liveLimit.Lock()
 	defer liveLimit.Unlock()
-	if liveLimit.count >= 100 {
+	if liveLimit.count >= 1000 {
 		return nil, errors.New("live test request budget exhausted")
 	}
 	if delay := time.Until(liveLimit.next); delay > 0 {
