@@ -11,35 +11,35 @@ type TradingCalendar interface {
 	Range(start, end time.Time, visit func(time.Time) bool)
 }
 
-func (c *Conn) GetTradeAll(code string) (*MarketTradeResp, error) {
+func (c *Conn) GetTradeAll(code string) (*TradeResp, error) {
 	return c.queryClient().GetTradeAll(code)
 }
-func (c *Conn) GetHistoryTradeDay(date, code string) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeDay(date, code string) (*TradeResp, error) {
 	return c.queryClient().GetHistoryTradeDay(date, code)
 }
-func (c *Conn) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*TradeResp, error) {
 	return c.queryClient().GetHistoryTradeBefore(code, calendar, before)
 }
-func (c *Conn) GetHistoryTradeFull(code string, calendar TradingCalendar) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeFull(code string, calendar TradingCalendar) (*TradeResp, error) {
 	return c.queryClient().GetHistoryTradeFull(code, calendar)
 }
 
-func (c *MarketClient) GetTradeAll(code string) (*MarketTradeResp, error) {
+func (c *MarketClient) GetTradeAll(code string) (*TradeResp, error) {
 	return c.tradeAll("", code)
 }
-func (c *MarketClient) GetHistoryTradeDay(date, code string) (*MarketTradeResp, error) {
+func (c *MarketClient) GetHistoryTradeDay(date, code string) (*TradeResp, error) {
 	if _, err := parseMarketDate(date); err != nil {
 		return nil, err
 	}
 	return c.tradeAll(date, code)
 }
 
-func (c *MarketClient) tradeAll(date, code string) (*MarketTradeResp, error) {
+func (c *MarketClient) tradeAll(date, code string) (*TradeResp, error) {
 	size := 1800
 	if date != "" {
 		size = 2000
 	}
-	var out *MarketTradeResp
+	var out *TradeResp
 	for start := 0; start <= 65535; start += size {
 		r, err := c.getTrade(date, code, uint16(start), uint16(size), start == 0)
 		if err != nil {
@@ -49,7 +49,7 @@ func (c *MarketClient) tradeAll(date, code string) (*MarketTradeResp, error) {
 			return nil, errors.New("分笔响应数量超过请求数量")
 		}
 		if out == nil {
-			out = &MarketTradeResp{Instrument: r.Instrument, Date: r.Date, VolumeUnit: r.VolumeUnit}
+			out = &TradeResp{Instrument: r.Instrument, Date: r.Date, VolumeUnit: r.VolumeUnit}
 		}
 		out.List = append(r.List, out.List...)
 		out.Count = len(out.List)
@@ -60,12 +60,12 @@ func (c *MarketClient) tradeAll(date, code string) (*MarketTradeResp, error) {
 	return nil, errors.New("分笔分页偏移超过协议 uint16 上限，历史未完整读取")
 }
 
-func (c *MarketClient) GetHistoryTradeFull(code string, calendar TradingCalendar) (*MarketTradeResp, error) {
+func (c *MarketClient) GetHistoryTradeFull(code string, calendar TradingCalendar) (*TradeResp, error) {
 	return c.GetHistoryTradeBefore(code, calendar, time.Now())
 }
 
 // GetHistoryTradeBefore 按给定日历获取最早可用月线所在月份起的整日分笔；before 沿用日历的结束边界。
-func (c *MarketClient) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*MarketTradeResp, error) {
+func (c *MarketClient) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*TradeResp, error) {
 	if calendar == nil {
 		return nil, errors.New("交易日历不能为空")
 	}
@@ -79,7 +79,7 @@ func (c *MarketClient) GetHistoryTradeBefore(code string, calendar TradingCalend
 	if err != nil {
 		return nil, err
 	}
-	out := &MarketTradeResp{Instrument: r.Instrument, VolumeUnit: VolumeUnknown, List: []MarketTrade{}}
+	out := &TradeResp{Instrument: r.Instrument, VolumeUnit: VolumeUnknown, List: []Trade{}}
 	if r.Count == 0 {
 		return out, nil
 	}
@@ -89,7 +89,7 @@ func (c *MarketClient) GetHistoryTradeBefore(code string, calendar TradingCalend
 	}
 	start := time.Date(first.Year(), first.Month(), 1, 0, 0, 0, 0, before.Location())
 	calendar.Range(start, before, func(day time.Time) bool {
-		var trades *MarketTradeResp
+		var trades *TradeResp
 		for retry := 0; retry < 3; retry++ {
 			trades, err = c.GetHistoryTradeDay(day.Format("20060102"), code)
 			if err == nil {

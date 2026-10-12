@@ -7,7 +7,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func (c *MarketClient) GetKlineMinute241Until(code string, stop func(MarketKline) bool) (*MarketKlineResp, error) {
+func (c *MarketClient) GetKlineMinute241Until(code string, stop func(Kline) bool) (*KlineResp, error) {
 	i, info, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
@@ -22,11 +22,11 @@ func (c *MarketClient) GetKlineMinute241Until(code string, stop func(MarketKline
 	if len(resp.List) == 0 {
 		return resp, nil
 	}
-	ks := []MarketKline{}
+	ks := []Kline{}
 	for _, record := range resp.List {
 		v := record.Standard
 		if v.Time.Format(time.TimeOnly) == "09:31:00" {
-			var tr *MarketTradeResp
+			var tr *TradeResp
 			if v.Time.Format(time.DateOnly) == time.Now().Format(time.DateOnly) {
 				tr, err = c.GetTradeAll(code)
 			} else {

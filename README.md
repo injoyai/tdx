@@ -58,7 +58,7 @@ if err != nil { panic(err) }
 _ = a; _ = h; _ = f
 ```
 
-`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](example/UnifiedClient/main.go)。`Dial*` 返回单连接 `*Conn`，同样实现 `Client`；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
+`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StandardClient` / `ExtendedClient`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](example/UnifiedClient/main.go)。`Dial*` 返回单连接 `*Conn`，同样实现 `Client`；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
 

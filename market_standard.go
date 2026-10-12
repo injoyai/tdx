@@ -6,13 +6,13 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func standardKline(k *protocol.Kline) MarketKline {
+func standardKline(k *protocol.Kline) Kline {
 	amount := k.Amount.Float64()
-	return MarketKline{Time: k.Time.Format("2006-01-02 15:04"), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
+	return Kline{Time: k.Time.Format("2006-01-02 15:04"), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
 // StandardResponse 供标准指标、复权和旧 HTTP 数据契约使用，不换算扩展数据。
-func (r *MarketKlineResp) StandardResponse() (*protocol.KlineResp, error) {
+func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")
 	}
@@ -29,7 +29,7 @@ func (r *MarketKlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	return out, nil
 }
 
-func (r *MarketTradeResp) StandardResponse() (*protocol.TradeResp, error) {
+func (r *TradeResp) StandardResponse() (*protocol.TradeResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展分笔不能转换为标准协议数据")
 	}

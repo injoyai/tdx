@@ -113,8 +113,8 @@ type ExRangeKline struct {
 	SettlementPrice float64 `json:"settlementPrice"`
 }
 
-// ExQuoteListItem 批量行情列表项(期货 category=3 / 港股 category=2)。
-type ExQuoteListItem struct {
+// QuoteListItem 批量行情列表项(期货 category=3 / 港股 category=2)。
+type QuoteListItem struct {
 	Market    uint8      `json:"market"`
 	Code      string     `json:"code"`
 	PreClose  float64    `json:"preClose"` // 昨收/昨结
@@ -596,7 +596,7 @@ func (exHq) FrameQuoteList(market uint8, start, count uint16) *Frame {
 }
 
 // DecodeQuoteList 解析批量行情列表(仅支持期货 cat3 / 港股 cat2)。每项 300 字节。
-func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]ExQuoteListItem, error) {
+func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]QuoteListItem, error) {
 	if len(bs) < 2 {
 		return nil, io.ErrUnexpectedEOF
 	}
@@ -608,12 +608,12 @@ func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]ExQuoteListItem, e
 	if num > r.remain()/300 {
 		return nil, io.ErrUnexpectedEOF
 	}
-	out := make([]ExQuoteListItem, 0, num)
+	out := make([]QuoteListItem, 0, num)
 	for i := 0; i < num; i++ {
 		market := r.u8()
 		code := exGBK(r.bytes(9))
 		base := r.p // 数据块 140 字节有效,整体步进 290
-		it := ExQuoteListItem{Market: market, Code: code}
+		it := QuoteListItem{Market: market, Code: code}
 		if c.Category == 2 {
 			parseExHK(bs, base, &it)
 		} else {
@@ -626,7 +626,7 @@ func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]ExQuoteListItem, e
 }
 
 // parseExHK 港股批量行情块(140 字节)。
-func parseExHK(bs []byte, p int, it *ExQuoteListItem) {
+func parseExHK(bs []byte, p int, it *QuoteListItem) {
 	if p+140 > len(bs) {
 		return
 	}
@@ -660,7 +660,7 @@ func parseExHK(bs []byte, p int, it *ExQuoteListItem) {
 }
 
 // parseExFutures 期货批量行情块(140 字节)。
-func parseExFutures(bs []byte, p int, it *ExQuoteListItem) {
+func parseExFutures(bs []byte, p int, it *QuoteListItem) {
 	if p+140 > len(bs) {
 		return
 	}

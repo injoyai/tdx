@@ -125,7 +125,7 @@ func TestStandardLive(t *testing.T) {
 	}
 	t.Logf("60 minute count=%d", hour.Count)
 	for _, historical := range []bool{false, true} {
-		var trades *MarketTradeResp
+		var trades *TradeResp
 		if historical {
 			trades, err = c.GetHistoryTrade(date, "sz000001", 0, 5)
 		} else {

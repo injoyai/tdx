@@ -85,7 +85,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 				}
 				return testStandardBar(index)
 			})
-			for _, fn := range []func(string, uint16, uint16) (*MarketKlineResp, error){c.GetKline5Minute, c.GetKline15Minute, c.GetKline30Minute, c.GetKline60Minute, c.GetKlineDay, c.GetKlineWeek, c.GetKlineMonth, c.GetKlineQuarter, c.GetKlineYear} {
+			for _, fn := range []func(string, uint16, uint16) (*KlineResp, error){c.GetKline5Minute, c.GetKline15Minute, c.GetKline30Minute, c.GetKline60Minute, c.GetKlineDay, c.GetKlineWeek, c.GetKlineMonth, c.GetKlineQuarter, c.GetKlineYear} {
 				r, err := fn(code, 0, 1)
 				if err != nil || r.Count != 1 {
 					t.Fatal(r, err)
@@ -94,7 +94,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 					t.Fatal("index decoder was not selected", r)
 				}
 			}
-			for _, fn := range []func(string) (*MarketKlineResp, error){c.GetKline5MinuteAll, c.GetKline15MinuteAll, c.GetKline30MinuteAll, c.GetKline60MinuteAll, c.GetKlineDayAll, c.GetKlineWeekAll, c.GetKlineMonthAll, c.GetKlineQuarterAll, c.GetKlineYearAll} {
+			for _, fn := range []func(string) (*KlineResp, error){c.GetKline5MinuteAll, c.GetKline15MinuteAll, c.GetKline30MinuteAll, c.GetKline60MinuteAll, c.GetKlineDayAll, c.GetKlineWeekAll, c.GetKlineMonthAll, c.GetKlineQuarterAll, c.GetKlineYearAll} {
 				r, err := fn(code)
 				if err != nil || r.Count != 1 {
 					t.Fatal(r, err)
@@ -259,7 +259,7 @@ func TestUnifiedTradePaging(t *testing.T) {
 				if extended {
 					code = "hk00700"
 				}
-				var r *MarketTradeResp
+				var r *TradeResp
 				var err error
 				if historical {
 					r, err = c.GetHistoryTradeDay("20261009", code)
@@ -367,7 +367,7 @@ func TestUnifiedAuctionMinute(t *testing.T) {
 		}
 		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0} // 历史9:25成交1手、10元。
 	})
-	r, err := c.GetKlineMinute241Until("sz000001", func(MarketKline) bool { return false })
+	r, err := c.GetKlineMinute241Until("sz000001", func(Kline) bool { return false })
 	if err != nil || r.Count != 2 || r.List[0].Time != "2026-10-09 09:30" || r.List[0].Volume != 1 || r.List[1].Volume != 0 || r.List[1].Standard.Last != 10000 {
 		t.Fatal("auction split changed", r, err)
 	}
@@ -376,7 +376,7 @@ func TestUnifiedAuctionMinute(t *testing.T) {
 	}
 	before := c.Info.WriteCount
 	for _, code := range []string{"hk00700", "sh000001", "sz123126"} {
-		if _, err = c.GetKlineMinute241Until(code, func(MarketKline) bool { return false }); err == nil || c.Info.WriteCount != before {
+		if _, err = c.GetKlineMinute241Until(code, func(Kline) bool { return false }); err == nil || c.Info.WriteCount != before {
 			t.Fatal("unsupported auction sent request", code, err)
 		}
 	}

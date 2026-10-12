@@ -1,6 +1,6 @@
 # 统一行情 Client
 
-`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组 `Market*` 结果类型。原单连接结构体改名 `*tdx.Conn`，同样实现业务接口，原有 `Dial*` 与连接池继续使用；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和 `Market*` 返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
+`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组统一结果类型。原单连接结构体改名 `*tdx.Conn`，同样实现业务接口，原有 `Dial*` 与连接池继续使用；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和统一返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
 
 ## 使用
 
@@ -26,7 +26,30 @@ for _, q := range quotes {
 
 构造不联网，因此没有构造错误返回值；首次访问某类协议时建连，连接错误由查询方法返回。两类协议各复用一条连接，默认服务器和重连策略沿用 `DialDefault`/`DialExHqDefault`；`client.Option` 同时应用于两类连接。可并发查询；`SetTimeout` 覆盖当前和未来连接，默认仍为标准 2 秒、扩展 10 秒。`Close` 先释放已建立的连接，再等待正在进行的建连结束并释放晚到的连接，允许重复/并发调用，关闭后不会重新建连。两类连接各自控制初始化；一类建连变慢不会阻塞另一类查询或 `SetTimeout`。`Close` 仍需等待已有建连尝试结束，请求超时不控制建连时长。必须通过构造函数使用，零值不用于查询。
 
-ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该业务对象的内存中，不依赖 `DefaultCodes`、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
+ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StandardClient` 实现中，不依赖 `DefaultCodes`、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
+
+## 协议实现
+
+`StandardClient`、`ExtendedClient` 分别实现 `Client`，处理各自的协议请求和统一结果转换。`MarketClient` 通过同一接口选择两者；混合报价仍保持原输入顺序，标准品种合并请求、扩展品种逐个请求。分页、停止条件、历史交易日期检查共用既有查询流程。
+
+两个具体实现嵌入 `*Conn`，复用 TCP 收发、请求关联、超时和关闭/重连生命周期；`Dial*` 仍在建立连接时选择对应的握手、心跳及默认超时。`Conn` 的业务方法通过该连接固定的协议实现执行，不建立另一类连接；原始 `SendFrame` 和连接池入口保持不变。
+
+通常只需 `NewClient()`。需要显式使用单协议实现时，可包装现有连接：
+
+```go
+conn, err := tdx.DialDefault(tdx.WithRedial(false))
+if err != nil { return err }
+standard, err := tdx.NewStandardClient(conn)
+if err != nil { conn.Close(); return err }
+var c tdx.Client = standard
+defer c.Close()
+quotes, err := c.GetQuote("sz000001")
+_ = quotes; _ = err
+```
+
+扩展连接对应 `DialExHqDefault()` 和 `NewExtendedClient(conn)`。两个包装构造函数拒绝 nil 或协议不匹配的连接，不重新联网；重复包装同一连接返回同一个实现。关闭或修改超时会作用于原连接，不能把包装对象当作独立连接使用。通过构造函数创建实现，零值不用于查询。
+
+标准客户端不支持扩展证券和行情分页列表；扩展客户端不支持标准证券及财务、F10、除权、板块、报表等标准专用接口，均在发送前报错。实现同一接口不代表服务器的数据能力相同。
 
 ## 代码与市场
 
@@ -50,18 +73,18 @@ ETF、可转债等标准报价需要价格精度元数据时，使用同一连�
 
 | 方法 | 返回 |
 |---|---|
-| `GetQuote(codes...)` | `[]MarketQuote` |
-| `GetQuoteList(market, category, start, count)` | `[]protocol.ExQuoteListItem`，扩展市场分页列表 |
-| `GetKline(category, code, start, count)` | `*MarketKlineResp` |
-| `GetKlineMinute/5Minute/15Minute/30Minute/60Minute/Day/Week/Month/Quarter/Year` | `*MarketKlineResp` |
-| `GetKlineAll/GetKlineUntil`，以及全部周期便捷方法的 `All/Until` | `*MarketKlineResp` |
-| `GetKlineRange(code, startDate, endDate)`、`GetKlineMinute241Until(code, stop)` | `*MarketKlineResp` |
-| `GetMinute(code)`、`GetHistoryMinute(date, code)` | `*MarketMinuteResp` |
-| `GetTrade(code, start, count)`、`GetHistoryTrade(date, code, start, count)` | `*MarketTradeResp` |
-| `GetTradeAll/GetHistoryTradeDay/GetHistoryTradeBefore/GetHistoryTradeFull` | `*MarketTradeResp` |
-| `GetCode(exchange, start, count)`、`GetCodeAll(exchange)` | `*MarketCodeResp` |
+| `GetQuote(codes...)` | `[]Quote` |
+| `GetQuoteList(market, category, start, count)` | `[]protocol.QuoteListItem`，仅扩展市场 |
+| `GetKline(category, code, start, count)` | `*KlineResp` |
+| `GetKlineMinute/5Minute/15Minute/30Minute/60Minute/Day/Week/Month/Quarter/Year` | `*KlineResp` |
+| `GetKlineAll/GetKlineUntil`，以及全部周期便捷方法的 `All/Until` | `*KlineResp` |
+| `GetKlineRange(code, startDate, endDate)`、`GetKlineMinute241Until(code, stop)` | `*KlineResp` |
+| `GetMinute(code)`、`GetHistoryMinute(date, code)` | `*MinuteResp` |
+| `GetTrade(code, start, count)`、`GetHistoryTrade(date, code, start, count)` | `*TradeResp` |
+| `GetTradeAll/GetHistoryTradeDay/GetHistoryTradeBefore/GetHistoryTradeFull` | `*TradeResp` |
+| `GetCode(exchange, start, count)`、`GetCodeAll(exchange)` | `*CodeResp` |
 | `GetCount(exchange)` | `int`，指定市场数量 |
-| `GetMarkets()` | `[]MarketExchange`，市场发现结果 |
+| `GetMarkets()` | `[]Exchange`，市场发现结果 |
 
 日期为有效 `YYYYMMDD`。K 线单次数量 1..800，实时/历史分笔单次数量分别为 1..1800/1..2000。K 线周期使用既有 `protocol.TypeKline*` 常量；`Day/Day2` 和 `Minute/Minute2` 在业务入口分别视作日线、一分钟别名，实际周期按市场配置映射，记录在返回的 `Category` 中。其他周期沿用协议编号，能否取得数据取决于服务器，不能把成功路由视为每个市场/周期已经通过实盘验证。
 
@@ -73,7 +96,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 代码分页 `start` 为 `uint32`，表示指定市场内偏移，`count` 为 `uint16`，有效范围 1..1000。标准沪深协议每次最多 1000 项，按请求数量截取；沪深偏移超过 65535 提前报错。扩展品种按全局序号分页，再按 `Exchange` 过滤，分页偏移作用于过滤后的列表；统一 `GetCount` 返回指定市场数量，因此扩展数量和分页查询均会扫描全局列表，暂不引入跨查询缓存。超出列表的页返回空列表。北交所沿用 `zhb.zip/tdxbjmore.cfg`，可能包括已分配未上市代码。列表不自动推断美股的股票/ETF/指数类别。
 
-`GetMarkets` 的 `MarketExchange` 包含协议市场编号 `Market`、名称、简称和 `Protocol`；扩展原始分类等字段保留在 `Extended`。标准单连接返回内置沪深北，扩展单连接返回服务器市场表；跨市场入口合并两者，只需建立扩展连接，发现失败不返回部分结果。发现市场不意味着对应行情路由已接入。旧扩展全局计数和全局列表分页可使用 `SendFrame` 与 `protocol.MEx.FrameCount/FrameInstrument`，历史 HTTP 接口及 pull 共用快照保持原语义。
+`GetMarkets` 的 `Exchange` 包含协议市场编号 `Market`、名称、简称和 `Protocol`；扩展原始分类等字段保留在 `Extended`。标准单连接返回内置沪深北，扩展单连接返回服务器市场表；跨市场入口合并两者，只需建立扩展连接，发现失败不返回部分结果。发现市场不意味着对应行情路由已接入。旧扩展全局计数和全局列表分页可使用 `SendFrame` 与 `protocol.MEx.FrameCount/FrameInstrument`，历史 HTTP 接口及 pull 共用快照保持原语义。
 
 `GetKlineRange` 固定查询一分钟区间，日期包含两端；扩展使用原固定周期 7 的区间协议（不映射为普通扩展分钟周期 8），结果原字段保留在 `RangeExtended`，量单位和金额仍保持未确认。标准通过分页筛选，超出偏移上限报错。服务器可能限制历史可用范围；请求成功不保证长期完整覆盖。`GetKlineMinute241Until` 保留标准股票/ETF 集合竞价拆分，其他品种报错，不套用 241 根的交易时段。
 
@@ -90,7 +113,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
 - K 线 `Time` 为源数据墙上时间 `YYYY-MM-DD HH:MM`，分时/分笔为 `HH:MM`/`HH:MM:SS`。不生成 UTC 时间戳，不猜测美股时区、夜盘自然日或交易日；历史返回 `Date` 为请求日期，当日查询 `Date` 为空。标准当日分时仍沿用底层按运行环境当前日期请求历史分时的行为。
 
-`Dial*` 返回的单连接 `Conn` 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `MarketKline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。`Market*` 结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
+`Dial*` 返回的单连接 `Conn` 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `Kline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。统一结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
 
 ## 验证
 

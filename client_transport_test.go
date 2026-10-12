@@ -235,7 +235,7 @@ func TestTradePaginationOverflow(t *testing.T) {
 				}
 				return out
 			})
-			var r *MarketTradeResp
+			var r *TradeResp
 			var err error
 			if historical {
 				r, err = c.GetHistoryTradeDay("20250102", "sz000001")
@@ -422,7 +422,7 @@ func TestOtherPaginationLimits(t *testing.T) {
 				_, err = c.GetKlineAll(protocol.TypeKlineDay, "sz000001")
 			case "until":
 				seen := 0
-				r, e := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(MarketKline) bool {
+				r, e := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(Kline) bool {
 					seen++
 					return seen == 65535
 				})

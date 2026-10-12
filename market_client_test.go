@@ -403,7 +403,7 @@ func TestMarketClientKlinePagination(t *testing.T) {
 		}
 		return data
 	})
-	r, err := c.GetKlineUntil(9, "hk00700", func(k MarketKline) bool { return k.Volume == 199 })
+	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 199 })
 	if err != nil || r.Count != 801 || r.List[0].Volume != 199 || r.List[800].Volume != 999 || calls.Load() != 2 {
 		t.Fatal("pagination order/inclusive boundary changed", r, err)
 	}

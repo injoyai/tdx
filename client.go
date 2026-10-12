@@ -134,6 +134,7 @@ type Conn struct {
 	extended       bool
 	queryOnce      sync.Once
 	queries        *MarketClient
+	implementation protocolClient
 	*client.Client              //客户端实例
 	ios.MoreWriter              // 稳定写入口，重连只替换内部连接快照。
 	Wait           *wait.Entity //内部响应关联；请求超时通过 SetTimeout 配置

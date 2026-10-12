@@ -144,7 +144,7 @@ func (s *Server) handleExQuoteList(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp []protocol.ExQuoteListItem
+	var resp []protocol.QuoteListItem
 	err = s.exPool.Do(func(c *tdx.Conn) error {
 		resp, err = c.GetQuoteList(market, category, start, count)
 		return err

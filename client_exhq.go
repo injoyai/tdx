@@ -73,7 +73,7 @@ func (this *Conn) getExtendedQuote(market uint8, code string) (*protocol.ExQuote
 }
 
 // GetQuoteList 批量行情列表(category 2=港股 3=期货)。
-func (this *Conn) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.ExQuoteListItem, error) {
+func (this *Conn) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
 	if !this.extended {
 		return nil, errors.New("市场行情列表需要扩展连接")
 	}
@@ -81,7 +81,15 @@ func (this *Conn) GetQuoteList(market, category uint8, start, count uint16) ([]p
 	if err != nil {
 		return nil, err
 	}
-	return r.([]protocol.ExQuoteListItem), nil
+	return r.([]protocol.QuoteListItem), nil
+}
+
+// GetQuoteList 获取扩展市场分页报价，保留原始字段和单位。
+func (c *ExtendedClient) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
+	if err := c.protocolExchange(protocol.Exchange(market), true); err != nil {
+		return nil, err
+	}
+	return c.Conn.GetQuoteList(market, category, start, count)
 }
 
 // getExtendedKline K线(category 同标准 KLINE 类型)。

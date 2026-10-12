@@ -81,9 +81,9 @@ func (u *stdUnit) dayUntil(c *tdx.Conn, code string, f func(k *protocol.Kline) b
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	var resp *tdx.MarketKlineResp
+	var resp *tdx.KlineResp
 	var err error
-	resp, err = c.GetKlineUntil(info.Day.Category, code, func(k tdx.MarketKline) bool { return f(k.Standard) })
+	resp, err = c.GetKlineUntil(info.Day.Category, code, func(k tdx.Kline) bool { return f(k.Standard) })
 	if err != nil {
 		return nil, err
 	}
@@ -110,12 +110,12 @@ func (u *stdUnit) minUntil(c *tdx.Conn, code string, f func(k *protocol.Kline) b
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	var resp *tdx.MarketKlineResp
+	var resp *tdx.KlineResp
 	var err error
 	if info.Kind == protocol.KindIndex {
-		resp, err = c.GetKlineUntil(info.Minute.Category, code, func(k tdx.MarketKline) bool { return f(k.Standard) })
+		resp, err = c.GetKlineUntil(info.Minute.Category, code, func(k tdx.Kline) bool { return f(k.Standard) })
 	} else {
-		resp, err = c.GetKlineMinute241Until(code, func(k tdx.MarketKline) bool { return f(k.Standard) })
+		resp, err = c.GetKlineMinute241Until(code, func(k tdx.Kline) bool { return f(k.Standard) })
 	}
 	if err != nil {
 		return nil, err

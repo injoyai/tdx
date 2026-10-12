@@ -61,7 +61,7 @@ func TestHistoryTradeRequiresDailyKline(t *testing.T) {
 					if extended {
 						code = "hk00700"
 					}
-					var r *MarketTradeResp
+					var r *TradeResp
 					var err error
 					if wholeDay {
 						r, err = c.GetHistoryTradeDay("20261009", code)

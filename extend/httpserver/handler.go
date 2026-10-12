@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func standardCodePayload(r *tdx.MarketCodeResp) *protocol.CodeResp {
+func standardCodePayload(r *tdx.CodeResp) *protocol.CodeResp {
 	out := &protocol.CodeResp{Count: uint16(r.Count)}
 	for _, k := range r.List {
 		out.List = append(out.List, k.Standard)

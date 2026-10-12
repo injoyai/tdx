@@ -11,7 +11,7 @@ import (
 func main() {
 	common.Test(func(c tdx.Client) {
 		{
-			result, err := c.GetKlineMinute241Until("sz000001", func(record tdx.MarketKline) bool {
+			result, err := c.GetKlineMinute241Until("sz000001", func(record tdx.Kline) bool {
 				k := record.Standard
 				return k.Time.Format("20060102") < "20251222"
 			})
@@ -28,7 +28,7 @@ func main() {
 		}
 
 		{
-			result, err := c.GetKlineMinuteUntil("sz000001", func(record tdx.MarketKline) bool {
+			result, err := c.GetKlineMinuteUntil("sz000001", func(record tdx.Kline) bool {
 				k := record.Standard
 				return k.Time.Format("20060102") < "20251222"
 			})

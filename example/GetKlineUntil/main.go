@@ -12,7 +12,7 @@ import (
 func main() {
 	common.Test(func(c tdx.Client) {
 		old := time.Now().Add(-time.Hour * 24 * 17)
-		result, err := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(record tdx.MarketKline) bool {
+		result, err := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(record tdx.Kline) bool {
 			k := record.Standard
 			return k.Time.Sub(old) < 0
 		})
