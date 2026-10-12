@@ -61,3 +61,6 @@
 - `minline/` 目录只有 `.lc1`(1分钟)；5分钟 `.lc5` 实际存放在 `fzline/` 目录。
 - **分钟线拉取/生成工具**：`example/FetchLC1ForTest/main.go` 实时拉取股票/指数 1分钟与5分钟K线，用 `WriteMinute` 生成 `.lc1/.lc5`，输出统一放 `./output/lc1/vipdoc/<sh|sz>/<minline|fzline>/`（供客户端导入测试，需手动复制到通达信 `vipdoc` 目录）。指数分钟线用 `GetIndexAll(TypeKlineMinute/5Minute)`，股票用 `GetKlineMinuteAll`/`GetKline5MinuteAll`。
 - zhb.zip 盘后包内含 46 个配置（tdxstat/tdxstat2/tdxbjmore/tdxhy/tdxzs/tdxbk/gbbq 等），GBK 文本，解析需 `UTF8ToGBK`。
+
+### 逐笔成交交易时间
+- `MTrade.Decode` 与 `MHistoryTrade.Decode` 返回的日期和分钟均按中国市场当地时间（UTC+08:00）解释，不能默认解释为 UTC，也不能依赖宿主机 `TZ`；相应回归测试位于 `protocol/model_trade_timezone_test.go`。

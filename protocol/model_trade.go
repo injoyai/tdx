@@ -9,6 +9,10 @@ import (
 	"github.com/injoyai/conv"
 )
 
+// TDX intraday trade records encode China-market wall-clock minutes without a zone.
+// Their available history is post-1991, when mainland trading time is UTC+08:00.
+var tradeMarketLocation = time.FixedZone("CST", 8*60*60)
+
 type TradeResp struct {
 	Count uint16
 	List  Trades
@@ -97,7 +101,7 @@ func (trade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 	lastPrice := Price(0)
 	for i := uint16(0); i < resp.Count; i++ {
 		timeStr := GetHourMinute([2]byte(bs[:2]))
-		t, err := time.Parse("2006010215:04", c.Date+timeStr)
+		t, err := time.ParseInLocation("2006010215:04", c.Date+timeStr, tradeMarketLocation)
 		if err != nil {
 			return nil, err
 		}

@@ -44,7 +44,7 @@ func (historyTrade) Decode(bs []byte, c TradeCache) (*TradeResp, error) {
 	lastPrice := Price(0)
 	for i := uint16(0); i < resp.Count; i++ {
 		timeStr := GetHourMinute([2]byte(bs[:2]))
-		t, err := time.Parse("2006010215:04", c.Date+timeStr)
+		t, err := time.ParseInLocation("2006010215:04", c.Date+timeStr, tradeMarketLocation)
 		if err != nil {
 			return nil, err
 		}
