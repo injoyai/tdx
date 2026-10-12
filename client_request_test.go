@@ -23,7 +23,7 @@ func (w frameTestWriter) Write(data []byte) (int, error) { return w(data) }
 func TestSendFrameLifecycle(t *testing.T) {
 	for _, mode := range []string{"immediate", "timeout", "write failure", "short write"} {
 		t.Run(mode, func(t *testing.T) {
-			c := &Conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+			c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 			c.SetTimeout(10 * time.Millisecond)
 			c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
 				if mode == "write failure" {
@@ -73,7 +73,7 @@ func TestSendFrameLifecycle(t *testing.T) {
 }
 
 func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
-	c := &Conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+	c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 	c.SetTimeout(time.Second)
 	writer := ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
 		id := binary.LittleEndian.Uint32(data[1:5])
@@ -101,7 +101,7 @@ func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
 }
 
 func TestSendFrameTimeoutWithBlockedWriter(t *testing.T) {
-	c := &Conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+	c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 	c.SetTimeout(20 * time.Millisecond)
 	release := make(chan struct{})
 	started := make(chan struct{})

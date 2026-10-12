@@ -8,10 +8,9 @@ import (
 )
 
 // Client 定义标准与扩展行情共用的业务接口。
-// NewClient 返回按市场按需建连的 MarketClient；Dial* 返回绑定单种协议的 Conn，
+// NewClient 返回按市场按需建连的 MarketClient；Dial* 分别返回绑定单种协议的 StConn / ExConn，
 // 查询与该连接协议不匹配的品种会报错，不会自动建立另一类连接。
-// StandardClient 和 ExtendedClient 分别实现对应协议业务，复用同一 Conn 的生命周期；
-// 可用 NewStandardClient/NewExtendedClient 包装现有连接，也可继续直接使用 Conn。
+// StConn 和 ExConn 直接实现对应协议业务，内部 conn 只负责传输和生命周期。
 //
 // code 推荐使用带市场前缀的证券代码，如 sh600000、hk00700、usAAPL、cffIF2609；
 // 显式传入 exchange 的方法使用该市场的代码主体。date 使用有效 YYYYMMDD。
@@ -133,7 +132,7 @@ type Client interface {
 	GetKlineYearAll(code string) (*KlineResp, error)
 	// GetKlineYearUntil 读取年 K 线至 stop 命中，包含命中记录，语义同 GetKlineUntil。
 	GetKlineYearUntil(code string, stop func(Kline) bool) (*KlineResp, error)
-	// GetMarkets 获取市场表；MarketClient 合并标准内置市场和扩展发现结果，Conn 仅返回对应协议市场。
+	// GetMarkets 获取市场表；MarketClient 合并标准内置市场和扩展发现结果，单协议连接仅返回对应协议市场。
 	// 发现市场不代表该市场已支持统一行情查询，扩展发现失败时返回错误。
 	GetMarkets() ([]Exchange, error)
 	// GetMinute 获取当日分时数据；时间保留源数据，不推断夜盘所属日期。
@@ -171,10 +170,9 @@ type Client interface {
 	SetTimeout(t time.Duration)
 }
 
-var _ Client = (*Conn)(nil)
 var _ Client = (*MarketClient)(nil)
-var _ protocolClient = (*StandardClient)(nil)
-var _ protocolClient = (*ExtendedClient)(nil)
+var _ protocolClient = (*StConn)(nil)
+var _ protocolClient = (*ExConn)(nil)
 
 // 保留旧指针参数传 nil 的行为，避免接口包装空指针后被当成有效客户端。
 func clientOrNil(c Client) Client {

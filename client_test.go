@@ -20,7 +20,7 @@ func marketTestClient(t *testing.T, std, ex func([]byte, []byte) []byte) *Market
 	c := newMarketClient()
 	for j, serve := range []func([]byte, []byte) []byte{std, ex} {
 		index, respond := j, serve
-		c.dial[index] = func() (*Conn, error) {
+		c.dial[index] = func() (protocolClient, error) {
 			if respond == nil {
 				t.Error("unexpected connection")
 				return nil, errors.New("unexpected connection")
@@ -259,8 +259,8 @@ func TestMarketClientLazyLifecycleAndFailures(t *testing.T) {
 	c := newMarketClient()
 	var dials atomic.Int32
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{5, 0} })
-	c.dial[0] = func() (*Conn, error) { dials.Add(1); return std, nil }
-	c.dial[1] = func() (*Conn, error) {
+	c.dial[0] = func() (protocolClient, error) { dials.Add(1); return std, nil }
+	c.dial[1] = func() (protocolClient, error) {
 		t.Error("unused extended protocol was connected")
 		return nil, io.ErrClosedPipe
 	}
@@ -355,8 +355,8 @@ func TestMarketClientMinuteCategories(t *testing.T) {
 func TestMarketClientDialFailureDoesNotPoisonOtherProtocol(t *testing.T) {
 	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
-	c.dial[0] = func() (*Conn, error) { return std, nil }
-	c.dial[1] = func() (*Conn, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func() (protocolClient, error) { return std, nil }
+	c.dial[1] = func() (protocolClient, error) { return nil, io.ErrClosedPipe }
 	defer c.Close()
 	if _, err := c.GetKlineDay("hk00700", 0, 1); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal(err)
@@ -406,5 +406,246 @@ func TestMarketClientKlinePagination(t *testing.T) {
 	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 199 })
 	if err != nil || r.Count != 801 || r.List[0].Volume != 199 || r.List[800].Volume != 999 || calls.Load() != 2 {
 		t.Fatal("pagination order/inclusive boundary changed", r, err)
+	}
+}
+
+func TestMarketClientSlowDialKeepsOtherProtocolUsable(t *testing.T) {
+	c := newMarketClient()
+	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
+	c.dial[0] = func() (protocolClient, error) { return std, nil }
+	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	dialDone := make(chan error, 1)
+	c.dial[1] = func() (protocolClient, error) {
+		close(started)
+		<-release
+		return nil, io.ErrClosedPipe
+	}
+	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
+	<-started
+	t.Cleanup(func() { close(release); <-dialDone; c.Close() })
+	queryDone := make(chan error, 1)
+	go func() { _, err := c.GetCount(protocol.ExchangeSZ); queryDone <- err }()
+	select {
+	case err := <-queryDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("slow extended dial blocked the existing standard connection")
+	}
+	setDone := make(chan struct{})
+	go func() { c.SetTimeout(3 * time.Second); close(setDone) }()
+	select {
+	case <-setDone:
+	case <-time.After(time.Second):
+		t.Fatal("slow extended dial blocked SetTimeout")
+	}
+}
+
+func TestMarketClientCloseDuringDialDiscardsLateConnection(t *testing.T) {
+	c := newMarketClient()
+	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
+	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
+	c.dial[0] = func() (protocolClient, error) { return std, nil }
+	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	dialDone := make(chan error, 1)
+	c.dial[1] = func() (protocolClient, error) { close(started); <-release; return ex, nil }
+	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
+	<-started
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- c.Close() }()
+	var released sync.Once
+	releaseDial := func() { released.Do(func() { close(release) }) }
+	t.Cleanup(func() { releaseDial(); c.Close() })
+	select {
+	case <-std.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Close did not release the existing connection during a slow dial")
+	}
+	select {
+	case <-closeDone:
+		t.Fatal("Close returned before the pending dial could be cleaned up")
+	default:
+	}
+	releaseDial()
+	if err := <-dialDone; !errors.Is(err, net.ErrClosed) {
+		t.Fatal("late connection was published", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ex.Done():
+	default:
+		t.Fatal("late connection leaked")
+	}
+	if c.links[1] != nil {
+		t.Fatal("closed facade retained the late connection")
+	}
+}
+
+func TestMarketClientTimeoutChangedDuringDial(t *testing.T) {
+	c := newMarketClient()
+	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
+	started, release := make(chan struct{}), make(chan struct{})
+	c.dial[1] = func() (protocolClient, error) { close(started); <-release; return ex, nil }
+	dialDone := make(chan error, 1)
+	go func() { _, err := c.connection(protocol.ExchangeHK); dialDone <- err }()
+	<-started
+	var released sync.Once
+	releaseDial := func() { released.Do(func() { close(release) }) }
+	t.Cleanup(func() { releaseDial(); c.Close() })
+	setDone := make(chan struct{})
+	go func() { c.SetTimeout(3 * time.Second); close(setDone) }()
+	select {
+	case <-setDone:
+	case <-time.After(time.Second):
+		t.Fatal("SetTimeout blocked during dial")
+	}
+	releaseDial()
+	if err := <-dialDone; err != nil {
+		t.Fatal(err)
+	}
+	if ex.waitTimeout != 3*time.Second {
+		t.Fatal("new connection lost the latest timeout", ex.waitTimeout)
+	}
+}
+
+func TestMarketClientCloseDuringTypedNilDial(t *testing.T) {
+	c := newMarketClient()
+	started, release := make(chan struct{}), make(chan struct{})
+	c.dial[0] = func() (protocolClient, error) {
+		close(started)
+		<-release
+		return (*StConn)(nil), nil
+	}
+	queryDone := make(chan error, 1)
+	go func() { _, err := c.GetCount(protocol.ExchangeSZ); queryDone <- err }()
+	<-started
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- c.Close() }()
+	// Wait until Close has marked the facade closed before releasing the dial.
+	for {
+		c.mu.Lock()
+		closed := c.closed
+		c.mu.Unlock()
+		if closed {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+	if err := <-queryDone; !errors.Is(err, net.ErrClosed) {
+		t.Fatal(err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHistoryTradeRequiresDailyKline(t *testing.T) {
+	for _, extended := range []bool{false, true} {
+		for _, wholeDay := range []bool{false, true} {
+			for _, state := range []string{"missing", "older-date", "newer-date", "present", "error"} {
+				name := map[bool]string{false: "standard", true: "extended"}[extended] + "/" + map[bool]string{false: "page", true: "day"}[wholeDay] + "/" + state
+				t.Run(name, func(t *testing.T) {
+					var daily, trades atomic.Int32
+					c := respondingTestClient(t, extended, func(h, b []byte) []byte {
+						typ := binary.LittleEndian.Uint16(h[10:])
+						if typ == protocol.TypeKline || typ == protocol.TypeExBars {
+							daily.Add(1)
+							if state == "error" {
+								return nil
+							}
+							day := uint32(20261009)
+							if state == "older-date" {
+								day = 20261008
+							}
+							if state == "newer-date" {
+								day = 20261010
+							}
+							if extended {
+								if binary.LittleEndian.Uint16(b[10:]) != 4 {
+									t.Error("incorrect extended daily category")
+								}
+								if state == "missing" {
+									return make([]byte, 20)
+								}
+								return testExtendedBar(day)
+							}
+							if b[8] != protocol.TypeKlineDay {
+								t.Error("incorrect standard daily category")
+							}
+							if state == "missing" {
+								return []byte{0, 0}
+							}
+							return completionStandardBars([]uint32{day}, nil, false)
+						}
+						trades.Add(1)
+						if extended {
+							r := make([]byte, 32)
+							binary.LittleEndian.PutUint16(r[14:], 1)
+							binary.LittleEndian.PutUint16(r[16:], 570)
+							return r
+						}
+						return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 0, 0}
+					})
+					code := "sz000001"
+					if extended {
+						code = "hk00700"
+					}
+					var r *TradeResp
+					var err error
+					if wholeDay {
+						r, err = c.GetHistoryTradeDay("20261009", code)
+					} else {
+						r, err = c.GetHistoryTrade("20261009", code, 100, 1)
+					}
+					if state == "error" {
+						if r != nil || err == nil || extended && !errors.Is(err, io.ErrUnexpectedEOF) || daily.Load() != 1 || trades.Load() != 0 {
+							t.Fatal("daily error must prevent trade request", r, err, trades.Load())
+						}
+						return
+					}
+					want := 0
+					if state == "present" {
+						want = 1
+					}
+					instrument, _ := protocol.ParseInstrument(code)
+					if err != nil || r == nil || r.Count != want || len(r.List) != want || r.Date != "20261009" || r.Instrument != instrument || r.VolumeUnit != VolumeUnknown || daily.Load() != 1 || trades.Load() != int32(want) {
+						t.Fatal("daily guard failed", r, err, daily.Load(), trades.Load())
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestHistoryTradeDailyPagination(t *testing.T) {
+	var daily, trades atomic.Int32
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			daily.Add(1)
+			if binary.LittleEndian.Uint16(b[12:]) == 0 {
+				days := make([]uint32, 800)
+				for j := range days {
+					days[j] = 20261010
+				}
+				return completionStandardBars(days, nil, false)
+			}
+			return completionStandardBars([]uint32{20261008, 20261009}, nil, false)
+		}
+		trades.Add(1)
+		return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 0, 0}
+	})
+	r, err := c.GetHistoryTradeDay("20261009", "sz000001")
+	if err != nil || r.Count != 1 || daily.Load() != 2 || trades.Load() != 1 {
+		t.Fatal("daily pagination missed requested date", r, err, daily.Load(), trades.Load())
 	}
 }

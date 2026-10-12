@@ -4,49 +4,28 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func TestProtocolClientConstruction(t *testing.T) {
+func TestProtocolConnOwnership(t *testing.T) {
 	standard := respondingTestClient(t, false, func(_, _ []byte) []byte { return nil })
 	extended := respondingTestClient(t, true, func(_, _ []byte) []byte { return nil })
-	if _, err := NewStandardClient(nil); err == nil {
-		t.Fatal("nil standard connection accepted")
+	std, ok := standard.protocolClient.(*StConn)
+	if !ok || std.transport() != standard.conn || std.queries.source != std {
+		t.Fatal("standard dial did not bind its business implementation")
 	}
-	if _, err := NewExtendedClient(nil); err == nil {
-		t.Fatal("nil extended connection accepted")
+	ex, ok := extended.protocolClient.(*ExConn)
+	if !ok || ex.transport() != extended.conn || ex.queries.source != ex {
+		t.Fatal("extended dial did not bind its business implementation")
 	}
-	if _, err := NewStandardClient(extended); err == nil {
-		t.Fatal("extended connection accepted as standard")
+	for _, core := range []*conn{standard.conn, extended.conn} {
+		if _, ok := any(core).(Client); ok {
+			t.Fatal("transport implements Client")
+		}
 	}
-	if _, err := NewExtendedClient(standard); err == nil {
-		t.Fatal("standard connection accepted as extended")
-	}
-	std, err := NewStandardClient(standard)
-	if err != nil || std.Conn != standard {
-		t.Fatal(std, err)
-	}
-	ex, err := NewExtendedClient(extended)
-	if err != nil || ex.Conn != extended {
-		t.Fatal(ex, err)
-	}
-	var wg sync.WaitGroup
-	for j := 0; j < 8; j++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			a, _ := NewStandardClient(standard)
-			b, _ := NewExtendedClient(extended)
-			if a != std || b != ex {
-				t.Error("connection created duplicate protocol implementations")
-			}
-		}()
-	}
-	wg.Wait()
 }
 
 func TestProtocolClientQueries(t *testing.T) {
@@ -90,12 +69,7 @@ func TestProtocolClientQueries(t *testing.T) {
 					return nil
 				}
 			})
-			var api Client
-			if extended {
-				api, _ = NewExtendedClient(native)
-			} else {
-				api, _ = NewStandardClient(native)
-			}
+			var api Client = native.protocolClient
 			quotes, err := api.GetQuote(code, code)
 			if err != nil || len(quotes) != 2 || quotes[0].Instrument != quotes[1].Instrument {
 				t.Fatal("quote order/duplicates changed", quotes, err)
@@ -148,17 +122,17 @@ func TestMarketClientUsesProtocolImplementations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := std.(*StandardClient); !ok {
+	if _, ok := std.(*testClient); !ok {
 		t.Fatalf("standard route returned %T", std)
 	}
 	ex, err := m.connection(protocol.ExchangeHK)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ex.(*ExtendedClient); !ok {
+	if _, ok := ex.(*testClient); !ok {
 		t.Fatalf("extended route returned %T", ex)
 	}
-	if std != m.links[0].protocolClient() || ex != m.links[1].protocolClient() {
+	if std != m.links[0] || ex != m.links[1] {
 		t.Fatal("facade did not reuse the connection implementation")
 	}
 }
@@ -168,7 +142,7 @@ func TestMarketClientRejectsWrongDialProtocol(t *testing.T) {
 		m := newMarketClient()
 		t.Cleanup(func() { m.Close() })
 		wrong := respondingTestClient(t, true, func(_, _ []byte) []byte { return nil })
-		m.dial[0] = func() (*Conn, error) {
+		m.dial[0] = func() (protocolClient, error) {
 			if empty {
 				return nil, nil
 			}

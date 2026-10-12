@@ -70,7 +70,7 @@ func TestReviewRegressionMetadataSnapshot(t *testing.T) {
 			if err = zw.Close(); err != nil {
 				t.Fatal(err)
 			}
-			c := &Conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+			c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 			c.SetTimeout(time.Second)
 			c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(bs []byte) (int, error) {
 				var r any
@@ -90,7 +90,7 @@ func TestReviewRegressionMetadataSnapshot(t *testing.T) {
 				return len(bs), nil
 			}))
 			c.wrapWriter(c.Client)
-			cs := &Codes{c: c, db: db, updated: updated, updateKey: "codes", CodesBase: NewCodesBase()}
+			cs := &Codes{c: newStConn(c), db: db, updated: updated, updateKey: "codes", CodesBase: NewCodesBase()}
 
 			cs.CodesBase.Update(old)
 			err = cs.Update()
@@ -179,7 +179,7 @@ func TestReviewRegressionManageFailureCleanup(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var closed atomic.Int32
-			p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 1)
+			p, err := NewPool(func() (Client, error) { return poolTestClient(&closed), nil }, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -243,7 +243,7 @@ func TestRangeDialCancelsRetryWait(t *testing.T) {
 
 func TestManagePreservesExternalPoolOnFailure(t *testing.T) {
 	var closed atomic.Int32
-	p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 1)
+	p, err := NewPool(func() (Client, error) { return poolTestClient(&closed), nil }, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

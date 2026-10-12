@@ -33,20 +33,18 @@ func TestDialProtocolDefaults(t *testing.T) {
 				io.Copy(io.Discard, b)
 			}()
 			dial := func(context.Context) (ios.ReadWriteCloser, string, error) { return a, "offline-init", nil }
-			open := DialWith
 			want, timeout := protocol.MConnect.Frame().Bytes(), 2*time.Second
 			if extended {
-				open = dialExHqWith
 				want, timeout = protocol.MEx.FrameSetup().Bytes(), 10*time.Second
 			}
-			c, err := open(dial, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
+			c, err := testDialWith(dial, extended, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
 			if err != nil {
 				a.Close()
 				b.Close()
 				<-done
 				t.Fatal(err)
 			}
-			defer func() { c.CloseAll(); <-done }()
+			defer func() { c.Close(); <-done }()
 			if got := <-frames; !bytes.Equal(got, want) {
 				t.Fatalf("handshake changed: got %x, want %x", got, want)
 			}

@@ -35,7 +35,7 @@ func liveWrite(bs []byte) ([]byte, error) {
 	return bs, nil
 }
 
-func liveTestClient(t *testing.T, ex, redial bool) *Conn {
+func liveTestClient(t *testing.T, ex, redial bool) *testClient {
 	t.Helper()
 	hosts, port, env := Hosts, "7709", "TDX_STD_HOST"
 	if ex {
@@ -82,12 +82,12 @@ func liveTestClient(t *testing.T, ex, redial bool) *Conn {
 			return 0, errors.New("live test stops after failed dial")
 		}
 	}}
-	var c *Conn
+	var c *testClient
 	var err error
 	if ex {
-		c, err = dialExHqWith(dial, op...)
+		c, err = testDialWith(dial, true, op...)
 	} else {
-		c, err = DialWith(dial, op...)
+		c, err = testDialWith(dial, false, op...)
 	}
 	if err != nil {
 		t.Fatal("live dial", err)
@@ -95,7 +95,7 @@ func liveTestClient(t *testing.T, ex, redial bool) *Conn {
 	c.SetTimeout(8 * time.Second)
 	t.Logf("server=%s:%s concurrency=1 write_interval=1s", selected, port)
 	t.Cleanup(func() {
-		c.CloseAll()
+		c.Close()
 		liveLimit.Lock()
 		t.Logf("live writes total=%d dial lifecycles=%d", liveLimit.count, dials)
 		liveLimit.Unlock()
@@ -175,7 +175,7 @@ func TestStandardLive(t *testing.T) {
 		t.Fatal("GetCount after reconnect", r, err)
 	}
 	t.Log("one controlled reconnect verified")
-	c.CloseAll()
+	c.Close()
 	select {
 	case <-c.Done():
 	default:

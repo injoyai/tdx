@@ -107,9 +107,10 @@ func TestClientUnifiedQueries(t *testing.T) {
 			if requests.Load() != before {
 				t.Fatal("protocol mismatch sent a request")
 			}
-			if c.queryClient() != c.queryClient() {
-				t.Fatal("query metadata is not reused")
+			if _, ok := any(c.transport()).(Client); ok {
+				t.Fatal("transport still implements the business interface")
 			}
+
 			list, err := c.GetQuoteList(31, 2, 0, 1)
 			if extended && (err != nil || len(list) != 0) {
 				t.Fatal("GetQuoteList migration failed", list, err)

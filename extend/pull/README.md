@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// 扩展行情(7727)连接池：期货/港股/美股需要
-	ex, err := tdx.NewPool(func() (*tdx.Conn, error) {
+	ex, err := tdx.NewPool(func() (tdx.Client, error) {
 		return tdx.DialExHqDefault()
 	}, 4)
 	if err != nil {

@@ -146,19 +146,20 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 			}
 		}
 	}()
-	open := tdx.Dial
+	var c tdx.Client
 	if extended {
-		open = tdx.DialExHq
+		c, err = tdx.DialExHq(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
+	} else {
+		c, err = tdx.Dial(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	}
-	c, err := open(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	if err != nil {
 		l.Close()
 		<-done
 		t.Fatal(err)
 	}
-	p, err := tdx.NewPool(func() (*tdx.Conn, error) { return c, nil }, 1)
+	p, err := tdx.NewPool(func() (tdx.Client, error) { return c, nil }, 1)
 	if err != nil {
-		c.CloseAll()
+		c.Close()
 		l.Close()
 		<-done
 		t.Fatal(err)

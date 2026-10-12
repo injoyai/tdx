@@ -32,7 +32,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 	}
 	t.Cleanup(func() { api.Close() })
 	var std, ex atomic.Int32
-	m.dial[0] = func() (*Conn, error) {
+	m.dial[0] = func() (protocolClient, error) {
 		return respondingTestClient(t, false, func(h, b []byte) []byte {
 			std.Add(1)
 			switch binary.LittleEndian.Uint16(h[10:]) {
@@ -71,7 +71,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 			}
 		}), nil
 	}
-	m.dial[1] = func() (*Conn, error) {
+	m.dial[1] = func() (protocolClient, error) {
 		return respondingTestClient(t, true, func(h, b []byte) []byte {
 			ex.Add(1)
 			if binary.LittleEndian.Uint16(h[10:]) != protocol.TypeExQuote {
@@ -171,7 +171,7 @@ func TestClientInterfaceRejectsUnsupportedCapabilities(t *testing.T) {
 	defer unified.Close()
 	m := unified.(*MarketClient)
 	var dials atomic.Int32
-	m.dial[0] = func() (*Conn, error) { dials.Add(1); return nil, io.ErrClosedPipe }
+	m.dial[0] = func() (protocolClient, error) { dials.Add(1); return nil, io.ErrClosedPipe }
 	if _, err := unified.GetFinanceInfo(protocol.ExchangeHK, "00700"); err == nil {
 		t.Fatal("HK finance accepted")
 	}
@@ -240,7 +240,7 @@ func TestClientInterfaceNilInjection(t *testing.T) {
 	if reflect.TypeOf((*Client)(nil)).Elem().Kind() != reflect.Interface {
 		t.Fatal("Client is not an interface")
 	}
-	for _, api := range []Client{(*Conn)(nil), (*MarketClient)(nil), nil} {
+	for _, api := range []Client{(*StConn)(nil), (*MarketClient)(nil), nil} {
 		var cs Codes
 		WithCodesClient(api)(&cs)
 		var g Gbbq
@@ -251,7 +251,7 @@ func TestClientInterfaceNilInjection(t *testing.T) {
 			t.Fatal("typed nil client no longer follows nil injection behavior")
 		}
 	}
-	dial := func() (Client, error) { return (*Conn)(nil), nil }
+	dial := func() (Client, error) { return (*StConn)(nil), nil }
 	if cs, err := NewCodes(WithCodesDialClient(dial)); cs != nil || err == nil {
 		t.Fatal("nil factory accepted", cs, err)
 	}

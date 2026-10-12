@@ -17,6 +17,13 @@ import (
 	"github.com/injoyai/tdx/v2"
 )
 
+type closeTestClient struct {
+	tdx.Client
+	closeFn func() error
+}
+
+func (c *closeTestClient) Close() error { return c.closeFn() }
+
 func TestNewFailureClosesPool(t *testing.T) {
 	previous := tdx.DefaultCodes
 	t.Cleanup(func() { tdx.DefaultCodes = previous })
@@ -71,11 +78,11 @@ func TestNewFailureClosesPool(t *testing.T) {
 func TestCloseReleasesPools(t *testing.T) {
 	var closed atomic.Int32
 	newPool := func() *tdx.Pool {
-		p, err := tdx.NewPool(func() (*tdx.Conn, error) {
+		p, err := tdx.NewPool(func() (tdx.Client, error) {
 			c := client.New(nil)
 			c.Closer.Reset()
 			c.SetCloseFunc(func(error) error { closed.Add(1); return nil })
-			return &tdx.Conn{Client: c}, nil
+			return &closeTestClient{closeFn: c.Close}, nil
 		}, 2)
 		if err != nil {
 			t.Fatal(err)

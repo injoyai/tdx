@@ -17,6 +17,31 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// testClient lets protocol-independent transport tests inspect the shared core.
+type testClient struct {
+	protocolClient
+	*conn
+}
+
+func (c *testClient) Close() error               { return c.protocolClient.Close() }
+func (c *testClient) SetTimeout(t time.Duration) { c.protocolClient.SetTimeout(t) }
+func (c *testClient) Done() <-chan struct{}      { return c.conn.Done() }
+
+func testDialWith(dial ios.DialFunc, ex bool, options ...client.Option) (*testClient, error) {
+	var c protocolClient
+	var err error
+	if ex {
+		c, err = dialExHqWith(dial, options...)
+	} else {
+		c, err = DialWith(dial, options...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	core := c.(interface{ transport() *conn }).transport()
+	return &testClient{protocolClient: c, conn: core}, nil
+}
+
 func readTestFrame(r io.Reader) ([]byte, []byte, error) {
 	h := make([]byte, 12)
 	if _, err := io.ReadFull(r, h); err != nil {
@@ -43,19 +68,19 @@ func writeTestResponse(w io.Writer, h, data []byte) error {
 	return err
 }
 
-func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...client.Option) *Conn {
+func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...client.Option) *testClient {
 	t.Helper()
 	a, b := net.Pipe()
 	serverDone := make(chan struct{})
 	go func() { defer close(serverDone); serve(b) }()
 	dial := func(context.Context) (ios.ReadWriteCloser, string, error) { return a, "offline-test", nil }
-	var c *Conn
+	var c *testClient
 	var err error
 	op := append([]client.Option{WithRedial(false), WithLevel(LevelNone)}, options...)
 	if ex {
-		c, err = dialExHqWith(dial, op...)
+		c, err = testDialWith(dial, true, op...)
 	} else {
-		c, err = DialWith(dial, op...)
+		c, err = testDialWith(dial, false, op...)
 	}
 	if err != nil {
 		a.Close()
@@ -65,14 +90,14 @@ func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...clie
 	c.Logger.Debug(false)
 	c.SetTimeout(time.Second)
 	t.Cleanup(func() {
-		c.CloseAll()
+		c.Close()
 		b.Close()
 		<-serverDone
 	})
 	return c
 }
 
-func respondingTestClient(t *testing.T, ex bool, data func([]byte, []byte) []byte) *Conn {
+func respondingTestClient(t *testing.T, ex bool, data func([]byte, []byte) []byte) *testClient {
 	return pipeTestClient(t, ex, func(s net.Conn) {
 		for {
 			h, b, err := readTestFrame(s)
@@ -333,12 +358,12 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 				}()
 				return a, string(rune('a' + n)), nil
 			}
-			var c *Conn
+			var c *testClient
 			var err error
 			if ex {
-				c, err = dialExHqWith(dial, WithRedial(), WithDebug(false))
+				c, err = testDialWith(dial, true, WithRedial(), WithDebug(false))
 			} else {
-				c, err = DialWith(dial, WithRedial(), WithDebug(false))
+				c, err = testDialWith(dial, false, WithRedial(), WithDebug(false))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -350,7 +375,7 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 			t.Cleanup(func() {
 				once.Do(func() { close(stop) })
 				workers.Wait()
-				c.CloseAll()
+				c.Close()
 				servers.Wait()
 			})
 			for i := 0; i < 8; i++ {
@@ -366,7 +391,7 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 						if direct {
 							c.WriteString(string(protocol.MHeart.Frame().Bytes()))
 						} else if ex {
-							c.getExtendedCount()
+							c.protocolClient.(*ExConn).getExtendedCount()
 						} else {
 							c.GetCount(protocol.ExchangeSZ)
 						}
@@ -384,7 +409,7 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 			workers.Wait()
 			c.SetTimeout(time.Second)
 			if ex {
-				if n, err := c.getExtendedCount(); err != nil || n != 1 {
+				if n, err := c.protocolClient.(*ExConn).getExtendedCount(); err != nil || n != 1 {
 					t.Fatal("request failed after reconnect", n, err)
 				}
 			} else if r, err := c.GetCount(protocol.ExchangeSZ); err != nil || r != 1 {
@@ -455,7 +480,7 @@ func TestCloseAllStopsReconnection(t *testing.T) {
 	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.CloseAll(); err != nil {
+	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -466,8 +491,8 @@ func TestCloseAllStopsReconnection(t *testing.T) {
 }
 
 func TestNilDialReturnsError(t *testing.T) {
-	for _, dial := range []func(ios.DialFunc, ...client.Option) (*Conn, error){DialWith, dialExHqWith} {
-		if c, err := dial(nil); err == nil || c != nil {
+	for _, ex := range []bool{false, true} {
+		if c, err := testDialWith(nil, ex); err == nil || c != nil {
 			t.Fatal("nil dial must return an error", c, err)
 		}
 	}
@@ -500,14 +525,14 @@ func TestCloseAllRunsDisconnectCleanup(t *testing.T) {
 		b.Close()
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.CloseAll(); b.Close(); <-serverDone })
-	if err := c.CloseAll(); err != nil {
+	t.Cleanup(func() { c.Close(); b.Close(); <-serverDone })
+	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if transport.closes.Load() != 1 || disconnected.Load() != 1 {
 		t.Fatalf("transport closes=%d disconnect callbacks=%d", transport.closes.Load(), disconnected.Load())
 	}
-	if err := c.CloseAll(); err != nil || disconnected.Load() != 1 {
+	if err := c.Close(); err != nil || disconnected.Load() != 1 {
 		t.Fatal("repeated close changed cleanup", err)
 	}
 }

@@ -2,43 +2,51 @@
 
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
-## Client 接口与 Conn 连接实现
+## Client 接口与单协议连接
 
-`tdx.Client` 现在是统一业务接口。`tdx.NewClient()` 返回该接口，默认实现为跨市场 `*MarketClient`；原单连接结构体改名 `Conn`，`Dial*` 返回 `*Conn`。两种实现均满足 Client，业务参数使用 `tdx.Client`，不使用 `*tdx.Client`。
+`tdx.Client` 是统一业务接口，`NewClient()` 返回按市场路由的 `*MarketClient`。标准 `Dial/DialDefault/DialWith/DialHosts*` 直接返回 `*StConn`；`DialExHq/DialExHqDefault/DialExHqHosts` 直接返回 `*ExConn`。两种连接均实现 `Client`，单协议连接不会建立另一类连接。
 
-| 旧调用 | 新调用 |
+公开 `Conn` 已移除。内部 `conn` 仅负责 TCP 收发、请求关联、超时及关闭/重连，不实现 `Client`，也不包含业务查询或协议专用解码。标准业务和解码归 `StConn`，拓展归 `ExConn`；共享分页、日期检查等通过绑定业务对象的 `queries` 执行，不再经由传输层绕回 `MarketClient`。
+
+| 旧调用或类型 | 当前调用或类型 |
 |---|---|
-| 业务查询参数 `*tdx.Client` | `tdx.Client` |
-| 单连接变量、底层字段或原始协议操作的 `*tdx.Client` | `*tdx.Conn` |
-| 连接池工厂 `func() (*tdx.Client, error)` | `func() (*tdx.Conn, error)` |
-| `IPool.Do/Go` 回调 `func(*tdx.Client)` | `func(*tdx.Conn)`，连接池继续管理单条连接 |
-| `WithCodesClient/WithGbbqClient/WithWorkdayClient` | 接受 `tdx.Client`，支持统一门面和单连接 |
-| `DialClientFunc`、上述三个组件的 DialClient 选项 | `func() (tdx.Client, error)`；提供连接工厂时用闭包适配返回类型 |
-| `DialCodesFunc/DialGbbqFunc/DialWorkdayFunc` | 回调参数为 `tdx.Client` |
-| 原 `Client.Info/Logger/Wait/SendFrame` 等底层能力 | 从 `*Conn` 使用；业务接口不暴露这些字段或原始发送方法 |
+| 业务参数 `*tdx.Client` 或 `*tdx.Conn` | `tdx.Client` |
+| 标准连接变量 `*tdx.Conn` | `*tdx.StConn`，由标准 `Dial*` 直接取得 |
+| 拓展连接变量 `*tdx.Conn` | `*tdx.ExConn`，由 `DialExHq*` 直接取得 |
+| `NewStConn(conn)` / `NewExConn(conn)` | 已移除，直接使用对应 `Dial*` 返回值 |
+| `NewPool` 工厂 `func() (*tdx.Conn, error)` | `func() (tdx.Client, error)` |
+| `IPool.Get/Put` | 获取、归还 `tdx.Client` |
+| `IPool.Do/Go` 回调 `func(*tdx.Conn)` | `func(tdx.Client)`，池中对象通过统一接口查询和关闭 |
+| `CloseAll()` | `Close()`，结束整个生命周期并停止重连 |
+| 原始 `SendFrame`、连接状态、日志等 | 从 `*StConn` / `*ExConn` 使用；业务 `Client` 不包含这些能力 |
+| Codes/Gbbq/Workday 的客户端注入与对应工厂 | 继续接受 `Client` 及 `func() (Client, error)` |
 
 ```go
 var c tdx.Client = tdx.NewClient(tdx.WithRedial(false))
 defer c.Close()
 quotes, err := c.GetQuote("sz000001", "hk00700")
-// 财务/F10/除权等标准能力也可通过同一对象调用，内部使用标准连接。
 _ = quotes; _ = err
 
-// 连接池仍按单连接管理。
-pool, err := tdx.NewPool(func() (*tdx.Conn, error) { return tdx.DialDefault() }, 1)
+pool, err := tdx.NewPool(func() (tdx.Client, error) {
+    return tdx.DialDefault(tdx.WithRedial(false))
+}, 1)
 if err != nil { panic(err) }
 defer pool.Close()
+err = pool.Do(func(c tdx.Client) error {
+    _, err := c.GetKlineDay("sz000001", 0, 100)
+    return err
+})
 ```
 
-`Client.Close()` 统一结束整个生命周期：门面关闭已有及晚到的连接，单连接取消运行并停止重连；可重复调用。`Conn.CloseAll()` 保留并使用同一关闭实现。原只关闭当次连接的 `Close` 行为有意改变，内部网络故障的重连路径保持原逻辑。
+Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `func() (Client, error)` 传入；使用上述闭包适配。业务接口包装空指针仍按 nil 处理，连接池工厂返回 nil 或空指针客户端时报错并清理已初始化对象。
 
-财务、F10、集合竞价、除权、板块、报表和标准分类代码列表已接入门面。它们保留原标准响应类型和单位，不因接口化获得港美股或期货数据支持；扩展品种、扩展单连接及非法标准代码会明确报错。无品种参数的标准专用查询由门面自动取得标准连接。
-
-标准与扩展业务分别由 `StandardClient`、`ExtendedClient` 实现，两者均满足 `Client`；`MarketClient` 按市场路由到对应实现。`NewClient()`、`Dial*` 及连接池签名保持不变。需要具体实现时，使用 `NewStandardClient(conn)` 或 `NewExtendedClient(conn)` 包装已有对应协议连接；构造函数返回 `(具体客户端, error)`，拒绝空连接和错误协议。同一连接复用同一个业务实现及生命周期，关闭包装对象会关闭原连接，详见 [协议实现](unified-client.md#协议实现)。
+`Client.Close()` 保持关闭已有及晚到连接、停止重连的语义，可重复调用；传输层不再提供 `CloseAll` 兼容入口。财务、F10、集合竞价、除权、板块、报表和标准分类代码列表由 `StConn` 实现；`ExConn` 对这些接口明确报错。门面自动取得标准连接，标准接口的返回类型和单位保持不变。
 
 ## 跨市场统一查询
 
-统一返回对象去掉 `Market` 前缀，名称对应如下；`Client`、`Conn`、`MarketClient` 保持现有名称。
+单协议业务连接实现使用简名 `StConn` / `ExConn`，此前 `StandardClient` / `ExtendedClient` 不保留别名；直接由对应 `Dial*` 创建。
+
+统一返回对象去掉 `Market` 前缀，名称对应如下；`Client`、`MarketClient` 保持现有名称。
 
 | 旧返回类型 | 新返回类型 |
 |---|---|
@@ -53,7 +61,7 @@ defer pool.Close()
 上述类型不保留旧名别名，外部类型声明和回调参数需同步改名；字段、单位和 JSON 形状保持不变。
 `GetQuoteList` 仍只支持扩展市场；记录的 `Extended/RangeExtended` 原始协议类型保留 `Ex*` 名称，以区分不同的协议结构。
 
-`tdx.NewClient()` 返回业务接口 `tdx.Client`，默认跨市场实现为 `*tdx.MarketClient`，按代码自动选择标准/扩展连接，并通过统一的 `GetQuote/GetKline*/GetMinute/GetTrade/GetCode/GetCodeAll/GetCount/GetMarkets` 返回统一结果。构造不联网，错误由首次查询返回。`Dial*` 和连接池仍可使用；单连接 `Conn` 的基础行情与代码查询已变更返回类型，须按下表迁移，HTTP 原路由与响应形状保持兼容；新结果不是旧 `protocol.Klines`，不能直接用于原指标/复权/存储 API。字段、单位及支持边界见 [统一 Client](unified-client.md)。
+`tdx.NewClient()` 返回业务接口 `tdx.Client`，默认跨市场实现为 `*tdx.MarketClient`，按代码自动选择标准/扩展连接，并通过统一的 `GetQuote/GetKline*/GetMinute/GetTrade/GetCode/GetCodeAll/GetCount/GetMarkets` 返回统一结果。构造不联网，错误由首次查询返回。`Dial*` 和连接池仍可使用；单协议连接的基础行情与代码查询已变更返回类型，须按下表迁移，HTTP 原路由与响应形状保持兼容；新结果不是旧 `protocol.Klines`，不能直接用于原指标/复权/存储 API。字段、单位及支持边界见 [统一 Client](unified-client.md)。
 
 ## 标准与扩展函数收敛（需迁移调用方）
 
@@ -100,7 +108,7 @@ if err != nil { return err }
 
 代码查询在 `Client` 与 `MarketClient` 上使用相同签名：`GetCount(exchange) (int, error)`、`GetCode(exchange, start uint32, count uint16) (*CodeResp, error)`、`GetCodeAll(exchange) (*CodeResp, error)`。原标准 `GetCode(exchange, start)` 需增加 `count`（旧分页大小为 1000）；`code.Code` 改为 `code.Instrument.Code`，小数位等特有元数据从 `code.Standard` 读取。分页 `count` 为 1..1000；扩展协议需扫描全局列表再按市场过滤，偏移按过滤后的列表计算。北交所数量和分页使用与完整列表相同的报表来源。
 
-`Conn.GetMarkets()` 在标准连接上返回内置沪深北，在扩展连接上返回服务器市场表；`NewClient().GetMarkets()` 合并两者，并在扩展发现失败时返回错误。服务器列出的市场不一定已接入统一行情查询。需要旧扩展全局总数或全局分页时，使用既有 `SendFrame(protocol.MEx.FrameCount())` / `SendFrame(protocol.MEx.FrameInstrument(start, count))`，不能用任意单市场查询替代。历史 HTTP `/ex/count`、`/ex/instruments` 继续通过协议层保持原全局语义。pull 的全局品种快照入口改名 `Service.GetInstruments()`，本轮缓存范围保持不变。
+`GetMarkets()` 在标准连接上返回内置沪深北，在扩展连接上返回服务器市场表；`NewClient().GetMarkets()` 合并两者，并在扩展发现失败时返回错误。服务器列出的市场不一定已接入统一行情查询。需要旧扩展全局总数或全局分页时，使用既有 `SendFrame(protocol.MEx.FrameCount())` / `SendFrame(protocol.MEx.FrameInstrument(start, count))`，不能用任意单市场查询替代。历史 HTTP `/ex/count`、`/ex/instruments` 继续通过协议层保持原全局语义。pull 的全局品种快照入口改名 `Service.GetInstruments()`，本轮缓存范围保持不变。
 
 HTTP 内部已迁移到统一函数，但仍返回原 `protocol` 数据，原价格单位、字段名和空列表形状不变。扩展日线/一分钟参数经市场周期映射；特殊市场、周期能否取得数据仍以实际服务支持为准。内置 pull 接口已同步迁移并保留原存储口径。
 
@@ -139,7 +147,7 @@ HTTP 内部已迁移到统一函数，但仍返回原 `protocol` 数据，原价
 
 `SendFrame` 先注册回调再发送，避免快速响应早于等待注册而被丢弃；回调注册与响应处理互斥，超时或写入失败会清理回调与请求缓存，迟到响应会被忽略。标准行情默认请求超时仍为 2 秒，扩展行情仍为 10 秒，覆盖排队、发送和等待响应全过程。发送中途超时或短写会关闭当次连接，避免残缺帧污染后续请求；仅排队或等待响应超时则保留连接。
 
-标准与扩展行情的握手、心跳、业务请求和重连初始化共用写入门控，保护底层连接状态与写入统计；`Client.Write` 及其字符串等写入方式保持稳定入口。心跳绑定当次连接。`CloseAll()` 取消连接生命周期、关闭传输并等待读取流程退出后释放底层资源，不再并发修改底层重连开关。截断或非法的成交记录、可关联请求的帧解压错误直接传回调用方，不再表现为等待超时。
+标准与扩展行情的握手、心跳、业务请求和重连初始化共用写入门控，保护底层连接状态与写入统计；具体连接的 `Write` 及其字符串等写入方式保持稳定入口。心跳绑定当次连接。`Close()` 取消连接生命周期、关闭传输并等待读取流程退出后释放底层资源，不再并发修改底层重连开关。截断或非法的成交记录、可关联请求的帧解压错误直接传回调用方，不再表现为等待超时。
 
 扩展行情响应的头部或声明的记录不足时返回 `io.ErrUnexpectedEOF`，不再返回部分记录或把损坏响应当成空结果；合法的零记录响应仍正常返回。HTTP 服务的 `Close()` 同时释放自建的标准与扩展行情连接池，初始化失败也会清理已建连接池。
 
@@ -155,7 +163,7 @@ TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断�
 
 代码元数据刷新使用 SQLite 增量事务，保留未变化记录和原主键，更新名称、倍数、小数位与昨收价，删除退市项；内存缓存使用提交后的数据库快照。
 
-设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用单连接 `Client.Wait.SetTimeout` 的代码需迁移到该方法。底层 `Conn.Wait` 保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
+设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用单连接 `Client.Wait.SetTimeout` 的代码需迁移到该方法。具体连接的 `Wait` 保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
 
 ## 成交行为
 

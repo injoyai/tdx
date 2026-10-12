@@ -205,9 +205,13 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 		return nil, fmt.Errorf("pull: 需要配置 ExPool（扩展行情7727连接池）")
 	}
 	out := []protocol.ExInstrument{}
-	err := p.Do(func(c *tdx.Conn) error {
+	err := p.Do(func(c tdx.Client) error {
+		ex, ok := c.(*tdx.ExConn)
+		if !ok || ex == nil {
+			return fmt.Errorf("pull: 需要扩展行情连接")
+		}
 		for start := uint32(0); ; {
-			r, err := c.SendFrame(protocol.MEx.FrameInstrument(start, 800))
+			r, err := ex.SendFrame(protocol.MEx.FrameInstrument(start, 800))
 			if err != nil {
 				return err
 			}

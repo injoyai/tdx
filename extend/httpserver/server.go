@@ -70,7 +70,7 @@ func New(opts ...Option) (*Server, error) {
 		opt(cfg)
 	}
 
-	pool, err := tdx.NewPool(func() (*tdx.Conn, error) {
+	pool, err := tdx.NewPool(func() (tdx.Client, error) {
 		return tdx.DialHostsRange(cfg.hosts, cfg.options...)
 	}, cfg.poolSize)
 	if err != nil {
@@ -92,7 +92,7 @@ func New(opts ...Option) (*Server, error) {
 		}
 		codes, err := tdx.NewCodesSqlite(tdx.WithCodesClient(codesClient))
 		if err != nil {
-			_ = codesClient.CloseAll()
+			_ = codesClient.Close()
 			return nil, err
 		}
 		tdx.DefaultCodes = codes
@@ -104,7 +104,7 @@ func New(opts ...Option) (*Server, error) {
 		if cfg.exPoolSize <= 0 {
 			cfg.exPoolSize = 1
 		}
-		exPool, err := tdx.NewPool(func() (*tdx.Conn, error) {
+		exPool, err := tdx.NewPool(func() (tdx.Client, error) {
 			return tdx.DialExHqHosts(cfg.exHqHosts, cfg.options...)
 		}, cfg.exPoolSize)
 		if err != nil {

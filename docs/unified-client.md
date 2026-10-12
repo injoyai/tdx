@@ -1,6 +1,6 @@
 # 统一行情 Client
 
-`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组统一结果类型。原单连接结构体改名 `*tdx.Conn`，同样实现业务接口，原有 `Dial*` 与连接池继续使用；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和统一返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
+`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组统一结果类型。标准与拓展连接分别由 `*tdx.StConn`、`*tdx.ExConn` 实现业务接口；原 `Conn` 已移除，连接池使用 `Client`；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和统一返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
 
 ## 使用
 
@@ -26,28 +26,26 @@ for _, q := range quotes {
 
 构造不联网，因此没有构造错误返回值；首次访问某类协议时建连，连接错误由查询方法返回。两类协议各复用一条连接，默认服务器和重连策略沿用 `DialDefault`/`DialExHqDefault`；`client.Option` 同时应用于两类连接。可并发查询；`SetTimeout` 覆盖当前和未来连接，默认仍为标准 2 秒、扩展 10 秒。`Close` 先释放已建立的连接，再等待正在进行的建连结束并释放晚到的连接，允许重复/并发调用，关闭后不会重新建连。两类连接各自控制初始化；一类建连变慢不会阻塞另一类查询或 `SetTimeout`。`Close` 仍需等待已有建连尝试结束，请求超时不控制建连时长。必须通过构造函数使用，零值不用于查询。
 
-ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StandardClient` 实现中，不依赖 `DefaultCodes`、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
+ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StConn` 实现中，不依赖 `DefaultCodes`、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
 
 ## 协议实现
 
-`StandardClient`、`ExtendedClient` 分别实现 `Client`，处理各自的协议请求和统一结果转换。`MarketClient` 通过同一接口选择两者；混合报价仍保持原输入顺序，标准品种合并请求、扩展品种逐个请求。分页、停止条件、历史交易日期检查共用既有查询流程。
+源码按职责集中：`client_interface.go` 定义统一接口；`client.go` 集中 `MarketClient` 门面、市场路由、统一返回模型和标准结果转换，对应测试放在 `client_test.go`。`conn_st.go` 包含标准连接、建连入口、业务请求和解码；`conn_ex.go` 对应拓展连接。内部 `conn.go` 仅负责收发、请求关联和生命周期；`query.go` 及 `conn_query.go` 保存共享业务算法及校验。内部传输不实现 `Client`，业务查询不经传输层转发到门面。
 
-两个具体实现嵌入 `*Conn`，复用 TCP 收发、请求关联、超时和关闭/重连生命周期；`Dial*` 仍在建立连接时选择对应的握手、心跳及默认超时。`Conn` 的业务方法通过该连接固定的协议实现执行，不建立另一类连接；原始 `SendFrame` 和连接池入口保持不变。
+`StConn`、`ExConn` 分别实现 `Client`，`MarketClient` 通过同一接口选择两者。混合报价仍保持原输入顺序，标准品种合并请求、拓展品种逐个请求。共享分页、停止条件和历史交易日期检查直接调用绑定业务对象的基本查询。
 
-通常只需 `NewClient()`。需要显式使用单协议实现时，可包装现有连接：
+通常只需 `NewClient()`。需要单协议连接时直接建连：
 
 ```go
-conn, err := tdx.DialDefault(tdx.WithRedial(false))
+standard, err := tdx.DialDefault(tdx.WithRedial(false))
 if err != nil { return err }
-standard, err := tdx.NewStandardClient(conn)
-if err != nil { conn.Close(); return err }
 var c tdx.Client = standard
 defer c.Close()
 quotes, err := c.GetQuote("sz000001")
 _ = quotes; _ = err
 ```
 
-扩展连接对应 `DialExHqDefault()` 和 `NewExtendedClient(conn)`。两个包装构造函数拒绝 nil 或协议不匹配的连接，不重新联网；重复包装同一连接返回同一个实现。关闭或修改超时会作用于原连接，不能把包装对象当作独立连接使用。通过构造函数创建实现，零值不用于查询。
+拓展连接使用 `DialExHqDefault()`。两种连接各自指定握手、心跳、默认超时和解码，共享内部传输实现；不再使用 `NewStConn(conn)` / `NewExConn(conn)` 包装，也不对外暴露通用 `Conn`。通过建连入口取得可用对象，零值不用于查询。
 
 标准客户端不支持扩展证券和行情分页列表；扩展客户端不支持标准证券及财务、F10、除权、板块、报表等标准专用接口，均在发送前报错。实现同一接口不代表服务器的数据能力相同。
 
@@ -67,7 +65,7 @@ _ = quotes; _ = err
 
 `protocol.ParseInstrument` 返回 `{Exchange, Code}`，`Instrument.String()` 返回点分隔代码，港股指数统一为 `hk.HSI`。统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
-业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议；`Dial*()` 立即创建绑定一种协议的 `*Conn`，可赋给 Client，但不会自动建立另一类连接。`Client.Close()` 统一结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 `SendFrame`、连接状态、日志、读取关闭信号等仅在 Conn 上提供；现有连接池继续使用 `*Conn`，不得改为指向接口的 `*Client`。完整迁移见 [v2 指南](v2-migration.md)。
+业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialExHq*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 `SendFrame`、连接状态和日志等从具体连接使用，业务接口不包含这些能力。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
 
 ## 查询接口
 
@@ -113,7 +111,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
 - K 线 `Time` 为源数据墙上时间 `YYYY-MM-DD HH:MM`，分时/分笔为 `HH:MM`/`HH:MM:SS`。不生成 UTC 时间戳，不猜测美股时区、夜盘自然日或交易日；历史返回 `Date` 为请求日期，当日查询 `Date` 为空。标准当日分时仍沿用底层按运行环境当前日期请求历史分时的行为。
 
-`Dial*` 返回的单连接 `Conn` 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `Kline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。统一结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
+`Dial*` 返回的单协议连接 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `Kline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。统一结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
 
 ## 验证
 

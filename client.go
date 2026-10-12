@@ -1,937 +1,643 @@
 package tdx
 
 import (
-	"archive/zip"
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"io"
-	"runtime/debug"
+	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/injoyai/base/maps"
-	"github.com/injoyai/base/maps/wait"
-	"github.com/injoyai/conv"
-	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
-	"github.com/injoyai/ios/module/common"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-const (
-	LevelNone  = common.LevelNone
-	LevelDebug = common.LevelDebug
-	LevelWrite = common.LevelWrite
-	LevelRead  = common.LevelRead
-	LevelInfo  = common.LevelInfo
-	LevelError = common.LevelError
-	LevelAll   = common.LevelAll
-)
+// 统一结果的价格使用品种原币种/报价单位，浮点值保留底层解码精度。
+// VolumeUnit 只描述对应接口；unknown 表示保留解码数值且不做推测换算。
+const VolumeUnknown protocol.VolumeUnit = "unknown"
 
-// WithDebug 是否打印通讯数据
-func WithDebug(b ...bool) client.Option {
-	return func(c *client.Client) {
-		c.Logger.Debug(b...)
+// KlineResp 是统一 K 线结果，Category 为实际协议周期，List 按时间升序排列。
+type KlineResp struct {
+	Instrument protocol.Instrument
+	Category   uint8 // 实际发送的协议周期
+	VolumeUnit protocol.VolumeUnit
+	Count      int
+	List       []Kline
+}
+
+// Kline 是统一 K 线记录，Standard/Extended/RangeExtended 按查询来源保留原始字段。
+type Kline struct {
+	Time          string // 源数据的日期/墙上时间 YYYY-MM-DD HH:MM；不推断时区或夜盘交易日
+	Open          float64
+	High          float64
+	Low           float64
+	Close         float64
+	Volume        int64
+	Amount        *float64 // nil 表示该市场的金额语义未确认
+	Standard      *protocol.Kline
+	Extended      *protocol.ExKline
+	RangeExtended *protocol.ExRangeKline // 区间协议的持仓和结算价等原始字段
+}
+
+// Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量以 VolumeUnit 为准。
+type Quote struct {
+	Instrument protocol.Instrument
+	PreClose   float64
+	Open       float64
+	High       float64
+	Low        float64
+	Price      float64
+	Volume     int64
+	VolumeUnit protocol.VolumeUnit
+	Bid        [5]float64
+	BidVolume  [5]int64
+	Ask        [5]float64
+	AskVolume  [5]int64
+	Standard   *protocol.Quote
+	Extended   *protocol.ExQuote
+}
+
+// MinuteResp 是统一分时结果，Date 保留历史查询日期，不推断夜盘日期。
+type MinuteResp struct {
+	Instrument protocol.Instrument
+	Date       string // 请求日期 YYYYMMDD，不按行号推断夜盘日期
+	VolumeUnit protocol.VolumeUnit
+	Count      int
+	List       []Minute
+}
+
+// Minute 是统一分时记录，Standard 或 Extended 保留对应协议的原始数据。
+type Minute struct {
+	Time     string // HH:MM
+	Price    float64
+	Volume   int64
+	Standard *protocol.PriceNumber
+	Extended *protocol.ExMinuteTick
+}
+
+// TradeResp 是统一分笔结果；跨日查询的 Date 为空，交易日期保留在每条记录中。
+type TradeResp struct {
+	Instrument protocol.Instrument
+	Date       string
+	VolumeUnit protocol.VolumeUnit
+	Count      int
+	List       []Trade
+}
+
+// Trade 是统一分笔记录；价格尺度未确认时 Price 为 nil，原始值仍可从 Extended 读取。
+type Trade struct {
+	Date      string   // 历史查询日期 YYYYMMDD；跨日结果逐条保留，不推断当日扩展日期
+	Time      string   // HH:MM:SS，源数据无秒时为 00
+	Price     *float64 // 扩展分笔原始整数价格尺度未确认，保留 Extended.Price，公共价格为 nil
+	Volume    int64
+	Direction int // 1 买，-1 卖，0 中性
+	Standard  *protocol.Trade
+	Extended  *protocol.ExTradeTick
+}
+
+// Code 是指定市场的品种信息，价格精度等协议特有字段保留在 Standard 或 Extended 中。
+type Code struct {
+	Instrument protocol.Instrument
+	Name       string
+	Standard   *protocol.Code
+	Extended   *protocol.ExInstrument
+}
+
+// CodeResp 是统一代码列表结果，Count 为本次返回数量，不是市场品种总数。
+type CodeResp struct {
+	Count int
+	List  []Code
+}
+
+// Exchange 保留服务器市场编号；发现市场不表示统一行情路由已接入。
+type Exchange struct {
+	Market    uint16
+	Name      string
+	ShortName string
+	Protocol  protocol.MarketProtocol
+	Extended  *protocol.ExMarket
+}
+
+// MarketClient 统一业务入口，分别路由到 StConn 和 ExConn；每类协议最多一条连接。
+type MarketClient struct {
+	*queries
+	mu         sync.Mutex
+	dialMu     [2]sync.Mutex
+	dialing    sync.WaitGroup
+	links      [2]protocolClient
+	dial       [2]func() (protocolClient, error)
+	timeout    time.Duration
+	timeoutSet bool
+	closed     bool
+	closeDone  chan struct{}
+	closeErr   error
+}
+
+// NewClient 不立即联网；首次访问某类市场时连接，对应错误由查询方法返回。
+// options 应用于两类底层连接，例如 WithRedial(false)、WithLevel(LevelNone)。
+func NewClient(options ...client.Option) Client {
+	return newMarketClient(options...)
+}
+
+func newMarketClient(options ...client.Option) *MarketClient {
+	op := append([]client.Option(nil), options...)
+	c := &MarketClient{
+		dial: [2]func() (protocolClient, error){
+			func() (protocolClient, error) { return DialDefault(op...) },
+			func() (protocolClient, error) { return DialExHqDefault(op...) },
+		},
+		closeDone: make(chan struct{}),
 	}
+	c.queries = &queries{source: c}
+	return c
 }
 
-func WithLevel(level int) client.Option {
-	return func(c *client.Client) {
-		c.Logger.SetLevel(level)
-	}
-}
-
-// WithRedial 断线重连
-func WithRedial(b ...bool) client.Option {
-	return func(c *client.Client) {
-		c.SetRedial(b...)
-	}
-}
-
-// DialDefault 默认连接方式
-func DialDefault(op ...client.Option) (cli *Conn, err error) {
-	op = append([]client.Option{WithRedial()}, op...)
-	return DialHostsRange(Hosts, op...)
-}
-
-// Dial 与服务器建立连接
-func Dial(addr string, op ...client.Option) (cli *Conn, err error) {
-	return DialWith(NewTCPDial(addr), op...)
-}
-
-// DialHosts 与服务器建立连接,多个服务器轮询,开启重试生效
-func DialHosts(hosts []string, op ...client.Option) (cli *Conn, err error) {
-	return DialWith(NewHostDial(hosts), op...)
-}
-
-// DialHostsRandom 与服务器建立连接,多个服务器随机连接
-func DialHostsRandom(hosts []string, op ...client.Option) (cli *Conn, err error) {
-	return DialWith(NewRandomDial(hosts), op...)
-}
-
-// DialHostsRange 遍历设置的服务地址进行连接,成功则结束遍历
-func DialHostsRange(hosts []string, op ...client.Option) (cli *Conn, err error) {
-	return DialWith(NewRangeDial(hosts), op...)
-}
-
-// DialWith 与服务器建立连接
-func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Conn, err error) {
-	return dialWith(dial, false, op...)
-}
-
-// dialWith 两类行情共用连接生命周期，仅握手、心跳与默认超时不同。
-func dialWith(dial ios.DialFunc, extended bool, op ...client.Option) (cli *Conn, err error) {
-	timeout := 2 * time.Second
-	setup, heartbeat := protocol.MConnect.Frame, protocol.MHeart.Frame
-	if extended {
-		timeout = 10 * time.Second
-		setup, heartbeat = protocol.MEx.FrameSetup, protocol.MEx.FrameCount
-	}
-	cli = &Conn{
-		Wait:        wait.New(timeout),
-		waitTimeout: timeout,
-		extended:    extended,
-		m:           maps.NewSafe(),
-	}
-
-	cli.Client, err = client.Dial(cli.cancelableDial(dial), func(c *client.Client) {
-		c.Logger.Debug(true)                           //关闭日志打印
-		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
-		c.Logger.WithHEX()                             //以HEX显示
-		c.SetOption(op...)                             //自定义选项
-		c.Event.OnReadFrom = protocol.ReadFrom         //分包
-		c.Event.OnDealMessage = cli.handlerDealMessage //解析数据并处理
-		c.Event.OnConnected = func(c *client.Client) error {
-			w := cli.wrapWriter(c)
-			<-cli.writeGate // 连接初始化完成，允许写入。
-			if _, err := cli.Write(setup().Bytes()); err != nil {
-				if extended {
-					c.Close()
-				}
-				return err
-			}
-			cli.goHeartbeat(w, c.Closer.Done(), heartbeat().Bytes())
-			return nil
-		}
-	})
+func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) {
+	i := protocol.Instrument{Exchange: ex}
+	m, err := i.Market()
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cli.cancelRun = cancel
-	go cli.Client.Run(ctx)
-
-	return cli, nil
-}
-
-// Conn 是绑定单种行情协议的具体连接；业务查询可通过 Client 接口使用。
-type Conn struct {
-	extended       bool
-	queryOnce      sync.Once
-	queries        *MarketClient
-	implementation protocolClient
-	*client.Client              //客户端实例
-	ios.MoreWriter              // 稳定写入口，重连只替换内部连接快照。
-	Wait           *wait.Entity //内部响应关联；请求超时通过 SetTimeout 配置
-	m              *maps.Safe   //有部分解析需要用到代码,返回数据获取不到,固请求的时候缓存下
-	msgID          uint32       //消息id,使用SendFrame自动累加
-	waitMu         sync.Mutex
-	waitTimeout    time.Duration
-	writer         *frameWriter
-	writeGate      chan struct{}
-	cancelRun      context.CancelFunc
-}
-
-// Close 关闭整个连接生命周期，关闭后不再重连。
-func (c *Conn) Close() error { return c.CloseAll() }
-
-// CloseAll 取消整个连接生命周期，避免并发修改底层库的重连开关。
-func (c *Conn) CloseAll() error {
-	if c.cancelRun != nil {
-		c.cancelRun()
-		c.waitMu.Lock()
-		w := c.writer
-		c.waitMu.Unlock()
-		if w != nil && w.conn != nil {
-			_ = w.conn.Close() // 解除读取阻塞，由读取协程结束当次连接。
-		}
-		<-c.Client.Done()
+	info, _ := m.Info()
+	index := 0
+	if info.Protocol == protocol.ProtocolExtended {
+		index = 1
 	}
-	return c.Client.Close()
-}
-
-// handlerDealMessage 处理服务器响应的数据
-func (this *Conn) handlerDealMessage(c *client.Client, msg ios.Acker) {
-
-	defer func() {
-		if e := recover(); e != nil {
-			logs.Err(e)
-			debug.PrintStack()
+	c.dialMu[index].Lock()
+	defer c.dialMu[index].Unlock()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, net.ErrClosed
+	}
+	if link := c.links[index]; link != nil {
+		c.mu.Unlock()
+		return link, nil
+	}
+	// 注册与关闭标记共用锁，Close 开始等待后不会再新增建连任务。
+	c.dialing.Add(1)
+	c.mu.Unlock()
+	defer c.dialing.Done()
+	link, err := c.dial[index]()
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		if clientOrNil(link) != nil {
+			closeErr := link.Close()
+			c.mu.Lock()
+			c.closeErr = errors.Join(c.closeErr, closeErr)
+			c.mu.Unlock()
 		}
-	}()
-
-	payload := msg.Payload()
-	f, err := protocol.Decode(payload)
+		return nil, net.ErrClosed
+	}
+	defer c.mu.Unlock()
 	if err != nil {
-		logs.Err(err)
-		if len(payload) >= 16 {
-			key := conv.String(protocol.Uint32(payload[5:9]))
-			this.waitMu.Lock()
-			this.Wait.Done(key, nil, err)
-			this.m.GetAndDel(key)
-			this.waitMu.Unlock()
+		return nil, fmt.Errorf("%s 行情连接: %w", info.Protocol, err)
+	}
+	if clientOrNil(link) == nil || (link.protocol() == protocol.ProtocolExtended) != (index == 1) {
+		if clientOrNil(link) != nil {
+			_ = link.Close()
 		}
-		return
+		return nil, fmt.Errorf("%s 行情连接协议不匹配或为空", info.Protocol)
 	}
-	this.waitMu.Lock()
-	defer this.waitMu.Unlock()
-	if f.MsgID != 0 && !this.Wait.IsWait(conv.String(f.MsgID)) {
-		return // 超时或写入失败的请求已清理，忽略迟到响应。
+	if c.timeoutSet {
+		link.SetTimeout(c.timeout)
 	}
+	c.links[index] = link
+	return link, nil
+}
 
-	//从缓存中获取数据,响应数据中不同类型有不同的处理方式,但是响应无返回该类型,固根据消息id进行缓存
-	val, _ := this.m.GetAndDel(conv.String(f.MsgID))
-
-	var resp any
-	switch f.Type {
-
-	case protocol.TypeConnect:
-
-	case protocol.TypeHeart:
-
-	case protocol.TypeCount:
-		resp, err = protocol.MCount.Decode(f.Data)
-
-	case protocol.TypeCode:
-		resp, err = protocol.MCode.Decode(f.Data)
-
-	case protocol.TypeQuote:
-		resp, err = protocol.MQuote.DecodeChecked(f.Data)
-
-	case protocol.TypeMinute:
-		resp, err = protocol.MMinute.Decode(f.Data)
-
-	case protocol.TypeHistoryMinute:
-		resp, err = protocol.MHistoryMinute.Decode(f.Data)
-
-	case protocol.TypeCallAuction:
-		resp, err = protocol.MCallAuction.Decode(f.Data)
-
-	case protocol.TypeTrade:
-		resp, err = protocol.MTrade.Decode(f.Data, val.(protocol.TradeCache))
-
-	case protocol.TypeHistoryTrade:
-		resp, err = protocol.MHistoryTrade.Decode(f.Data, val.(protocol.TradeCache))
-
-	case protocol.TypeKline:
-		resp, err = protocol.MKline.Decode(f.Data, val.(protocol.KlineCache))
-
-	case protocol.TypeGbbq:
-		resp, err = protocol.MGbbq.Decode(f.Data)
-
-	case protocol.TypeBlockMeta:
-		resp, err = protocol.MBlock.DecodeMeta(f.Data)
-
-	case protocol.TypeBlockInfo:
-		resp, err = protocol.MBlock.DecodeInfo(f.Data)
-
-	case protocol.TypeFinance:
-		resp, err = protocol.MFinance.Decode(f.Data)
-
-	case protocol.TypeCompanyCat:
-		resp, err = protocol.MCompanyCat.Decode(f.Data)
-
-	case protocol.TypeCompanyContent:
-		resp, err = protocol.MCompanyContent.Decode(f.Data)
-
-	// ---- 扩展行情(TdxExHq) ----
-	case protocol.TypeExSetup:
-		// 握手响应忽略
-
-	case protocol.TypeExMarkets:
-		resp, err = protocol.MEx.DecodeMarkets(f.Data)
-
-	case protocol.TypeExCount:
-		resp, err = protocol.MEx.DecodeCount(f.Data)
-
-	case protocol.TypeExInstrument:
-		resp, err = protocol.MEx.DecodeInstrument(f.Data)
-
-	case protocol.TypeExQuote:
-		resp, err = protocol.MEx.DecodeQuote(f.Data)
-
-	case protocol.TypeExQuoteList:
-		resp, err = protocol.MEx.DecodeQuoteList(f.Data, val.(protocol.ExQuoteListCache))
-
-	case protocol.TypeExBars:
-		resp, err = protocol.MEx.DecodeBars(f.Data, val.(protocol.ExBarsCache))
-
-	case protocol.TypeExMinute:
-		resp, err = protocol.MEx.DecodeMinute(f.Data)
-
-	case protocol.TypeExHistMinute:
-		resp, err = protocol.MEx.DecodeHistMinute(f.Data)
-
-	case protocol.TypeExTrade:
-		resp, err = protocol.MEx.DecodeTrade(f.Data, val.(protocol.ExTradeCache))
-
-	case protocol.TypeExHistTrade:
-		resp, err = protocol.MEx.DecodeHistTrade(f.Data, val.(protocol.ExTradeCache))
-
-	case protocol.TypeExBarsRange:
-		resp, err = protocol.MEx.DecodeBarsRange(f.Data)
-
-	default:
-		err = fmt.Errorf("通讯类型未解析:0x%X", f.Type)
-
+// SetTimeout 同时设置已有连接和后续新建连接的请求超时。
+func (c *MarketClient) SetTimeout(t time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.timeout = t
+	c.timeoutSet = true
+	for _, link := range c.links {
+		if link != nil {
+			link.SetTimeout(t)
+		}
 	}
+}
 
+// Close 禁止再次建连，并等待两类底层连接关闭；可重复或并发调用。
+func (c *MarketClient) Close() error {
+	c.mu.Lock()
+	if c.closed {
+		done := c.closeDone
+		c.mu.Unlock()
+		<-done
+		return c.closeErr
+	}
+	c.closed = true
+	links := c.links
+	c.mu.Unlock()
+	var err error
+	for _, link := range links {
+		if link != nil {
+			err = errors.Join(err, link.Close())
+		}
+	}
+	c.dialing.Wait()
+	c.mu.Lock()
+	c.closeErr = errors.Join(c.closeErr, err)
+	close(c.closeDone)
+	c.mu.Unlock()
+	return c.closeErr
+}
+
+func instrumentInfo(code string) (protocol.Instrument, protocol.MarketInfo, error) {
+	i, err := protocol.ParseInstrument(code)
 	if err != nil {
-		logs.Err(err)
-		this.Wait.Done(conv.String(f.MsgID), nil, err)
-		return
+		return i, protocol.MarketInfo{}, err
 	}
-
-	this.Wait.Done(conv.String(f.MsgID), resp)
-
+	m, err := i.Market()
+	if err != nil {
+		return i, protocol.MarketInfo{}, err
+	}
+	info, _ := m.Info()
+	return i, info, nil
 }
 
-// SetTimeout 设置超时时间
-func (this *Conn) SetTimeout(t time.Duration) {
-	this.waitMu.Lock()
-	defer this.waitMu.Unlock()
-	this.waitTimeout = t
-	this.Wait.SetTimeout(t)
-}
+func standardCode(i protocol.Instrument) string { return i.Exchange.String() + i.Code }
 
-// SendFrame 发送数据,并等待响应
-func (this *Conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
-	f.MsgID = atomic.AddUint32(&this.msgID, 1)
-	key := conv.String(f.MsgID)
-	if len(cache) > 0 {
-		this.m.Set(key, cache[0])
-	}
-	type result struct {
-		value any
-		err   error
-	}
-	done := make(chan result, 1)
-	// 先注册完整回调再发送；注册和响应处理互斥，避免依赖内部的 list 竞争。
-	this.waitMu.Lock()
-	timeout := this.waitTimeout
-	w := this.writer
-	this.Wait.Async(key, func(value any, err error) { done <- result{value, err} }, 1, 0)
-	this.waitMu.Unlock()
-	defer func() {
-		this.waitMu.Lock()
-		defer this.waitMu.Unlock()
-		this.Wait.Done(key, nil)
-		this.m.GetAndDel(key)
-	}()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	data := f.Bytes()
-	written := make(chan error, 1)
-	go func() {
-		_, err := w.write(ctx, data)
-		written <- err
-	}()
-	select {
-	case err := <-written:
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, errors.New("超时")
-			}
-			return nil, err
-		}
-	case <-ctx.Done():
-		return nil, errors.New("超时")
-	}
-	select {
-	case r := <-done:
-		return r.value, r.err
-	case <-ctx.Done():
-		return nil, errors.New("超时")
-	}
-}
-
-// getStandardCount 获取标准市场内的证券数量
-func (this *Conn) getStandardCount(exchange protocol.Exchange) (*protocol.CountResp, error) {
-	f := protocol.MCount.Frame(exchange)
-	result, err := this.SendFrame(f)
+// GetKline 使用公开 TypeKline* 常量；日线和一分钟别名按市场配置映射。
+func (c *MarketClient) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
+	request, _, err := klineRequest(code, category, count)
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.CountResp), nil
-}
-
-// getStandardCode 获取市场内指定范围内的所有证券代码,一次固定返回1000只,上证股票有效范围370-1480
-// 上证前370只是395/399开头的(中证500/总交易等辅助类),在后面的话是一些100开头的国债
-// 600开头的股票是上证A股，属于大盘股，其中6006开头的股票是最早上市的股票， 6016开头的股票为大盘蓝筹股；900开头的股票是上证B股；
-// 000开头的股票是深证A股，001、002开头的股票也都属于深证A股， 其中002开头的股票是深证A股中小企业股票；200开头的股票是深证B股；
-// 300开头的股票是创业板股票；400开头的股票是三板市场股票。
-func (this *Conn) getStandardCode(exchange protocol.Exchange, start uint16) (*protocol.CodeResp, error) {
-	f := protocol.MCode.Frame(exchange, start)
-	result, err := this.SendFrame(f)
+	link, err := c.connection(request.Instrument.Exchange)
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.CodeResp), nil
+	return link.GetKline(category, code, start, count)
 }
 
-// getStandardCodeAll 通过多次请求的方式获取全部证券代码
-func (this *Conn) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
-	resp := &protocol.CodeResp{}
-
-	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
-	//通过 zhb.zip 中的 tdxbjmore.cfg 获取北交所代码和名称。
-	if exchange == protocol.ExchangeBJ {
-		files, err := this.GetZHBFiles()
+// GetQuote 保持输入顺序（包括重复代码）；任一请求失败返回错误，不返回部分结果。
+func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
+	instruments := make([]protocol.Instrument, len(codes))
+	var indexes []int
+	var standard []string
+	for j, code := range codes {
+		i, info, err := instrumentInfo(code)
 		if err != nil {
 			return nil, err
 		}
-		data, ok := files[protocol.FileTdxBjMore]
-		if !ok {
-			return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxBjMore)
+		instruments[j] = i
+		if info.Protocol == protocol.ProtocolStandard {
+			indexes = append(indexes, j)
+			standard = append(standard, standardCode(i))
 		}
-		resp.List = protocol.ParseTdxBjMore(data)
-		resp.Count = uint16(len(resp.List))
-		return resp, nil
 	}
-
-	size := 1000
-	for start := 0; ; start += size {
-		if start > 65535 {
-			return nil, errors.New("分页偏移超过协议 uint16 上限")
-		}
-		r, err := this.getStandardCode(exchange, uint16(start))
+	// 2 字节通讯类型 + 10 字节固定请求体 + 每个标准品种 7 字节。
+	if len(standard) > (65535-12)/7 {
+		return nil, errors.New("标准报价请求超过协议 uint16 帧长上限")
+	}
+	out := make([]Quote, len(codes))
+	if len(standard) > 0 {
+		link, err := c.connection(instruments[indexes[0]].Exchange)
 		if err != nil {
 			return nil, err
 		}
-		if int(resp.Count)+int(r.Count) > 65535 {
-			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-		}
-		resp.Count += r.Count
-		resp.List = append(resp.List, r.List...)
-		if int(r.Count) < size {
-			break
-		}
-	}
-	return resp, nil
-}
-
-// GetStockCodeAll 获取所有股票代码,带前缀例sz000001
-func (this *Conn) GetStockCodeAll() ([]string, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	ls := []string(nil)
-	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
-		resp, err := this.getStandardCodeAll(ex)
+		quotes, err := link.GetQuote(standard...)
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range resp.List {
-			if protocol.IsStock(ex.String() + v.Code) {
-				ls = append(ls, ex.String()+v.Code)
-			}
+		for j, q := range quotes {
+			out[indexes[j]] = q
 		}
 	}
-	return ls, nil
-}
-
-// GetETFCodeAll 获取所有ETF代码,带前缀例sz159399
-func (this *Conn) GetETFCodeAll() ([]string, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	ls := []string(nil)
-	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
-		resp, err := this.getStandardCodeAll(ex)
+	for j, i := range instruments {
+		if i.Exchange <= protocol.ExchangeBJ {
+			continue
+		}
+		link, err := c.connection(i.Exchange)
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range resp.List {
-			if protocol.IsETF(ex.String() + v.Code) {
-				ls = append(ls, ex.String()+v.Code)
-			}
-		}
-	}
-	return ls, nil
-}
-
-// GetIndexCodeAll 获取所有指数代码,带前缀例sz399001
-func (this *Conn) GetIndexCodeAll() ([]string, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	ls := []string{"bj899050"}
-	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
-		resp, err := this.getStandardCodeAll(ex)
+		quotes, err := link.GetQuote(codes[j])
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range resp.List {
-			if protocol.IsIndex(ex.String() + v.Code) {
-				ls = append(ls, ex.String()+v.Code)
-			}
-		}
-	}
-	return ls, nil
-}
-
-// getStandardQuotes 按代码元数据校准标准行情价格。
-func (this *Conn) getStandardQuotes(metadata ICodes, codes ...string) (protocol.QuotesResp, error) {
-	for i := range codes {
-		//如果是股票代码,则加上前缀
-		codes[i] = protocol.AddPrefix(codes[i])
-		if !protocol.IsStock(codes[i]) && !protocol.IsIndex(codes[i]) {
-			if metadata == nil {
-				return nil, errors.New("DefaultCodes未初始化")
-			}
-			//不是股票/指数代码的话，根据codes的信息加上前缀
-			//codes[i] = DefaultCodes.AddExchange(codes[i])
-			codes[i] = protocol.AddPrefix(codes[i])
-		}
-	}
-
-	f, err := protocol.MQuote.Frame(codes...)
-	if err != nil {
-		return nil, err
-	}
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	quotes := result.(protocol.QuotesResp)
-
-	{ //todo 临时处理下先,后续优化,感觉有问题
-		//判断长度和预期是否一致
-		if len(quotes) != len(codes) {
-			return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
-		}
-		for i, code := range codes {
-			// 股票类代码才需要按 Decimal 修正价格;
-			// 指数(含板块指数 880xxx)与基金行情原始解码价格即正确, 跳过修正。
-			if !protocol.IsStock(code) && !protocol.IsIndex(code) {
-				m := metadata.Get(code)
-				if m == nil {
-					return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
-				}
-				for ii, v := range quotes[i].SellLevel {
-					quotes[i].SellLevel[ii].Price = m.Price(v.Price)
-				}
-				for ii, v := range quotes[i].BuyLevel {
-					quotes[i].BuyLevel[ii].Price = m.Price(v.Price)
-				}
-				quotes[i].Kline.Last = m.Price(quotes[i].Kline.Last)
-				quotes[i].Kline.Open = m.Price(quotes[i].Kline.Open)
-				quotes[i].Kline.High = m.Price(quotes[i].Kline.High)
-				quotes[i].Kline.Low = m.Price(quotes[i].Kline.Low)
-				quotes[i].Kline.Close = m.Price(quotes[i].Kline.Close)
-			}
-		}
-	}
-
-	return quotes, nil
-}
-
-func (this *Conn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	i, err := standardInstrument(code)
-	if err != nil {
-		return nil, err
-	}
-	code = standardCode(i)
-	f, err := protocol.MCallAuction.Frame(code)
-	if err != nil {
-		return nil, err
-	}
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.CallAuctionResp), nil
-}
-
-func (this *Conn) GetGbbq(code string) (*protocol.GbbqResp, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	i, err := standardInstrument(code)
-	if err != nil {
-		return nil, err
-	}
-	code = standardCode(i)
-	f, err := protocol.MGbbq.Frame(code)
-	if err != nil {
-		return nil, err
-	}
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.GbbqResp), nil
-}
-
-func (this *Conn) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
-	codes, err := this.GetStockCodeAll()
-	if err != nil {
-		return nil, err
-	}
-	gbbqs := map[string][]*protocol.Gbbq{}
-	var resp *protocol.GbbqResp
-	for _, code := range codes {
-		for i := 0; i == 0 || i < DefaultRetry; i++ {
-			resp, err = this.GetGbbq(code)
-			if err == nil {
-				gbbqs[code] = resp.List
-				break
-			}
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	return gbbqs, nil
-}
-
-// GetCompanyCategory 获取 F10 公司信息分类目录。
-func (this *Conn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	normalized, err := standardSecurity(exchange, code)
-	if err != nil {
-		return nil, err
-	}
-	code = normalized
-	r, err := this.SendFrame(protocol.MCompanyCat.Frame(exchange.Uint8(), code))
-	if err != nil {
-		return nil, err
-	}
-	return r.([]protocol.CompanyCategory), nil
-}
-
-// GetCompanyContent 获取 F10 某分类的文本内容。
-func (this *Conn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
-	if err := this.requireStandard(); err != nil {
-		return "", err
-	}
-	normalized, err := standardSecurity(exchange, code)
-	if err != nil {
-		return "", err
-	}
-	code = normalized
-	r, err := this.SendFrame(protocol.MCompanyContent.Frame(exchange.Uint8(), code, filename, start, length))
-	if err != nil {
-		return "", err
-	}
-	return r.(string), nil
-}
-
-// GetFinanceInfo 获取标的财务/基本面信息（流通股本/总股本/行业/地域/股东户数/财务）。
-func (this *Conn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	normalized, err := standardSecurity(exchange, code)
-	if err != nil {
-		return nil, err
-	}
-	code = normalized
-	f := protocol.MFinance.Frame(exchange.Uint8(), code)
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.FinanceInfo), nil
-}
-
-// GetBlockFileRaw 下载通达信服务器文件（板块/配置）原始字节，分块拉取后拼接。
-// 适用于二进制板块文件(block*.dat)与文本配置(tdxhy.cfg 等)。
-func (this *Conn) GetBlockFileRaw(file string) ([]byte, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	mr, err := this.SendFrame(protocol.MBlock.FrameMeta(file))
-	if err != nil {
-		return nil, err
-	}
-	meta, ok := mr.(*protocol.BlockMetaResp)
-	if !ok || meta.Size == 0 {
-		return nil, fmt.Errorf("板块文件 %s 无数据", file)
-	}
-	var buf []byte
-	start := uint32(0)
-	for start < meta.Size {
-		n := uint32(0x7530)
-		if meta.Size-start < n {
-			n = meta.Size - start
-		}
-		r, err := this.SendFrame(protocol.MBlock.FrameInfo(start, n, file))
-		if err != nil {
-			return nil, err
-		}
-		info, ok := r.(*protocol.BlockInfoResp)
-		if !ok || len(info.Data) == 0 {
-			return nil, fmt.Errorf("文件 %s 下载不完整: 预期 %d 字节，收到 %d: %w", file, meta.Size, start, io.ErrUnexpectedEOF)
-		}
-		if uint32(len(info.Data)) > n {
-			return nil, fmt.Errorf("文件 %s 分块过长: 预期最多 %d 字节，收到 %d", file, n, len(info.Data))
-		}
-		buf = append(buf, info.Data...)
-		start += uint32(len(info.Data))
-	}
-	return buf, nil
-}
-
-// GetBlockData 下载并解析通达信板块文件（如 protocol.BlockFileGN 概念）→ 板块列表。
-func (this *Conn) GetBlockData(file string) ([]*protocol.Block, error) {
-	buf, err := this.GetBlockFileRaw(file)
-	if err != nil {
-		return nil, err
-	}
-	return protocol.ParseBlockFile(buf), nil
-}
-
-// GetReportFile 下载通达信服务器任意报表/数据文件（report file，指令 0x06B9）原始字节。
-// 与 GetBlockFileRaw 共用同一传输帧，区别在于报表文件无 0x02C5 元信息预查文件大小，
-// 故按 0x7530 块大小循环递增 offset 拉取，直到返回块短于请求块（末块）或为空时终止。
-// 对齐 pytdx GetReportFile / mitdx get_report_file。
-func (this *Conn) GetReportFile(file string) ([]byte, error) {
-	if err := this.requireStandard(); err != nil {
-		return nil, err
-	}
-	const chunk = uint32(0x7530)
-	var buf []byte
-	start := uint32(0)
-	for {
-		r, err := this.SendFrame(protocol.MBlock.FrameInfo(start, chunk, file))
-		if err != nil {
-			return nil, err
-		}
-		info, ok := r.(*protocol.BlockInfoResp)
-		if !ok || len(info.Data) == 0 {
-			break
-		}
-		buf = append(buf, info.Data...)
-		start += uint32(len(info.Data))
-		if uint32(len(info.Data)) < chunk {
-			break
-		}
-	}
-	return buf, nil
-}
-
-// GetZHBFiles 下载板块/配置数据总包 zhb.zip(report file 0x06B9)并解压，返回 文件名→原始字节。
-// zhb.zip 内含 tdxzs.cfg(板块指数代码)、tdxbk.cfg(概念板块)、incon.dat(行业分类)等配置文件。
-func (this *Conn) GetZHBFiles() (map[string][]byte, error) {
-	raw, err := this.GetReportFile(protocol.ReportZHB)
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("%s 无数据", protocol.ReportZHB)
-	}
-	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
-	if err != nil {
-		return nil, fmt.Errorf("解压 %s 失败: %w", protocol.ReportZHB, err)
-	}
-	out := make(map[string][]byte, len(zr.File))
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		b, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, err
-		}
-		out[f.Name] = b
+		out[j] = quotes[0]
 	}
 	return out, nil
 }
 
-// GetTdxZs 下载并解析板块指数配置 tdxzs.cfg(来自 zhb.zip) → 板块名↔指数代码(id) 列表。
-func (this *Conn) GetTdxZs() ([]*protocol.TdxZs, error) {
-	files, err := this.GetZHBFiles()
+// GetQuoteList 按扩展市场分页查询列表，与按指定证券查询的 GetQuote 分开。
+func (c *MarketClient) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
+	if market <= protocol.ExchangeBJ.Uint8() {
+		return nil, errors.New("市场行情列表需要扩展市场")
+	}
+	link, err := c.connection(protocol.Exchange(market))
 	if err != nil {
 		return nil, err
 	}
-	data, ok := files[protocol.FileTdxZs]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxZs)
-	}
-	return protocol.ParseTdxZs(data), nil
+	return link.GetQuoteList(market, category, start, count)
 }
 
-// GetTdxBk 下载并解析 tdxbk.cfg(来自 zhb.zip) → 概念板块简称↔全称。
-func (this *Conn) GetTdxBk() ([]*protocol.TdxBk, error) {
-	files, err := this.GetZHBFiles()
+func (c *MarketClient) minutePage(date, code string) (*MinuteResp, error) {
+	i, _, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := files[protocol.FileTdxBk]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxBk)
+	link, err := c.connection(i.Exchange)
+	if err != nil {
+		return nil, err
 	}
-	return protocol.ParseTdxBk(data), nil
+	return link.minutePage(date, code)
 }
 
-// GetBlockDataWithIndex 下载板块文件(block_*.dat)并按名称回填板块指数代码(id)。
-// block 文件本身无 id，关联链: 板块名 →(tdxzs.cfg)→ id；直接未命中再经
-// 简称 →(tdxbk.cfg)→ 全称 →(tdxzs.cfg)→ id 二次匹配。三个文件均来自 zhb.zip(仅下载一次)。
-func (this *Conn) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
-	blocks, err := this.GetBlockData(file)
+func (c *MarketClient) tradePage(date, code string, start, count uint16) (*TradeResp, error) {
+	i, _, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
-	files, err := this.GetZHBFiles()
+	link, err := c.connection(i.Exchange)
 	if err != nil {
 		return nil, err
 	}
-	zs := protocol.ParseTdxZs(files[protocol.FileTdxZs])
-	bk := protocol.ParseTdxBk(files[protocol.FileTdxBk])
-	protocol.FillBlockIndexAlias(blocks, zs, bk)
-	return blocks, nil
+	return link.tradePage(date, code, start, count)
 }
 
-// GetTdxStat 下载并解析 tdxstat.cfg(来自 zhb.zip) → 全市场个股综合统计指标。
-func (this *Conn) GetTdxStat() ([]*protocol.TdxStat, error) {
-	files, err := this.GetZHBFiles()
+// GetCode 的 start 是指定市场内的偏移；标准协议每次最多返回 1000 项。
+func (c *MarketClient) GetCode(ex protocol.Exchange, start uint32, count uint16) (*CodeResp, error) {
+	if err := codePageBounds(ex, start, count); err != nil {
+		return nil, err
+	}
+	link, err := c.connection(ex)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := files[protocol.FileTdxStat]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxStat)
-	}
-	return protocol.ParseTdxStat(data), nil
+	return link.GetCode(ex, start, count)
 }
 
-// GetTdxStat2 下载并解析 tdxstat2.cfg(来自 zhb.zip) → 全市场个股资金流向 + 板块归属。
-// 其 BlockIndex 字段提供 股→板块指数代码(id) 的反向映射(见 protocol.StockBlockIndex)。
-func (this *Conn) GetTdxStat2() ([]*protocol.TdxStat2, error) {
-	files, err := this.GetZHBFiles()
+// GetCodeAll 返回指定市场的全部品种，协议扫描由对应客户端完成。
+func (c *MarketClient) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
+	link, err := c.connection(ex)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := files[protocol.FileTdxStat2]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxStat2)
-	}
-	return protocol.ParseTdxStat2(data), nil
+	return link.GetCodeAll(ex)
 }
 
-// GetXgsg 下载并解析 xgsg.cfg(来自 zhb.zip) → 新股申购列表。
-func (this *Conn) GetXgsg() ([]*protocol.TdxXgsg, error) {
-	files, err := this.GetZHBFiles()
+// GetCount 返回指定市场数量，扩展协议全局计数不能直接替代单市场数量。
+func (c *MarketClient) GetCount(ex protocol.Exchange) (int, error) {
+	link, err := c.connection(ex)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	data, ok := files[protocol.FileXgsg]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileXgsg)
-	}
-	return protocol.ParseXgsg(data), nil
+	return link.GetCount(ex)
 }
 
-// GetSpBlock 下载并解析 spblock.dat(来自 zhb.zip) → 专业板块成分列表。
-//
-// spblock.dat 承载 block_zs.dat 无法容纳的大型指数成分, 如
-// 中证2000/中证1000/中证500/中证A500/国证2000/深证成指 等(block_*.dat 单板块成分上限 400)。
-// 用 protocol.SpBlockByName 按名取单个板块。注意: 沪深300 不在此文件, 在 block_zs.dat(见 GetBlockData)。
-func (this *Conn) GetSpBlock() ([]*protocol.SpBlock, error) {
-	files, err := this.GetZHBFiles()
+// GetMarkets 合并内置标准市场和扩展服务器市场表；扩展发现失败时返回错误。
+func (c *MarketClient) GetMarkets() ([]Exchange, error) {
+	link, err := c.connection(protocol.ExchangeHK)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := files[protocol.FileSpBlock]
-	if !ok {
-		return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileSpBlock)
+	r, err := link.GetMarkets()
+	if err != nil {
+		return nil, err
 	}
-	return protocol.ParseSpBlock(data), nil
+	return append(standardMarkets(), r...), nil
 }
 
-// GetTdxHy 下载并解析 tdxhy.cfg → 每只股票的通达信/申万行业归属。
-func (this *Conn) GetTdxHy() ([]*protocol.TdxHy, error) {
-	buf, err := this.GetBlockFileRaw(protocol.FileTdxHy)
+// GetKlineRange 查询包含两端日期的一分钟线，由对应协议客户端读取。
+func (c *MarketClient) GetKlineRange(code, startDate, endDate string) (*KlineResp, error) {
+	if _, _, _, _, err := klineRangeDates(startDate, endDate); err != nil {
+		return nil, err
+	}
+	i, _, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
-	return protocol.ParseTdxHy(buf), nil
+	link, err := c.connection(i.Exchange)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetKlineRange(code, startDate, endDate)
 }
 
-// getStandardMinute 获取标准分时数据,todo 解析好像不对,先用历史数据
-func (this *Conn) getStandardMinute(code string) (*protocol.MinuteResp, error) {
-	// 实时分时解析存疑，移植后暂统一走历史分时（去除原 unreachable 实现以过 vet）。
-	return this.getStandardHistoryMinute(time.Now().Format("20060102"), code)
+func (c *MarketClient) GetBlockData(file string) ([]*protocol.Block, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetBlockData(file)
 }
 
-// getStandardHistoryMinute 获取标准历史分时数据
-func (this *Conn) getStandardHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
-	f, err := protocol.MHistoryMinute.Frame(date, code)
+func (c *MarketClient) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f)
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.MinuteResp), nil
+	return link.GetBlockDataWithIndex(file)
 }
 
-// getStandardTrade 获取标准分时交易详情,服务器最多返回1800条,count-start<=1800
-func (this *Conn) getStandardTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
-	code = protocol.AddPrefix(code)
-	f, err := protocol.MTrade.Frame(code, start, count)
+func (c *MarketClient) GetBlockFileRaw(file string) ([]byte, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.TradeCache{
-		Date: time.Now().Format("20060102"),
-		Code: code,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.TradeResp), nil
+	return link.GetBlockFileRaw(file)
 }
 
-func (this *Conn) getStandardHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
-	code = protocol.AddPrefix(code)
-	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
+func (c *MarketClient) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+	if _, err := standardInstrument(code); err != nil {
+		return nil, err
+	}
+	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.TradeCache{
-		Date: date,
-		Code: code,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.TradeResp), nil
+	return link.GetCallAuction(code)
 }
 
-func (this *Conn) getStandardKline(Type uint8, code string, start, count uint16, kind string) (*protocol.KlineResp, error) {
-	code = protocol.AddPrefix(code)
-	f, err := protocol.MKline.Frame(Type, code, start, count)
+func (c *MarketClient) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
+	if _, err := standardSecurity(exchange, code); err != nil {
+		return nil, err
+	}
+	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: kind, Code: code})
+	return link.GetCompanyCategory(exchange, code)
+}
+
+func (c *MarketClient) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
+	if _, err := standardSecurity(exchange, code); err != nil {
+		return "", err
+	}
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return "", err
+	}
+	return link.GetCompanyContent(exchange, code, filename, start, length)
+}
+
+func (c *MarketClient) GetETFCodeAll() ([]string, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	return result.(*protocol.KlineResp), nil
+	return link.GetETFCodeAll()
+}
+
+func (c *MarketClient) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
+	if _, err := standardSecurity(exchange, code); err != nil {
+		return nil, err
+	}
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetFinanceInfo(exchange, code)
+}
+
+func (c *MarketClient) GetGbbq(code string) (*protocol.GbbqResp, error) {
+	if _, err := standardInstrument(code); err != nil {
+		return nil, err
+	}
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetGbbq(code)
+}
+
+func (c *MarketClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetGbbqAll()
+}
+
+func (c *MarketClient) GetIndexCodeAll() ([]string, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetIndexCodeAll()
+}
+
+func (c *MarketClient) GetReportFile(file string) ([]byte, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetReportFile(file)
+}
+
+func (c *MarketClient) GetSpBlock() ([]*protocol.SpBlock, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetSpBlock()
+}
+
+func (c *MarketClient) GetStockCodeAll() ([]string, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetStockCodeAll()
+}
+
+func (c *MarketClient) GetTdxBk() ([]*protocol.TdxBk, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetTdxBk()
+}
+
+func (c *MarketClient) GetTdxHy() ([]*protocol.TdxHy, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetTdxHy()
+}
+
+func (c *MarketClient) GetTdxStat() ([]*protocol.TdxStat, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetTdxStat()
+}
+
+func (c *MarketClient) GetTdxStat2() ([]*protocol.TdxStat2, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetTdxStat2()
+}
+
+func (c *MarketClient) GetTdxZs() ([]*protocol.TdxZs, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetTdxZs()
+}
+
+func (c *MarketClient) GetXgsg() ([]*protocol.TdxXgsg, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetXgsg()
+}
+
+func (c *MarketClient) GetZHBFiles() (map[string][]byte, error) {
+	link, err := c.connection(protocol.ExchangeSZ)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetZHBFiles()
+}
+
+func standardKline(k *protocol.Kline) Kline {
+	amount := k.Amount.Float64()
+	return Kline{Time: k.Time.Format("2006-01-02 15:04"), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
+}
+
+// StandardResponse 供标准指标、复权和旧 HTTP 数据契约使用，不换算扩展数据。
+func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
+	if r.Instrument.Exchange > protocol.ExchangeBJ {
+		return nil, errors.New("扩展 K线不能转换为标准协议数据")
+	}
+	if len(r.List) > 65535 {
+		return nil, errors.New("累计记录数超过标准返回类型 uint16 上限")
+	}
+	out := &protocol.KlineResp{Count: uint16(len(r.List))}
+	for _, k := range r.List {
+		if k.Standard == nil {
+			return nil, errors.New("缺少标准 K线原始数据")
+		}
+		out.List = append(out.List, k.Standard)
+	}
+	return out, nil
+}
+
+func (r *TradeResp) StandardResponse() (*protocol.TradeResp, error) {
+	if r.Instrument.Exchange > protocol.ExchangeBJ {
+		return nil, errors.New("扩展分笔不能转换为标准协议数据")
+	}
+	if len(r.List) > 65535 {
+		return nil, errors.New("累计记录数超过标准返回类型 uint16 上限")
+	}
+	out := &protocol.TradeResp{Count: uint16(len(r.List))}
+	for _, k := range r.List {
+		if k.Standard == nil {
+			return nil, errors.New("缺少标准分笔原始数据")
+		}
+		out.List = append(out.List, k.Standard)
+	}
+	return out, nil
 }

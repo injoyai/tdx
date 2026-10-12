@@ -18,13 +18,13 @@ func TestExHqLive(t *testing.T) {
 	}
 	cli := liveTestClient(t, true, false)
 
-	cnt, err := cli.getExtendedCount()
+	cnt, err := cli.protocolClient.(*ExConn).getExtendedCount()
 	if err != nil || cnt <= 0 {
 		t.Fatalf("ExCount: cnt=%d err=%v", cnt, err)
 	}
 	t.Logf("ExCount=%d", cnt)
 
-	ins, err := cli.getExtendedInstruments(0, 5)
+	ins, err := cli.protocolClient.(*ExConn).getExtendedInstruments(0, 5)
 	if err != nil || len(ins) == 0 {
 		t.Fatalf("ExInstruments: n=%d err=%v", len(ins), err)
 	}

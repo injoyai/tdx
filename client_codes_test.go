@@ -194,13 +194,13 @@ func TestUnifiedMarketDiscovery(t *testing.T) {
 	if _, err = c.GetMarkets(); !errors.Is(err, net.ErrClosed) {
 		t.Fatal(err)
 	}
-	std.CloseAll()
+	std.Close()
 	if _, err = std.GetMarkets(); !errors.Is(err, net.ErrClosed) {
 		t.Fatal(err)
 	}
 	failed := newMarketClient()
 	t.Cleanup(func() { failed.Close() })
-	failed.dial[1] = func() (*Conn, error) { return nil, io.ErrUnexpectedEOF }
+	failed.dial[1] = func() (protocolClient, error) { return nil, io.ErrUnexpectedEOF }
 	if r, err = failed.GetMarkets(); !errors.Is(err, io.ErrUnexpectedEOF) || r != nil {
 		t.Fatal("returned incomplete discovery", r, err)
 	}

@@ -1,7 +1,6 @@
 package pull
 
 import (
-	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -10,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/ios"
 	"github.com/injoyai/tdx/v2"
 )
 
@@ -38,7 +36,7 @@ type failOnceInstrumentPool struct {
 	fail bool
 }
 
-func (p *failOnceInstrumentPool) Do(fn func(*tdx.Conn) error) error {
+func (p *failOnceInstrumentPool) Do(fn func(tdx.Client) error) error {
 	if p.fail {
 		p.fail = false
 		return errors.New("instrument discovery failed")
@@ -47,12 +45,20 @@ func (p *failOnceInstrumentPool) Do(fn func(*tdx.Conn) error) error {
 }
 
 func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
-	a, b := net.Pipe()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var pages atomic.Int32
 	var empty atomic.Bool
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		b, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer b.Close()
 		for {
 			header := make([]byte, 12)
 			if _, err := io.ReadFull(b, header); err != nil {
@@ -60,6 +66,10 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 			}
 			body := make([]byte, int(binary.LittleEndian.Uint16(header[6:8]))-2)
 			if _, err := io.ReadFull(b, body); err != nil {
+				return
+			}
+			if header[0] != 0x01 {
+				t.Errorf("instrument discovery used wrong protocol prefix %x", header[0])
 				return
 			}
 			if binary.LittleEndian.Uint32(header[1:5]) == 0 {
@@ -91,18 +101,18 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 			}
 		}
 	}()
-	c, err := tdx.DialWith(func(context.Context) (ios.ReadWriteCloser, string, error) { return a, "offline-instruments", nil }, tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone))
+	c, err := tdx.DialExHq(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	if err != nil {
-		a.Close()
-		b.Close()
+		l.Close()
+		<-done
 		t.Fatal(err)
 	}
 	c.SetTimeout(time.Second)
-	p, err := tdx.NewPool(func() (*tdx.Conn, error) { return c, nil }, 1)
+	p, err := tdx.NewPool(func() (tdx.Client, error) { return c, nil }, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { p.Close(); b.Close(); <-done })
+	t.Cleanup(func() { p.Close(); l.Close(); <-done })
 	faulty := &failOnceInstrumentPool{IPool: p}
 	s := testService(t)
 	s.cfg.ExPool = faulty

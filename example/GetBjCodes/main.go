@@ -12,7 +12,7 @@ func main() {
 		logs.Err(err)
 		return
 	}
-	defer c.CloseAll()
+	defer c.Close()
 	resp, err := c.GetCodeAll(protocol.ExchangeBJ)
 	if err != nil {
 		logs.Err(err)

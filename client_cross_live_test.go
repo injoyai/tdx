@@ -36,7 +36,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	samples["sz_hour"] = rawHour.List
-	if err := std.CloseAll(); err != nil {
+	if err := std.Close(); err != nil {
 		t.Fatal(err)
 	}
 	ex := liveTestClient(t, true, false)

@@ -32,7 +32,7 @@ func (c *closeOnceConn) Close() error {
 	return c.err
 }
 
-func (c *Conn) cancelableDial(dial ios.DialFunc) ios.DialFunc {
+func (c *conn) cancelableDial(dial ios.DialFunc) ios.DialFunc {
 	if dial == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func (c *Conn) cancelableDial(dial ios.DialFunc) ios.DialFunc {
 	}
 }
 
-func (c *Conn) wrapWriter(native *client.Client) *frameWriter {
+func (c *conn) wrapWriter(native *client.Client) *frameWriter {
 	// 底层 Close 会立即归还读缓存；独立缓存避免尚未退出的读取与缓存复用竞争。
 	if r, ok := native.Origin().(io.Reader); ok {
 		reader := bufio.NewReader(r)
@@ -91,7 +91,7 @@ func (c *Conn) wrapWriter(native *client.Client) *frameWriter {
 	return w
 }
 
-func (c *Conn) goHeartbeat(w *frameWriter, done <-chan struct{}, bs []byte) {
+func (c *conn) goHeartbeat(w *frameWriter, done <-chan struct{}, bs []byte) {
 	// 心跳绑定当次连接的关闭信号，不能读取重连时会被重置的底层 Closer。
 	go func() {
 		tick := time.NewTicker(30 * time.Second)

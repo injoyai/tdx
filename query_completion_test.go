@@ -143,7 +143,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 		})
 	}
 	// The bound common methods must have identical callable contracts.
-	c, m := new(Conn), new(MarketClient)
+	c, m := new(StConn), new(MarketClient)
 	ct, mt := reflect.TypeOf(c), reflect.TypeOf(m)
 	for n := 0; n < ct.NumMethod(); n++ {
 		cm := ct.Method(n)
@@ -291,7 +291,7 @@ func TestUnifiedTradePaging(t *testing.T) {
 	}
 	c := newMarketClient()
 	defer c.Close()
-	c.dial[0] = func() (*Conn, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func() (protocolClient, error) { return nil, io.ErrClosedPipe }
 	if r, err := c.GetTradeAll("sz000001"); r != nil || !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal("partial result returned", r, err)
 	}

@@ -21,17 +21,17 @@ import (
 
 type tradeTestPool struct {
 	tdx.IPool
-	c *tdx.Conn
+	c tdx.Client
 }
 
-func (p tradeTestPool) Do(fn func(*tdx.Conn) error) error { return fn(p.c) }
+func (p tradeTestPool) Do(fn func(tdx.Client) error) error { return fn(p.c) }
 
 type tradeTestCodes struct{ tdx.ICodes }
 
 func (tradeTestCodes) GetName(string) string { return "测试股票" }
 
 func TestPullTradePeriods(t *testing.T) {
-	var c *tdx.Conn
+	var c tdx.Client
 	reader, server := net.Pipe()
 	t.Cleanup(func() { server.Close() })
 	go func() {
@@ -83,7 +83,7 @@ func TestPullTradePeriods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.CloseAll() })
+	t.Cleanup(func() { c.Close() })
 	c.SetTimeout(time.Second)
 
 	db, err := xorms.NewSqlite(filepath.Join(t.TempDir(), "workday.db"))

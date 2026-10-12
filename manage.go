@@ -35,7 +35,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	if m.IPool == nil {
 		if m.dialPool == nil {
 			m.dialPool = func() (IPool, error) {
-				return NewPool(func() (*Conn, error) { return DialDefault() }, m.poolClients)
+				return NewPool(func() (Client, error) { return DialDefault() }, m.poolClients)
 			}
 		}
 		owner := m
