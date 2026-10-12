@@ -217,7 +217,11 @@ func (this *Gbbq) QFQKlineDay(code string) (protocol.Klines, error) {
 	if err != nil {
 		return nil, err
 	}
-	return this.QFQ(code, resp.List), nil
+	raw, err := resp.StandardResponse()
+	if err != nil {
+		return nil, err
+	}
+	return this.QFQ(code, raw.List), nil
 }
 
 // HFQKlineDay 一站式获取后复权日线(全量历史)。见 QFQKlineDay。
@@ -226,7 +230,11 @@ func (this *Gbbq) HFQKlineDay(code string) (protocol.Klines, error) {
 	if err != nil {
 		return nil, err
 	}
-	return this.HFQ(code, resp.List), nil
+	raw, err := resp.StandardResponse()
+	if err != nil {
+		return nil, err
+	}
+	return this.HFQ(code, raw.List), nil
 }
 
 func (this *Gbbq) GetTurnover(code string, t time.Time, volume int64) float64 {

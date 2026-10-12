@@ -1,12 +1,12 @@
 // Package market 实现各市场的拉取 Unit（可插拔）。
-// 美股市场：走扩展行情(7727) ExBars 拉取日线/分钟线。
+// 美股市场：走扩展行情(7727) GetKline 拉取日线/分钟线。
 package market
 
 import (
 	"github.com/injoyai/tdx/v2/extend/pull"
 )
 
-// 美股市场编码（扩展行情 ExInstruments.Market）。
+// 美股市场编码（扩展行情 ExInstrument.Market）。
 const marketUS = 74 // 美国股票
 
 // US 美股市场。

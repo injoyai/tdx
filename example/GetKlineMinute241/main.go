@@ -6,15 +6,17 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/example/common"
-	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func main() {
 	common.Test(func(c *tdx.Client) {
 		{
-			resp, err := c.GetKlineMinute241Until("sz000001", func(k *protocol.Kline) bool {
+			result, err := c.GetKlineMinute241Until("sz000001", func(record tdx.MarketKline) bool {
+				k := record.Standard
 				return k.Time.Format("20060102") < "20251222"
 			})
+			logs.PanicErr(err)
+			resp, err := result.StandardResponse()
 			logs.PanicErr(err)
 			for _, v := range resp.List {
 				switch v.Time.Format("1504") {
@@ -26,9 +28,12 @@ func main() {
 		}
 
 		{
-			resp, err := c.GetKlineMinuteUntil("sz000001", func(k *protocol.Kline) bool {
+			result, err := c.GetKlineMinuteUntil("sz000001", func(record tdx.MarketKline) bool {
+				k := record.Standard
 				return k.Time.Format("20060102") < "20251222"
 			})
+			logs.PanicErr(err)
+			resp, err := result.StandardResponse()
 			logs.PanicErr(err)
 			for _, v := range resp.List {
 				switch v.Time.Format("1504") {

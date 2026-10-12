@@ -88,13 +88,13 @@ func main() {
 | 枚举常量 | 值（即存储目录） | 市场 | 连接 | 说明 |
 |---|---|---|---|---|
 | `pull.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
-| `pull.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetIndex*`（含 `sh000001` 等） |
+| `pull.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
 | `pull.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
 | `pull.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
-| `pull.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `ExBars` |
-| `pull.MarketHK` | `hk/stock` | 港股主板 | 7727 | `ExBars` |
-| `pull.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `ExBars`，市场编码27，含 HSI/VHSI/CES100 等 |
-| `pull.MarketUS` | `us/stock` | 美股 | 7727 | `ExBars`，股票/ETF/指数混合（协议层无法区分） |
+| `pull.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
+| `pull.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
+| `pull.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
+| `pull.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
 
 > 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
@@ -125,7 +125,7 @@ fmt.Println(info.Protocol, info.Day.Category, info.Day.ToStorageVolume(204225))
 
 `VolumeShares` 直接存储，`VolumeHundredShares` 乘 100；这里的百股是协议单位，与港股交易所每手的实际股数无关。`VolumeDefault` 表示单位尚未确认，暂时沿用 ×100，零值也用这个默认换算。期货的默认数值不能直接视为合约数量。自定义市场的 `Info()` 返回 `false`，继续由自己的 `Unit` 决定请求和换算。
 
-标准行情的 `KindIndex` 需使用 `GetIndex*` 解码。股票/ETF 的分钟拉取继续调用 `GetKlineMinute241Until`（类型 7），保留集合竞价拆分。配置仅覆盖 pull 存储的日线和 1 分钟线，不能用于报价、分笔、本地文件或其他周期。
+标准行情统一由 `GetKline*` 按代码选择 `KindIndex` 解码。股票/ETF 的分钟拉取继续调用 `GetKlineMinute241Until`（类型 7），保留集合竞价拆分。配置仅覆盖 pull 存储的日线和 1 分钟线，不能用于报价、分笔、本地文件或其他周期。
 
 港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
 
@@ -243,11 +243,11 @@ Codes: []string{
 
 ### 执行与资源释放
 
-同一个 `Service.Update` 中，港股、港股指数、美股和期货共享一次完整的 `ExInstruments` 分页发现，再各自过滤市场代码；成功的空列表也仅缓存到本轮结束，失败不缓存。下一轮更新重新查询，不跨 Service 或连接池共享。在 `Update` 之外调用 `Service.ExInstruments()` 时重新查询；返回切片可修改，不影响其他市场的快照。同一个 Service 的并发 `Update` 调用顺序执行，仍按市场完成标记去重。
+同一个 `Service.Update` 中，港股、港股指数、美股和期货共享一次完整的扩展协议品种分页发现，再各自过滤市场代码；成功的空列表也仅缓存到本轮结束，失败不缓存。下一轮更新重新查询，不跨 Service 或连接池共享。在 `Update` 之外调用 `Service.GetInstruments()` 时重新查询；返回切片可修改，不影响其他市场的快照。同一个 Service 的并发 `Update` 调用顺序执行，仍按市场完成标记去重。
 
 `Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
 失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
-标准行情直接复用根包 `GetIndexUntil`、`GetKlineUntil`、`GetKlineMinute241Until`；连接池直接使用 `IPool.Do`。
+标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，再通过 `StandardResponse()` 提取原始字段；连接池直接使用 `IPool.Do`。
 正在进行的拉取等待底层响应或超时，不提供取消接口。
 
 迁移调用方式：`s.Update(ctx)` → `s.Update()`，`s.Update(ctx, true)` → `s.Update(true)`。

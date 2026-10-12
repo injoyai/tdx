@@ -192,7 +192,7 @@ func (this *Codes) update() ([]*CodeModel, error) {
 	insert := []*CodeModel(nil)
 	update := []*CodeModel(nil)
 	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
-		resp, err := this.c.GetCodeAll(exchange)
+		resp, err := this.c.getStandardCodeAll(exchange)
 		if err != nil {
 			return nil, err
 		}

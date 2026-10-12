@@ -69,16 +69,16 @@ func main() {
 	// 6. 板块指数行情(取第1个概念板块的指数代码)
 	if len(gn) > 0 && gn[0].Index != "" {
 		code := gn[0].Index
-		ks, err := c.GetIndexDay(code, 0, 5)
+		ks, err := c.GetKlineDay(code, 0, 5)
 		logs.PanicErr(err)
 		logs.Infof("板块[%s]指数 %s 最近5个交易日:", gn[0].Name, code)
 		for _, v := range ks.List {
-			logs.Infof("  %s 收=%.3f 涨跌家数=%d/%d 量=%d", v.Time.Format("2006-01-02"), v.Close.Float64(), v.UpCount, v.DownCount, v.Volume)
+			logs.Infof("  %s 收=%.3f 涨跌家数=%d/%d 量=%d", v.Time, v.Close, v.Standard.UpCount, v.Standard.DownCount, v.Volume)
 		}
 		q, err := c.GetQuote(code)
 		logs.PanicErr(err)
 		for _, v := range q {
-			logs.Infof("  实时行情 %s%s: 收=%.3f 昨收=%.3f", v.Exchange.String(), v.Code, v.Kline.Close.Float64(), v.Kline.Last.Float64())
+			logs.Infof("  实时行情 %s%s: 收=%.3f 昨收=%.3f", v.Instrument.Exchange.String(), v.Instrument.Code, v.Price, v.PreClose)
 		}
 	}
 }

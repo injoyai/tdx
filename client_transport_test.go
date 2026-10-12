@@ -232,7 +232,7 @@ func TestTradePaginationOverflow(t *testing.T) {
 				}
 				return out
 			})
-			var r *protocol.TradeResp
+			var r *MarketTradeResp
 			var err error
 			if historical {
 				r, err = c.GetHistoryTradeDay("20250102", "sz000001")
@@ -358,7 +358,7 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 						if direct {
 							c.WriteString(string(protocol.MHeart.Frame().Bytes()))
 						} else if ex {
-							c.ExCount()
+							c.getExtendedCount()
 						} else {
 							c.GetCount(protocol.ExchangeSZ)
 						}
@@ -376,10 +376,10 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 			workers.Wait()
 			c.SetTimeout(time.Second)
 			if ex {
-				if n, err := c.ExCount(); err != nil || n != 1 {
+				if n, err := c.getExtendedCount(); err != nil || n != 1 {
 					t.Fatal("request failed after reconnect", n, err)
 				}
-			} else if r, err := c.GetCount(protocol.ExchangeSZ); err != nil || r.Count != 1 {
+			} else if r, err := c.GetCount(protocol.ExchangeSZ); err != nil || r != 1 {
 				t.Fatal("request failed after reconnect", r, err)
 			}
 		})
@@ -409,12 +409,12 @@ func TestOtherPaginationLimits(t *testing.T) {
 			case "code":
 				_, err = c.GetCodeAll(protocol.ExchangeSZ)
 			case "index":
-				_, err = c.GetIndexAll(protocol.TypeKlineDay, "sh000001")
+				_, err = c.GetKlineAll(protocol.TypeKlineDay, "sh000001")
 			case "stock":
 				_, err = c.GetKlineAll(protocol.TypeKlineDay, "sz000001")
 			case "until":
 				seen := 0
-				r, e := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(*protocol.Kline) bool {
+				r, e := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(MarketKline) bool {
 					seen++
 					return seen == 65535
 				})

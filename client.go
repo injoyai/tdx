@@ -80,10 +80,21 @@ func DialHostsRange(hosts []string, op ...client.Option) (cli *Client, err error
 
 // DialWith 与服务器建立连接
 func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
+	return dialWith(dial, false, op...)
+}
 
+// dialWith 两类行情共用连接生命周期，仅握手、心跳与默认超时不同。
+func dialWith(dial ios.DialFunc, extended bool, op ...client.Option) (cli *Client, err error) {
+	timeout := 2 * time.Second
+	setup, heartbeat := protocol.MConnect.Frame, protocol.MHeart.Frame
+	if extended {
+		timeout = 10 * time.Second
+		setup, heartbeat = protocol.MEx.FrameSetup, protocol.MEx.FrameCount
+	}
 	cli = &Client{
-		Wait:        wait.New(time.Second * 2),
-		waitTimeout: time.Second * 2,
+		Wait:        wait.New(timeout),
+		waitTimeout: timeout,
+		extended:    extended,
 		m:           maps.NewSafe(),
 	}
 
@@ -97,13 +108,14 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 		c.Event.OnConnected = func(c *client.Client) error {
 			w := cli.wrapWriter(c)
 			<-cli.writeGate // 连接初始化完成，允许写入。
-			//无数据超时时间是60秒,30秒发送一个心跳包
-			f := protocol.MConnect.Frame()
-			_, err := cli.Write(f.Bytes())
-			if err == nil {
-				cli.goHeartbeat(w, c.Closer.Done(), protocol.MHeart.Frame().Bytes())
+			if _, err := cli.Write(setup().Bytes()); err != nil {
+				if extended {
+					c.Close()
+				}
+				return err
 			}
-			return err
+			cli.goHeartbeat(w, c.Closer.Done(), heartbeat().Bytes())
+			return nil
 		}
 	})
 	if err != nil {
@@ -114,10 +126,13 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
 	cli.cancelRun = cancel
 	go cli.Client.Run(ctx)
 
-	return cli, err
+	return cli, nil
 }
 
 type Client struct {
+	extended       bool
+	queryOnce      sync.Once
+	queries        *MarketClient
 	*client.Client              //客户端实例
 	ios.MoreWriter              // 稳定写入口，重连只替换内部连接快照。
 	Wait           *wait.Entity //内部响应关联；请求超时通过 SetTimeout 配置
@@ -340,8 +355,8 @@ func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	}
 }
 
-// GetCount 获取市场内的股票数量
-func (this *Client) GetCount(exchange protocol.Exchange) (*protocol.CountResp, error) {
+// getStandardCount 获取标准市场内的证券数量
+func (this *Client) getStandardCount(exchange protocol.Exchange) (*protocol.CountResp, error) {
 	f := protocol.MCount.Frame(exchange)
 	result, err := this.SendFrame(f)
 	if err != nil {
@@ -350,12 +365,12 @@ func (this *Client) GetCount(exchange protocol.Exchange) (*protocol.CountResp, e
 	return result.(*protocol.CountResp), nil
 }
 
-// GetCode 获取市场内指定范围内的所有证券代码,一次固定返回1000只,上证股票有效范围370-1480
+// getStandardCode 获取市场内指定范围内的所有证券代码,一次固定返回1000只,上证股票有效范围370-1480
 // 上证前370只是395/399开头的(中证500/总交易等辅助类),在后面的话是一些100开头的国债
 // 600开头的股票是上证A股，属于大盘股，其中6006开头的股票是最早上市的股票， 6016开头的股票为大盘蓝筹股；900开头的股票是上证B股；
 // 000开头的股票是深证A股，001、002开头的股票也都属于深证A股， 其中002开头的股票是深证A股中小企业股票；200开头的股票是深证B股；
 // 300开头的股票是创业板股票；400开头的股票是三板市场股票。
-func (this *Client) GetCode(exchange protocol.Exchange, start uint16) (*protocol.CodeResp, error) {
+func (this *Client) getStandardCode(exchange protocol.Exchange, start uint16) (*protocol.CodeResp, error) {
 	f := protocol.MCode.Frame(exchange, start)
 	result, err := this.SendFrame(f)
 	if err != nil {
@@ -364,8 +379,8 @@ func (this *Client) GetCode(exchange protocol.Exchange, start uint16) (*protocol
 	return result.(*protocol.CodeResp), nil
 }
 
-// GetCodeAll 通过多次请求的方式获取全部证券代码
-func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
+// getStandardCodeAll 通过多次请求的方式获取全部证券代码
+func (this *Client) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
 	resp := &protocol.CodeResp{}
 
 	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
@@ -389,7 +404,7 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 		if start > 65535 {
 			return nil, errors.New("分页偏移超过协议 uint16 上限")
 		}
-		r, err := this.GetCode(exchange, uint16(start))
+		r, err := this.getStandardCode(exchange, uint16(start))
 		if err != nil {
 			return nil, err
 		}
@@ -409,7 +424,7 @@ func (this *Client) GetCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, 
 func (this *Client) GetStockCodeAll() ([]string, error) {
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
-		resp, err := this.GetCodeAll(ex)
+		resp, err := this.getStandardCodeAll(ex)
 		if err != nil {
 			return nil, err
 		}
@@ -426,7 +441,7 @@ func (this *Client) GetStockCodeAll() ([]string, error) {
 func (this *Client) GetETFCodeAll() ([]string, error) {
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
-		resp, err := this.GetCodeAll(ex)
+		resp, err := this.getStandardCodeAll(ex)
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +458,7 @@ func (this *Client) GetETFCodeAll() ([]string, error) {
 func (this *Client) GetIndexCodeAll() ([]string, error) {
 	ls := []string{"bj899050"}
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
-		resp, err := this.GetCodeAll(ex)
+		resp, err := this.getStandardCodeAll(ex)
 		if err != nil {
 			return nil, err
 		}
@@ -456,13 +471,13 @@ func (this *Client) GetIndexCodeAll() ([]string, error) {
 	return ls, nil
 }
 
-// GetQuote 获取盘口五档报价
-func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
+// getStandardQuotes 按代码元数据校准标准行情价格。
+func (this *Client) getStandardQuotes(metadata ICodes, codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
 		//如果是股票代码,则加上前缀
 		codes[i] = protocol.AddPrefix(codes[i])
 		if !protocol.IsStock(codes[i]) && !protocol.IsIndex(codes[i]) {
-			if DefaultCodes == nil {
+			if metadata == nil {
 				return nil, errors.New("DefaultCodes未初始化")
 			}
 			//不是股票/指数代码的话，根据codes的信息加上前缀
@@ -490,7 +505,7 @@ func (this *Client) GetQuote(codes ...string) (protocol.QuotesResp, error) {
 			// 股票类代码才需要按 Decimal 修正价格;
 			// 指数(含板块指数 880xxx)与基金行情原始解码价格即正确, 跳过修正。
 			if !protocol.IsStock(code) && !protocol.IsIndex(code) {
-				m := DefaultCodes.Get(code)
+				m := metadata.Get(code)
 				if m == nil {
 					return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
 				}
@@ -797,14 +812,14 @@ func (this *Client) GetTdxHy() ([]*protocol.TdxHy, error) {
 	return protocol.ParseTdxHy(buf), nil
 }
 
-// GetMinute 获取分时数据,todo 解析好像不对,先用历史数据
-func (this *Client) GetMinute(code string) (*protocol.MinuteResp, error) {
+// getStandardMinute 获取标准分时数据,todo 解析好像不对,先用历史数据
+func (this *Client) getStandardMinute(code string) (*protocol.MinuteResp, error) {
 	// 实时分时解析存疑，移植后暂统一走历史分时（去除原 unreachable 实现以过 vet）。
-	return this.GetHistoryMinute(time.Now().Format("20060102"), code)
+	return this.getStandardHistoryMinute(time.Now().Format("20060102"), code)
 }
 
-// GetHistoryMinute 获取历史分时数据
-func (this *Client) GetHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
+// getStandardHistoryMinute 获取标准历史分时数据
+func (this *Client) getStandardHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
 	f, err := protocol.MHistoryMinute.Frame(date, code)
 	if err != nil {
 		return nil, err
@@ -816,8 +831,8 @@ func (this *Client) GetHistoryMinute(date, code string) (*protocol.MinuteResp, e
 	return result.(*protocol.MinuteResp), nil
 }
 
-// GetTrade 获取分时交易详情,服务器最多返回1800条,count-start<=1800
-func (this *Client) GetTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
+// getStandardTrade 获取标准分时交易详情,服务器最多返回1800条,count-start<=1800
+func (this *Client) getStandardTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MTrade.Frame(code, start, count)
 	if err != nil {
@@ -833,35 +848,7 @@ func (this *Client) GetTrade(code string, start, count uint16) (*protocol.TradeR
 	return result.(*protocol.TradeResp), nil
 }
 
-// GetTradeAll 获取分时全部交易详情,只能盘后调用,因为交易实时在进行,然后又是分页读取的,所以会出现读取间隔内产生的交易会丢失
-func (this *Client) GetTradeAll(code string) (*protocol.TradeResp, error) {
-	resp := &protocol.TradeResp{}
-	size := 1800
-	for start := 0; ; start += size {
-		if start > 65535 {
-			return nil, errors.New("分页偏移超过协议 uint16 上限")
-		}
-		r, err := this.GetTrade(code, uint16(start), uint16(size))
-		if err != nil {
-			return nil, err
-		}
-		if int(resp.Count)+int(r.Count) > 65535 {
-			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-		}
-		resp.Count += r.Count
-		resp.List = append(r.List, resp.List...)
-
-		if int(r.Count) < size {
-			break
-		}
-	}
-	return resp, nil
-}
-
-// GetHistoryTrade 获取历史分时交易
-// 只能获取昨天及之前的数据,服务器最多返回2000条,count-start<=2000,如果日期输入错误,则返回0
-// 历史数据只能查到20000609
-func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
+func (this *Client) getStandardHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
 	if err != nil {
@@ -877,435 +864,15 @@ func (this *Client) GetHistoryTrade(date, code string, start, count uint16) (*pr
 	return result.(*protocol.TradeResp), nil
 }
 
-// GetHistoryTradeFull 获取上市至今的分时成交
-func (this *Client) GetHistoryTradeFull(code string, w *Workday) (protocol.Trades, error) {
-	return this.GetHistoryTradeBefore(code, w, time.Now())
-}
-
-// GetHistoryTradeBefore 获取上市至今的分时成交
-func (this *Client) GetHistoryTradeBefore(code string, w *Workday, before time.Time) (protocol.Trades, error) {
-	ls := protocol.Trades(nil)
-	resp, err := this.GetKlineMonthAll(code)
-	if err != nil {
-		return nil, err
-	}
-	if len(resp.List) == 0 {
-		return nil, nil
-	}
-	start := time.Date(resp.List[0].Time.Year(), resp.List[0].Time.Month(), 1, 0, 0, 0, 0, resp.List[0].Time.Location())
-	var res *protocol.TradeResp
-	w.Range(start, before, func(t time.Time) bool {
-		for i := 0; i < 3; i++ {
-			res, err = this.GetHistoryTradeDay(t.Format("20060102"), code)
-			if err == nil {
-				break
-			}
-		}
-		if err != nil {
-			return false
-		}
-		ls = append(ls, res.List...)
-		return true
-	})
-	return ls, err
-}
-
-// GetHistoryTradeDay 获取历史某天分时全部交易,通过多次请求来拼接,只能获取昨天及之前的数据
-// 历史数据只能查到20000609
-func (this *Client) GetHistoryTradeDay(date, code string) (*protocol.TradeResp, error) {
-	resp := &protocol.TradeResp{}
-	size := 2000
-	for start := 0; ; start += size {
-		if start > 65535 {
-			return nil, errors.New("分页偏移超过协议 uint16 上限")
-		}
-		r, err := this.GetHistoryTrade(date, code, uint16(start), uint16(size))
-		if err != nil {
-			return nil, err
-		}
-		if int(resp.Count)+int(r.Count) > 65535 {
-			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-		}
-		resp.Count += r.Count
-		resp.List = append(r.List, resp.List...)
-		if int(r.Count) < size {
-			break
-		}
-	}
-	return resp, nil
-}
-
-/*
-
-
-
- */
-
-// GetIndex 获取指数,接口是和k线一样的,但是解析不知道怎么区分(解析方式不一致),所以加一个方法
-func (this *Client) GetIndex(Type uint8, code string, start, count uint16) (*protocol.KlineResp, error) {
+func (this *Client) getStandardKline(Type uint8, code string, start, count uint16, kind string) (*protocol.KlineResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MKline.Frame(Type, code, start, count)
 	if err != nil {
 		return nil, err
 	}
-	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindIndex, Code: code})
+	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: kind, Code: code})
 	if err != nil {
 		return nil, err
 	}
 	return result.(*protocol.KlineResp), nil
-}
-
-// GetIndexUntil 获取指数k线数据，通过多次请求来拼接,直到满足func返回true
-func (this *Client) GetIndexUntil(Type uint8, code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	resp := &protocol.KlineResp{}
-	size := 800
-	var last *protocol.Kline
-	for start := 0; ; start += size {
-		if start > 65535 {
-			return nil, errors.New("分页偏移超过协议 uint16 上限")
-		}
-		r, err := this.GetIndex(Type, code, uint16(start), uint16(size))
-		if err != nil {
-			return nil, err
-		}
-		if last != nil && len(r.List) > 0 {
-			last.Last = r.List[len(r.List)-1].Close
-		}
-		if len(r.List) > 0 {
-			last = r.List[0]
-		}
-		for i := len(r.List) - 1; i >= 0; i-- {
-			if f(r.List[i]) {
-				if int(resp.Count)+int(r.Count)-i > 65535 {
-					return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-				}
-				resp.Count += r.Count - uint16(i)
-				resp.List = append(r.List[i:], resp.List...)
-				return resp, nil
-			}
-		}
-		if int(resp.Count)+int(r.Count) > 65535 {
-			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-		}
-		resp.Count += r.Count
-		resp.List = append(r.List, resp.List...)
-		if int(r.Count) < size {
-			break
-		}
-	}
-	return resp, nil
-}
-
-// GetIndexAll 获取全部k线数据
-func (this *Client) GetIndexAll(Type uint8, code string) (*protocol.KlineResp, error) {
-	return this.GetIndexUntil(Type, code, func(k *protocol.Kline) bool { return false })
-}
-
-func (this *Client) GetIndexMinute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKlineMinute, code, start, count)
-}
-
-func (this *Client) GetIndex5Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKline5Minute, code, start, count)
-}
-
-func (this *Client) GetIndex15Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKline15Minute, code, start, count)
-}
-
-func (this *Client) GetIndex30Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKline30Minute, code, start, count)
-}
-
-func (this *Client) GetIndex60Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKline60Minute, code, start, count)
-}
-
-func (this *Client) GetIndexDay(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetIndex(protocol.TypeKlineDay, code, start, count)
-}
-
-func (this *Client) GetIndexDayUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetIndexUntil(protocol.TypeKlineDay, code, f)
-}
-
-func (this *Client) GetIndexDayAll(code string) (*protocol.KlineResp, error) {
-	return this.GetIndexAll(protocol.TypeKlineDay, code)
-}
-
-func (this *Client) GetIndexWeekAll(code string) (*protocol.KlineResp, error) {
-	return this.GetIndexAll(protocol.TypeKlineWeek, code)
-}
-
-func (this *Client) GetIndexMonthAll(code string) (*protocol.KlineResp, error) {
-	return this.GetIndexAll(protocol.TypeKlineMonth, code)
-}
-
-func (this *Client) GetIndexQuarterAll(code string) (*protocol.KlineResp, error) {
-	return this.GetIndexAll(protocol.TypeKlineQuarter, code)
-}
-
-func (this *Client) GetIndexYearAll(code string) (*protocol.KlineResp, error) {
-	return this.GetIndexAll(protocol.TypeKlineYear, code)
-}
-
-/*
-
-
- */
-
-// GetKline 获取k线数据,推荐收盘之后获取,否则会获取到当天的数据
-func (this *Client) GetKline(Type uint8, code string, start, count uint16) (*protocol.KlineResp, error) {
-	code = protocol.AddPrefix(code)
-	f, err := protocol.MKline.Frame(Type, code, start, count)
-	if err != nil {
-		return nil, err
-	}
-	result, err := this.SendFrame(f, protocol.KlineCache{Type: Type, Kind: protocol.KindStock, Code: code})
-	if err != nil {
-		return nil, err
-	}
-	return result.(*protocol.KlineResp), nil
-}
-
-// GetKlineUntil 获取k线数据，通过多次请求来拼接,直到满足func返回true
-func (this *Client) GetKlineUntil(Type uint8, code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	resp := &protocol.KlineResp{}
-	size := 800
-	var last *protocol.Kline
-	for start := 0; ; start += size {
-		if start > 65535 {
-			return nil, errors.New("分页偏移超过协议 uint16 上限")
-		}
-		r, err := this.GetKline(Type, code, uint16(start), uint16(size))
-		if err != nil {
-			return nil, err
-		}
-		if last != nil && len(r.List) > 0 {
-			last.Last = r.List[len(r.List)-1].Close
-		}
-		if len(r.List) > 0 {
-			last = r.List[0]
-		}
-		for i := len(r.List) - 1; i >= 0; i-- {
-			if f(r.List[i]) {
-				if int(resp.Count)+int(r.Count)-i > 65535 {
-					return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-				}
-				resp.Count += r.Count - uint16(i)
-				resp.List = append(r.List[i:], resp.List...)
-				return resp, nil
-			}
-		}
-		if int(resp.Count)+int(r.Count) > 65535 {
-			return nil, errors.New("累计记录数超过返回类型 uint16 上限")
-		}
-		resp.Count += r.Count
-		resp.List = append(r.List, resp.List...)
-		if int(r.Count) < size {
-			break
-		}
-	}
-	return resp, nil
-}
-
-// GetKlineAll 获取全部k线数据
-func (this *Client) GetKlineAll(Type uint8, code string) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(Type, code, func(k *protocol.Kline) bool { return false })
-}
-
-// GetKlineMinute 获取一分钟k线数据,每次最多800条,最多只能获取24000条数据
-func (this *Client) GetKlineMinute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineMinute, code, start, count)
-}
-
-// GetKlineMinuteAll 获取一分钟k线全部数据,最多只能获取24000条数据
-func (this *Client) GetKlineMinuteAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineMinute, code)
-}
-
-func (this *Client) GetKlineMinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineMinute, code, f)
-}
-
-func (this *Client) GetKlineMinute241Until(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	resp, err := this.GetKlineMinuteUntil(code, f)
-	if err != nil {
-		return nil, err
-	}
-	if len(resp.List) == 0 {
-		return resp, nil
-	}
-	ks := protocol.Klines{}
-	for _, v := range resp.List {
-		if v.Time.Format(time.TimeOnly) == "09:31:00" {
-			var tr *protocol.TradeResp
-			if v.Time.Format(time.DateOnly) == time.Now().Format(time.DateOnly) {
-				tr, err = this.GetTradeAll(code)
-			} else {
-				tr, err = this.GetHistoryTradeDay(v.Time.Format("20060102"), code)
-			}
-			if err != nil {
-				return nil, err
-			}
-			_925 := new(protocol.Trade)
-			if len(tr.List) > 0 && tr.List[0].Time.Format(time.TimeOnly) < "09:30:00" {
-				_925 = tr.List[0]
-			}
-			ks = append(ks, &protocol.Kline{
-				Last:   v.Last,
-				Open:   _925.Price,
-				High:   _925.Price,
-				Low:    _925.Price,
-				Close:  _925.Price,
-				Order:  _925.Number,
-				Volume: int64(_925.Volume),
-				Amount: _925.Amount(),
-				Time:   time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 9, 30, 0, 0, v.Time.Location()),
-			})
-			v.Last = _925.Price
-			v.Volume -= int64(_925.Volume)
-			if v.Volume < 0 {
-				v.Volume = 0
-			}
-			v.Amount -= _925.Amount()
-			if v.Amount < 0 {
-				v.Amount = 0
-			}
-			v.Order -= _925.Number
-			if v.Order < 0 {
-				v.Order = 0
-			}
-		}
-		ks = append(ks, v)
-	}
-	resp.List = ks
-	resp.Count = uint16(len(ks))
-	return resp, nil
-}
-
-// GetKline5Minute 获取五分钟k线数据
-func (this *Client) GetKline5Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKline5Minute, code, start, count)
-}
-
-// GetKline5MinuteAll 获取5分钟k线全部数据
-func (this *Client) GetKline5MinuteAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKline5Minute, code)
-}
-
-func (this *Client) GetKline5MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKline5Minute, code, f)
-}
-
-// GetKline15Minute 获取十五分钟k线数据
-func (this *Client) GetKline15Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKline15Minute, code, start, count)
-}
-
-// GetKline15MinuteAll 获取十五分钟k线全部数据
-func (this *Client) GetKline15MinuteAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKline15Minute, code)
-}
-
-func (this *Client) GetKline15MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKline15Minute, code, f)
-}
-
-// GetKline30Minute 获取三十分钟k线数据
-func (this *Client) GetKline30Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKline30Minute, code, start, count)
-}
-
-// GetKline30MinuteAll 获取三十分钟k线全部数据
-func (this *Client) GetKline30MinuteAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKline30Minute, code)
-}
-
-func (this *Client) GetKline30MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKline30Minute, code, f)
-}
-
-// GetKline60Minute 获取60分钟k线数据
-func (this *Client) GetKline60Minute(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKline60Minute, code, start, count)
-}
-
-// GetKline60MinuteAll 获取60分钟k线全部数据
-func (this *Client) GetKline60MinuteAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKline60Minute, code)
-}
-
-func (this *Client) GetKline60MinuteUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKline60Minute, code, f)
-}
-
-// GetKlineDay 获取日k线数据
-func (this *Client) GetKlineDay(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineDay, code, start, count)
-}
-
-// GetKlineDayAll 获取日k线全部数据
-func (this *Client) GetKlineDayAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineDay, code)
-}
-
-func (this *Client) GetKlineDayUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineDay, code, f)
-}
-
-// GetKlineWeek 获取周k线数据
-func (this *Client) GetKlineWeek(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineWeek, code, start, count)
-}
-
-// GetKlineWeekAll 获取周k线全部数据
-func (this *Client) GetKlineWeekAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineWeek, code)
-}
-
-func (this *Client) GetKlineWeekUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineWeek, code, f)
-}
-
-// GetKlineMonth 获取月k线数据
-func (this *Client) GetKlineMonth(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineMonth, code, start, count)
-}
-
-// GetKlineMonthAll 获取月k线全部数据
-func (this *Client) GetKlineMonthAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineMonth, code)
-}
-
-func (this *Client) GetKlineMonthUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineMonth, code, f)
-}
-
-// GetKlineQuarter 获取季k线数据
-func (this *Client) GetKlineQuarter(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineQuarter, code, start, count)
-}
-
-// GetKlineQuarterAll 获取季k线全部数据
-func (this *Client) GetKlineQuarterAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineQuarter, code)
-}
-
-func (this *Client) GetKlineQuarterUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineQuarter, code, f)
-}
-
-// GetKlineYear 获取年k线数据
-func (this *Client) GetKlineYear(code string, start, count uint16) (*protocol.KlineResp, error) {
-	return this.GetKline(protocol.TypeKlineYear, code, start, count)
-}
-
-// GetKlineYearAll 获取年k线数据
-func (this *Client) GetKlineYearAll(code string) (*protocol.KlineResp, error) {
-	return this.GetKlineAll(protocol.TypeKlineYear, code)
-}
-
-func (this *Client) GetKlineYearUntil(code string, f func(k *protocol.Kline) bool) (*protocol.KlineResp, error) {
-	return this.GetKlineUntil(protocol.TypeKlineYear, code, f)
 }

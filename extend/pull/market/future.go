@@ -1,5 +1,5 @@
 // Package market 实现各市场的拉取 Unit（可插拔）。
-// 期货市场：走扩展行情(7727) ExBars 拉取日线/分钟线。
+// 期货市场：走扩展行情(7727) GetKline 拉取日线/分钟线。
 package market
 
 import (
@@ -12,7 +12,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// 期货市场编码（扩展行情 ExInstruments.Market）。
+// 期货市场编码（扩展行情 ExInstrument.Market）。
 const (
 	marketCFF = 47 // 中金
 	marketCZC = 28 // 郑商
@@ -37,7 +37,7 @@ var futureMarketNames = map[uint8]string{
 // 此时交易所简称作为 Code.Code 前缀（"cff/IF2609"），由 marketOf 解析。
 type exUnit struct {
 	name pull.Market // 市场标识（pull.Market 枚举）
-	// markets 该 Unit 覆盖的扩展市场编码（用于从 ExInstruments 过滤）
+	// markets 该 Unit 覆盖的扩展市场编码（用于从 GetInstruments 过滤）
 	markets []uint8
 }
 
@@ -52,10 +52,10 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.IPool, error) {
 	return p, nil
 }
 
-// Codes 从 ExInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
+// Codes 从 GetInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
 // 多交易所市场（期货）时 Code.Code 带交易所前缀，如 "cff/IF2609"。
 func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
-	ins, err := s.ExInstruments()
+	ins, err := s.GetInstruments()
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,15 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 	err = p.Do(func(c *tdx.Client) error {
 		var err error
 		out, err = readExBars(from, func(start, count uint16) ([]protocol.ExKline, error) {
-			return c.ExBars(category, market, bare, start, count)
+			r, err := c.GetKline(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), start, count)
+			if err != nil {
+				return nil, err
+			}
+			bars := make([]protocol.ExKline, 0, len(r.List))
+			for _, k := range r.List {
+				bars = append(bars, *k.Extended)
+			}
+			return bars, nil
 		})
 		return err
 	})

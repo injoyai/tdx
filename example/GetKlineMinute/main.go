@@ -8,7 +8,9 @@ import (
 
 func main() {
 	common.Test(func(c *tdx.Client) {
-		resp, err := c.GetKlineMinute("sz000001", 0, 800)
+		result, err := c.GetKlineMinute("sz000001", 0, 800)
+		logs.PanicErr(err)
+		resp, err := result.StandardResponse()
 		logs.PanicErr(err)
 
 		for _, v := range resp.List {

@@ -152,14 +152,18 @@ func (this *Workday) Update() error {
 
 	now := time.Now()
 	if lastWorkday.Unix < IntegerDay(now).Unix() {
-		resp, err := this.c.GetIndexDayAll("sh000001")
+		resp, err := this.c.GetKlineDayAll("sh000001")
 		if err != nil {
 			logs.Err(err)
 			return err
 		}
+		raw, err := resp.StandardResponse()
+		if err != nil {
+			return err
+		}
 
 		inserts := []any(nil)
-		for _, v := range resp.List {
+		for _, v := range raw.List {
 			if unix := v.Time.Unix(); unix > lastWorkday.Unix {
 				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: v.Time.Format("20060102")})
 				this.cache.Set(uint64(unix), true)

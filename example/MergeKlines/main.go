@@ -11,9 +11,12 @@ import (
 
 func main() {
 	common.Test(func(c *tdx.Client) {
-		resp, err := c.GetKlineMinute241Until("sz000001", func(k *protocol.Kline) bool {
+		result, err := c.GetKlineMinute241Until("sz000001", func(record tdx.MarketKline) bool {
+			k := record.Standard
 			return k.Time.Format("20060102") < "20260223"
 		})
+		logs.PanicErr(err)
+		resp, err := result.StandardResponse()
 		logs.PanicErr(err)
 
 		ks := protocol.Klines(resp.List)

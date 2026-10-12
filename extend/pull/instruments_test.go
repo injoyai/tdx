@@ -21,7 +21,7 @@ type instrumentTestUnit struct {
 }
 
 func (u *instrumentTestUnit) Codes(s *Service) ([]Code, error) {
-	ins, err := s.ExInstruments()
+	ins, err := s.GetInstruments()
 	if err == nil && ((u.empty && len(ins) != 0) || (!u.empty && (len(ins) != 801 || ins[800].Code != "LAST"))) {
 		return nil, errors.New("incomplete instrument snapshot")
 	}
@@ -130,7 +130,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 		t.Fatal("new Update reused stale snapshot", err, pages.Load())
 	}
 	for i := 0; i < 2; i++ {
-		if _, err := s.ExInstruments(); err != nil {
+		if _, err := s.GetInstruments(); err != nil {
 			t.Fatal(err)
 		}
 	}

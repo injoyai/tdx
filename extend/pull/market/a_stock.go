@@ -75,23 +75,23 @@ func (u *stdUnit) fetchDayFrom(c *tdx.Client, code string, last int64, startAt t
 	})
 }
 
-// dayUntil 指数走 GetIndex、其余走 GetKline，从新到旧拉取直到 f 返回 true。
+// dayUntil 统一查询自动选择指数或股票解码，从新到旧拉取直到 f 返回 true。
 func (u *stdUnit) dayUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	info, ok := u.name.Info()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	var resp *protocol.KlineResp
+	var resp *tdx.MarketKlineResp
 	var err error
-	if info.Kind == protocol.KindIndex {
-		resp, err = c.GetIndexUntil(info.Day.Category, code, f)
-	} else {
-		resp, err = c.GetKlineUntil(info.Day.Category, code, f)
-	}
+	resp, err = c.GetKlineUntil(info.Day.Category, code, func(k tdx.MarketKline) bool { return f(k.Standard) })
 	if err != nil {
 		return nil, err
 	}
-	return resp.List, nil
+	raw, err := resp.StandardResponse()
+	if err != nil {
+		return nil, err
+	}
+	return raw.List, nil
 }
 
 // fetchMinAll 一次性拉取全部1分钟线（从 Start 起）。
@@ -104,23 +104,27 @@ func (u *stdUnit) fetchMinAll(c *tdx.Client, code string, startAt time.Time) (pr
 	})
 }
 
-// minUntil 指数走 GetIndex、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
+// minUntil 指数走统一分钟查询、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
 func (u *stdUnit) minUntil(c *tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	info, ok := u.name.Info()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	var resp *protocol.KlineResp
+	var resp *tdx.MarketKlineResp
 	var err error
 	if info.Kind == protocol.KindIndex {
-		resp, err = c.GetIndexUntil(info.Minute.Category, code, f)
+		resp, err = c.GetKlineUntil(info.Minute.Category, code, func(k tdx.MarketKline) bool { return f(k.Standard) })
 	} else {
-		resp, err = c.GetKlineMinute241Until(code, f)
+		resp, err = c.GetKlineMinute241Until(code, func(k tdx.MarketKline) bool { return f(k.Standard) })
 	}
 	if err != nil {
 		return nil, err
 	}
-	return resp.List, nil
+	raw, err := resp.StandardResponse()
+	if err != nil {
+		return nil, err
+	}
+	return raw.List, nil
 }
 
 // --- 具体市场 ---
@@ -275,7 +279,11 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 					if err != nil {
 						return err
 					}
-					trades = resp.List
+					raw, err := resp.StandardResponse()
+					if err != nil {
+						return err
+					}
+					trades = raw.List
 					return nil
 				})
 				return trades, err

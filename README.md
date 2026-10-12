@@ -24,7 +24,7 @@
 | 代码数量/列表        | ✅ 已完成 | `GetCount` `GetCode` `GetCodeAll`               |
 | 分时图 / 历史分时图    | ✅ 已完成 | `GetMinute` `GetHistoryMinute`                  |
 | 分时成交 / 历史分时成交  | ✅ 已完成 | `GetTrade` `GetHistoryTrade`                    |
-| K线 / 历史K线 / 指数 | ✅ 已完成 | `GetKline*` `GetIndex*`                         |
+| K线 / 历史K线 / 指数 | ✅ 已完成 | `GetKline*`（自动识别指数）                         |
 | 股本变迁(除权除息)     | ✅ 已完成 | `GetGbbq` `GetGbbqAll`                          |
 | 前/后复权(对齐通达信)   | ✅ 已完成 | `Gbbq.QFQKlineDay` `HFQKlineDay` `QFQ` `HFQ`     |
 | 集合竞价           | ✅ 已完成 | `GetCallAuction`                               |
@@ -37,11 +37,28 @@
 | 板块指数代码(id)映射   | ✅ 已完成 | `GetTdxZs` `GetTdxBk`                           |
 | 个股统计 / 资金流向    | ✅ 已完成 | `GetTdxStat` `GetTdxStat2`                      |
 | 新股申购           | ✅ 已完成 | `GetXgsg`                                       |
-| 扩展行情(期货/港股/外盘) | ✅ 已完成 | `DialExHq` + `ExQuote` `ExBars` `ExTrade` 等     |
+| 扩展行情(期货/港股/外盘) | ✅ 已完成 | `GetQuote` `GetKline` `GetTrade` 等     |
 
 ---
 
 ## 🚀 快速开始
+
+跨市场行情可只创建一个业务对象，自动路由标准和扩展连接：
+
+```go
+c := tdx.NewClient(tdx.WithRedial(false)) // 首次查询才联网
+defer c.Close()
+
+a, err := c.GetKlineDay("sz000001", 0, 100)
+if err != nil { panic(err) }
+h, err := c.GetKlineDay("hk00700", 0, 100)
+if err != nil { panic(err) }
+f, err := c.GetKlineDay("cffIF2609", 0, 100)
+if err != nil { panic(err) }
+_ = a; _ = h; _ = f
+```
+
+`NewClient()` 返回 `*MarketClient`，统一报价、K 线、分时、分笔、代码列表和市场数量。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](example/UnifiedClient/main.go)。`Dial*` 仍返回单连接 `*Client`；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
 
@@ -231,20 +248,21 @@ for _, x := range xgsg {
 
 ## 🌍 扩展行情 TdxExHq (期货 / 港股 / 外盘, 端口 7727)
 
-扩展行情走独立服务(端口 7727)，需用 `DialExHq*` 单独连接。
+扩展行情走独立服务(端口 7727)。`NewClient()` 自动管理两类连接；`DialExHq*` 返回绑定扩展协议的单连接，业务查询同样使用 `Get*`。
 
 ```go
 ex, err := tdx.DialExHqDefault() // 或 DialExHq(addr) / DialExHqHosts(hosts)
 if err != nil { panic(err) }
 defer ex.Close()
 
-markets, _ := ex.ExMarkets()                       // 市场代码表
-n, _ := ex.ExCount()                               // 品种数量
-insts, _ := ex.ExInstruments(0, 100)               // 品种(代码)列表分页
-q, _ := ex.ExQuote(market, code)                   // 单品种五档行情
-bars, _ := ex.ExBars(category, market, code, 0, 20) // K线
-ticks, _ := ex.ExTrade(market, code, 0, 30)        // 分笔成交
-_ = markets; _ = n; _ = insts; _ = q; _ = bars; _ = ticks
+markets, _ := ex.GetMarkets()                       // 市场代码表
+n, _ := ex.GetCount(protocol.ExchangeHK)                               // 指定市场品种数量
+insts, _ := ex.GetCode(protocol.ExchangeHK, 0, 100)               // 指定市场代码分页
+q, _ := ex.GetQuote("hk00700")                   // 单品种五档行情
+bars, _ := ex.GetKline(protocol.TypeKlineDay, "hk00700", 0, 20) // K线
+ticks, _ := ex.GetTrade("hk00700", 0, 30)        // 分笔成交
+rangeBars, _ := ex.GetKlineRange("hk00700", "20261009", "20261009") // 一分钟区间
+_ = markets; _ = n; _ = insts; _ = q; _ = bars; _ = ticks; _ = rangeBars
 ```
 
 ---

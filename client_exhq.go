@@ -1,12 +1,9 @@
 package tdx
 
 import (
-	"context"
+	"errors"
 	"strings"
-	"time"
 
-	"github.com/injoyai/base/maps"
-	"github.com/injoyai/base/maps/wait"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/ios/module/tcp"
@@ -34,44 +31,13 @@ func DialExHqHosts(hosts []string, op ...client.Option) (*Client, error) {
 
 // dialExHqWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。
 func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
-	cli = &Client{
-		Wait:        wait.New(time.Second * 10),
-		waitTimeout: time.Second * 10,
-		m:           maps.NewSafe(),
-	}
-	cli.Client, err = client.Dial(cli.cancelableDial(dial), func(c *client.Client) {
-		c.Logger.Debug(true)
-		c.Logger.SetLevel(LevelInfo)
-		c.Logger.WithHEX()
-		c.SetOption(op...)
-		c.Event.OnReadFrom = protocol.ReadFrom
-		c.Event.OnDealMessage = cli.handlerDealMessage
-		c.Event.OnConnected = func(c *client.Client) error {
-			w := cli.wrapWriter(c)
-			<-cli.writeGate
-			// 握手(响应忽略)
-			if _, err := cli.Write(protocol.MEx.FrameSetup().Bytes()); err != nil {
-				c.Close()
-				return err
-			}
-			// 心跳:30s 发送品种数量请求(响应无等待者,被丢弃)
-			cli.goHeartbeat(w, c.Closer.Done(), protocol.MEx.FrameCount().Bytes())
-			return nil
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cli.cancelRun = cancel
-	go cli.Client.Run(ctx)
-	return cli, nil
+	return dialWith(dial, true, op...)
 }
 
 // ---- 扩展行情 API ----
 
-// ExMarkets 市场代码表。
-func (this *Client) ExMarkets() ([]protocol.ExMarket, error) {
+// getExtendedMarkets 市场代码表。
+func (this *Client) getExtendedMarkets() ([]protocol.ExMarket, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameMarkets())
 	if err != nil {
 		return nil, err
@@ -79,8 +45,8 @@ func (this *Client) ExMarkets() ([]protocol.ExMarket, error) {
 	return r.([]protocol.ExMarket), nil
 }
 
-// ExCount 全部品种数量。
-func (this *Client) ExCount() (int, error) {
+// getExtendedCount 全部品种数量。
+func (this *Client) getExtendedCount() (int, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameCount())
 	if err != nil {
 		return 0, err
@@ -88,8 +54,8 @@ func (this *Client) ExCount() (int, error) {
 	return r.(int), nil
 }
 
-// ExInstruments 品种(代码)列表,分页。
-func (this *Client) ExInstruments(start uint32, count uint16) ([]protocol.ExInstrument, error) {
+// getExtendedInstruments 按全局序号分页的品种列表。
+func (this *Client) getExtendedInstruments(start uint32, count uint16) ([]protocol.ExInstrument, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameInstrument(start, count))
 	if err != nil {
 		return nil, err
@@ -97,8 +63,8 @@ func (this *Client) ExInstruments(start uint32, count uint16) ([]protocol.ExInst
 	return r.([]protocol.ExInstrument), nil
 }
 
-// ExQuote 单品种五档行情。
-func (this *Client) ExQuote(market uint8, code string) (*protocol.ExQuote, error) {
+// getExtendedQuote 单品种五档行情。
+func (this *Client) getExtendedQuote(market uint8, code string) (*protocol.ExQuote, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameQuote(market, code))
 	if err != nil {
 		return nil, err
@@ -106,8 +72,11 @@ func (this *Client) ExQuote(market uint8, code string) (*protocol.ExQuote, error
 	return r.(*protocol.ExQuote), nil
 }
 
-// ExQuoteList 批量行情列表(category 2=港股 3=期货)。
-func (this *Client) ExQuoteList(market, category uint8, start, count uint16) ([]protocol.ExQuoteListItem, error) {
+// GetQuoteList 批量行情列表(category 2=港股 3=期货)。
+func (this *Client) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.ExQuoteListItem, error) {
+	if !this.extended {
+		return nil, errors.New("市场行情列表需要扩展连接")
+	}
 	r, err := this.SendFrame(protocol.MEx.FrameQuoteList(market, start, count), protocol.ExQuoteListCache{Category: category})
 	if err != nil {
 		return nil, err
@@ -115,8 +84,8 @@ func (this *Client) ExQuoteList(market, category uint8, start, count uint16) ([]
 	return r.([]protocol.ExQuoteListItem), nil
 }
 
-// ExBars K线(category 同标准 KLINE 类型)。
-func (this *Client) ExBars(category, market uint8, code string, start, count uint16) ([]protocol.ExKline, error) {
+// getExtendedKline K线(category 同标准 KLINE 类型)。
+func (this *Client) getExtendedKline(category, market uint8, code string, start, count uint16) ([]protocol.ExKline, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameBars(category, market, code, start, count), protocol.ExBarsCache{Category: category})
 	if err != nil {
 		return nil, err
@@ -124,8 +93,8 @@ func (this *Client) ExBars(category, market uint8, code string, start, count uin
 	return r.([]protocol.ExKline), nil
 }
 
-// ExMinute 当日分时。
-func (this *Client) ExMinute(market uint8, code string) ([]protocol.ExMinuteTick, error) {
+// getExtendedMinute 当日分时。
+func (this *Client) getExtendedMinute(market uint8, code string) ([]protocol.ExMinuteTick, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameMinute(market, code))
 	if err != nil {
 		return nil, err
@@ -133,8 +102,8 @@ func (this *Client) ExMinute(market uint8, code string) ([]protocol.ExMinuteTick
 	return r.([]protocol.ExMinuteTick), nil
 }
 
-// ExHistMinute 历史分时(date=YYYYMMDD)。
-func (this *Client) ExHistMinute(market uint8, code string, date uint32) ([]protocol.ExMinuteTick, error) {
+// getExtendedHistoryMinute 历史分时(date=YYYYMMDD)。
+func (this *Client) getExtendedHistoryMinute(market uint8, code string, date uint32) ([]protocol.ExMinuteTick, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameHistMinute(market, code, date))
 	if err != nil {
 		return nil, err
@@ -142,8 +111,8 @@ func (this *Client) ExHistMinute(market uint8, code string, date uint32) ([]prot
 	return r.([]protocol.ExMinuteTick), nil
 }
 
-// ExTrade 当日分笔成交。
-func (this *Client) ExTrade(market uint8, code string, start, count uint16) ([]protocol.ExTradeTick, error) {
+// getExtendedTrade 当日分笔成交。
+func (this *Client) getExtendedTrade(market uint8, code string, start, count uint16) ([]protocol.ExTradeTick, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameTrade(market, code, start, count), protocol.ExTradeCache{Market: market})
 	if err != nil {
 		return nil, err
@@ -151,8 +120,8 @@ func (this *Client) ExTrade(market uint8, code string, start, count uint16) ([]p
 	return r.([]protocol.ExTradeTick), nil
 }
 
-// ExHistTrade 历史分笔成交(date=YYYYMMDD)。
-func (this *Client) ExHistTrade(market uint8, code string, date uint32, start, count uint16) ([]protocol.ExTradeTick, error) {
+// getExtendedHistoryTrade 历史分笔成交(date=YYYYMMDD)。
+func (this *Client) getExtendedHistoryTrade(market uint8, code string, date uint32, start, count uint16) ([]protocol.ExTradeTick, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameHistTrade(market, code, date, start, count), protocol.ExTradeCache{Market: market})
 	if err != nil {
 		return nil, err
@@ -160,8 +129,8 @@ func (this *Client) ExHistTrade(market uint8, code string, date uint32, start, c
 	return r.([]protocol.ExTradeTick), nil
 }
 
-// ExBarsRange 历史K线区间(date/date2=YYYYMMDD)。
-func (this *Client) ExBarsRange(market uint8, code string, date, date2 uint32) ([]protocol.ExRangeKline, error) {
+// getExtendedKlineRange 历史K线区间(date/date2=YYYYMMDD)。
+func (this *Client) getExtendedKlineRange(market uint8, code string, date, date2 uint32) ([]protocol.ExRangeKline, error) {
 	r, err := this.SendFrame(protocol.MEx.FrameBarsRange(market, code, date, date2))
 	if err != nil {
 		return nil, err

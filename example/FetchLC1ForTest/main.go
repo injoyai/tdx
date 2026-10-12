@@ -38,17 +38,10 @@ func main() {
 
 // writeMinute1 拉取 1 分钟K线,编码为通达信 .lc1 字节流并写入本地文件
 func writeMinute1(c *tdx.Client, code string, outDir string) {
-	index := protocol.IsIndex(code)
-	var resp *protocol.KlineResp
-	var err error
-	if index {
-		resp, err = c.GetIndexAll(protocol.TypeKlineMinute, code)
-	} else {
-		resp, err = c.GetKlineMinuteAll(code)
-	}
-	if err != nil {
-		logs.PanicErr(err)
-	}
+	result, err := c.GetKlineMinuteAll(code)
+	logs.PanicErr(err)
+	resp, err := result.StandardResponse()
+	logs.PanicErr(err)
 	if len(resp.List) == 0 {
 		logs.Panicf("代码 %s 无1分钟数据", code)
 	}
@@ -62,17 +55,10 @@ func writeMinute1(c *tdx.Client, code string, outDir string) {
 
 // writeMinute5 拉取 5 分钟K线,编码为通达信 .lc5 字节流并写入本地文件
 func writeMinute5(c *tdx.Client, code string, outDir string) {
-	index := protocol.IsIndex(code)
-	var resp *protocol.KlineResp
-	var err error
-	if index {
-		resp, err = c.GetIndexAll(protocol.TypeKline5Minute, code)
-	} else {
-		resp, err = c.GetKline5MinuteAll(code)
-	}
-	if err != nil {
-		logs.PanicErr(err)
-	}
+	result, err := c.GetKline5MinuteAll(code)
+	logs.PanicErr(err)
+	resp, err := result.StandardResponse()
+	logs.PanicErr(err)
 	if len(resp.List) == 0 {
 		logs.Panicf("代码 %s 无5分钟数据", code)
 	}

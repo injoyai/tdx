@@ -13,7 +13,7 @@ func main() {
 	resp, err := c.GetCount(protocol.ExchangeSH)
 	logs.PanicErr(err)
 
-	logs.Debug(resp.Count)
+	logs.Debug(resp)
 
 	<-c.Done()
 }

@@ -28,7 +28,9 @@ func main() {
 	}
 
 	// 方式二: 已有不复权 K 线时, 直接复权
-	resp, err := c.GetKlineDayAll(code)
+	result, err := c.GetKlineDayAll(code)
+	logs.PanicErr(err)
+	resp, err := result.StandardResponse()
 	logs.PanicErr(err)
 	hfq := gb.HFQ(code, resp.List)
 	fmt.Printf("\n后复权最新: %s 收%.2f\n", hfq[len(hfq)-1].Time.Format("2006-01-02"), hfq[len(hfq)-1].Close.Float64())

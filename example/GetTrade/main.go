@@ -4,6 +4,7 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/example/common"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func main() {
@@ -15,7 +16,11 @@ func main() {
 			logs.Debug(v)
 		}
 
-		for _, v := range resp.List.Klines() {
+		trades := protocol.Trades{}
+		for _, v := range resp.List {
+			trades = append(trades, v.Standard)
+		}
+		for _, v := range trades.Klines() {
 			logs.Debug(v, v.Order)
 		}
 

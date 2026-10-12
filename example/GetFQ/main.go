@@ -27,7 +27,9 @@ func main() {
 	}
 	logs.Info("总数:", len(xs))
 
-	resp, err := c.GetKlineDayAll(code)
+	result, err := c.GetKlineDayAll(code)
+	logs.PanicErr(err)
+	resp, err := result.StandardResponse()
 	logs.PanicErr(err)
 
 	ks := xs.Pre(resp.List)

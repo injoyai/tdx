@@ -193,8 +193,8 @@ func (s *Service) Manage() *tdx.Manage { return s.cfg.Manage }
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
 func (s *Service) ExPool() tdx.IPool { return s.cfg.ExPool }
 
-// ExInstruments Update 期间共用一次发现；Update 之外每次重新查询。
-func (s *Service) ExInstruments() ([]protocol.ExInstrument, error) {
+// GetInstruments Update 期间共用一次发现；Update 之外每次重新查询。
+func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 	s.discoveryMu.Lock()
 	defer s.discoveryMu.Unlock()
 	if s.discovering && s.instruments != nil {
@@ -207,10 +207,11 @@ func (s *Service) ExInstruments() ([]protocol.ExInstrument, error) {
 	out := []protocol.ExInstrument{}
 	err := p.Do(func(c *tdx.Client) error {
 		for start := uint32(0); ; {
-			ins, err := c.ExInstruments(start, 800)
+			r, err := c.SendFrame(protocol.MEx.FrameInstrument(start, 800))
 			if err != nil {
 				return err
 			}
+			ins := r.([]protocol.ExInstrument)
 			out = append(out, ins...)
 			if len(ins) < 800 {
 				return nil

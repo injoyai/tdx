@@ -14,7 +14,7 @@ func main() {
 	logs.Debug(m.Gbbq.GetEquity("sz000001", time.Now()))
 
 	err = m.Do(func(c *tdx.Client) error {
-		resp, err := c.GetIndexDay("sh000001", 0, 20)
+		resp, err := c.GetKlineDay("sh000001", 0, 20)
 		if err != nil {
 			return err
 		}

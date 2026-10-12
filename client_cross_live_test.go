@@ -22,38 +22,60 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 	if err != nil || len(day.List) != 5 {
 		t.Fatal("standard daily sample", day, err)
 	}
-	samples["sz_day"] = day.List
+	rawDay, err := day.StandardResponse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples["sz_day"] = rawDay.List
 	hour, err := std.GetKline60Minute("sz000001", 0, 5)
 	if err != nil || len(hour.List) != 5 {
 		t.Fatal("standard hourly sample", hour, err)
 	}
-	samples["sz_hour"] = hour.List
+	rawHour, err := hour.StandardResponse()
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples["sz_hour"] = rawHour.List
 	if err := std.CloseAll(); err != nil {
 		t.Fatal(err)
 	}
 	ex := liveTestClient(t, true, false)
-	bars, err := ex.ExBars(protocol.TypeKlineDay2, 31, "00700", 0, 5)
-	if err != nil || len(bars) != 5 {
+	bars, err := ex.GetKline(protocol.TypeKlineDay, "hk00700", 0, 5)
+	if err != nil || len(bars.List) != 5 {
 		t.Fatal("extended daily sample", bars, err)
 	}
-	samples["hk_day"] = bars
-	quote, err := ex.ExQuote(31, "00700")
-	if err != nil || quote.Price <= 0 {
+	rawBars := make([]protocol.ExKline, 0, len(bars.List))
+	for _, k := range bars.List {
+		rawBars = append(rawBars, *k.Extended)
+	}
+	samples["hk_day"] = rawBars
+	quote, err := ex.GetQuote("hk00700")
+	if err != nil || len(quote) != 1 || quote[0].Price <= 0 {
 		t.Fatal("extended quote sample", quote, err)
 	}
-	samples["hk_quote"] = quote
-	latest, err := time.Parse("2006-01-02 15:04", bars[len(bars)-1].Datetime)
+	samples["hk_quote"] = quote[0].Extended
+	latest, err := time.Parse("2006-01-02 15:04", bars.List[len(bars.List)-1].Time)
 	if err != nil {
 		t.Fatal(err)
 	}
 	date, _ := strconv.ParseUint(latest.Format("20060102"), 10, 32)
-	minute, err := ex.ExHistMinute(31, "00700", uint32(date))
-	if err != nil || len(minute) == 0 {
+	minute, err := ex.GetHistoryMinute(latest.Format("20060102"), "hk00700")
+	if err != nil || len(minute.List) == 0 {
 		t.Fatal("extended historical minute sample", err)
 	}
 	samples["hk_minute_date"] = date
-	samples["hk_minute"] = minute
-	ranges, err := ex.ExBarsRange(31, "00700", uint32(date), uint32(date))
+	rawMinute := make([]protocol.ExMinuteTick, 0, len(minute.List))
+	for _, k := range minute.List {
+		rawMinute = append(rawMinute, *k.Extended)
+	}
+	samples["hk_minute"] = rawMinute
+	rangeResult, err := ex.GetKlineRange("hk00700", latest.Format("20060102"), latest.Format("20060102"))
+	ranges := []protocol.ExRangeKline{}
+	if err == nil {
+		for _, k := range rangeResult.List {
+			ranges = append(ranges, *k.RangeExtended)
+		}
+	}
 	if err != nil || len(ranges) == 0 {
 		t.Fatal("extended historical range sample", err)
 	}

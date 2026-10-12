@@ -18,13 +18,13 @@ func TestExHqLive(t *testing.T) {
 	}
 	cli := liveTestClient(t, true, false)
 
-	cnt, err := cli.ExCount()
+	cnt, err := cli.getExtendedCount()
 	if err != nil || cnt <= 0 {
 		t.Fatalf("ExCount: cnt=%d err=%v", cnt, err)
 	}
 	t.Logf("ExCount=%d", cnt)
 
-	ins, err := cli.ExInstruments(0, 5)
+	ins, err := cli.getExtendedInstruments(0, 5)
 	if err != nil || len(ins) == 0 {
 		t.Fatalf("ExInstruments: n=%d err=%v", len(ins), err)
 	}
@@ -32,61 +32,62 @@ func TestExHqLive(t *testing.T) {
 		t.Logf("instr cat=%d mkt=%d %s %s", x.Category, x.Market, x.Code, x.Name)
 	}
 
-	q, err := cli.ExQuote(31, "00700") // 港股腾讯
-	if err != nil {
-		t.Fatalf("ExQuote: %v", err)
+	quotesResp, err := cli.GetQuote("hk00700") // 港股腾讯
+	if err != nil || len(quotesResp) != 1 {
+		t.Fatalf("GetQuote: %v", err)
 	}
+	q := quotesResp[0]
 	t.Logf("HK00700 pre=%.2f open=%.2f high=%.2f low=%.2f price=%.2f bid1=%.2f ask1=%.2f",
 		q.PreClose, q.Open, q.High, q.Low, q.Price, q.Bid[0], q.Ask[0])
 	if q.Price <= 0 {
 		t.Errorf("HK quote price invalid: %.2f", q.Price)
 	}
 
-	bars, err := cli.ExBars(protocol.TypeKlineDay2, 31, "00700", 0, 5) // 港股日K，Trade 为百股
-	if err != nil || len(bars) == 0 {
-		t.Fatalf("ExBars: n=%d err=%v", len(bars), err)
+	bars, err := cli.GetKline(protocol.TypeKlineDay, "hk00700", 0, 5) // 港股日K，Trade 为百股
+	if err != nil || len(bars.List) == 0 {
+		t.Fatalf("GetKline: n=%d err=%v", len(bars.List), err)
 	}
-	for _, b := range bars {
-		t.Logf("bar %s O=%.2f H=%.2f L=%.2f C=%.2f vol=%d", b.Datetime, b.Open, b.High, b.Low, b.Close, b.Trade)
+	for _, b := range bars.List {
+		t.Logf("bar %s O=%.2f H=%.2f L=%.2f C=%.2f vol=%d", b.Time, b.Open, b.High, b.Low, b.Close, b.Volume)
 	}
-	markets, err := cli.ExMarkets()
+	markets, err := cli.GetMarkets()
 	if err != nil || len(markets) == 0 {
 		t.Fatal("ExMarkets", len(markets), err)
 	}
 	t.Logf("ExMarkets=%d", len(markets))
-	latest, err := time.Parse("2006-01-02 15:04", bars[len(bars)-1].Datetime)
+	latest, err := time.Parse("2006-01-02 15:04", bars.List[len(bars.List)-1].Time)
 	if err != nil {
 		t.Fatal(err)
 	}
 	date, _ := strconv.ParseUint(latest.Format("20060102"), 10, 32)
-	minute, err := cli.ExMinute(31, "00700")
+	minute, err := cli.GetMinute("hk00700")
 	if err != nil {
-		t.Fatal("ExMinute", err)
+		t.Fatal("GetMinute", err)
 	}
-	t.Logf("ExMinute=%d", len(minute))
-	historyMinute, err := cli.ExHistMinute(31, "00700", uint32(date))
+	t.Logf("GetMinute=%d", len(minute.List))
+	historyMinute, err := cli.GetHistoryMinute(latest.Format("20060102"), "hk00700")
 	if err != nil {
-		t.Fatal("ExHistMinute", err)
+		t.Fatal("GetHistoryMinute", err)
 	}
-	t.Logf("ExHistMinute date=%d count=%d", date, len(historyMinute))
-	trades, err := cli.ExTrade(31, "00700", 0, 5)
+	t.Logf("GetHistoryMinute date=%d count=%d", date, len(historyMinute.List))
+	trades, err := cli.GetTrade("hk00700", 0, 5)
 	if err != nil {
-		t.Fatal("ExTrade", err)
+		t.Fatal("GetTrade", err)
 	}
-	t.Logf("ExTrade=%d", len(trades))
-	historyTrades, err := cli.ExHistTrade(31, "00700", uint32(date), 0, 5)
+	t.Logf("GetTrade=%d", len(trades.List))
+	historyTrades, err := cli.GetHistoryTrade(latest.Format("20060102"), "hk00700", 0, 5)
 	if err != nil {
-		t.Fatal("ExHistTrade", err)
+		t.Fatal("GetHistoryTrade", err)
 	}
-	t.Logf("ExHistTrade date=%d count=%d", date, len(historyTrades))
-	quotes, err := cli.ExQuoteList(31, 2, 0, 5)
+	t.Logf("GetHistoryTrade date=%d count=%d", date, len(historyTrades.List))
+	quotes, err := cli.GetQuoteList(31, 2, 0, 5)
 	if err != nil || len(quotes) == 0 {
-		t.Fatal("ExQuoteList", len(quotes), err)
+		t.Fatal("GetQuoteList", len(quotes), err)
 	}
-	t.Logf("ExQuoteList=%d first=%s price=%.3f", len(quotes), quotes[0].Code, quotes[0].Price)
-	ranges, err := cli.ExBarsRange(31, "00700", uint32(date), uint32(date))
+	t.Logf("GetQuoteList=%d first=%s price=%.3f", len(quotes), quotes[0].Code, quotes[0].Price)
+	ranges, err := cli.GetKlineRange("hk00700", latest.Format("20060102"), latest.Format("20060102"))
 	if err != nil {
-		t.Fatal("ExBarsRange", err)
+		t.Fatal("GetKlineRange", err)
 	}
-	t.Logf("ExBarsRange date=%d count=%d", date, len(ranges))
+	t.Logf("GetKlineRange date=%d count=%d", date, ranges.Count)
 }

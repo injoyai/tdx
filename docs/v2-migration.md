@@ -2,6 +2,57 @@
 
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
+## 跨市场统一查询
+
+新增 `tdx.NewClient()` 返回 `*tdx.MarketClient`，按代码自动选择标准/扩展连接，并通过统一的 `GetQuote/GetKline*/GetMinute/GetTrade/GetCode/GetCodeAll/GetCount/GetMarkets` 返回 `Market*` 结果。构造不联网，错误由首次查询返回。`Dial*` 和连接池仍可使用；单连接 `Client` 的基础行情与代码查询已变更返回类型，须按下表迁移，HTTP 原路由与响应形状保持兼容；新结果不是旧 `protocol.Klines`，不能直接用于原指标/复权/存储 API。字段、单位及支持边界见 [统一 Client](unified-client.md)。
+
+## 标准与扩展函数收敛（需迁移调用方）
+
+不再公开同一业务的两套函数；以下移除入口没有兼容别名：
+
+| 已移除入口 | 统一调用 |
+|---|---|
+| `ExQuote(market, code)` | `GetQuote("hk00700")`，返回列表，单品种取 `[0]` |
+| `ExBars(category, market, code, start, count)` | `GetKline(category, "hk00700", start, count)`，记录位于 `List` |
+| `ExMinute(market, code)` | `GetMinute("hk00700")` |
+| `ExHistMinute(market, code, date)` | `GetHistoryMinute("20261009", "hk00700")` |
+| `ExTrade(market, code, start, count)` | `GetTrade("hk00700", start, count)` |
+| `ExHistTrade(market, code, date, start, count)` | `GetHistoryTrade("20261009", "hk00700", start, count)` |
+| `ExQuoteList(...)` | `GetQuoteList(...)`，市场分页语义和参数不变 |
+| `ExBarsRange(market, code, date, date2)` | `GetKlineRange("hk00700", "20261009", "20261009")`，一分钟区间，原扩展字段在 `RangeExtended` |
+| `GetIndex/GetIndexUntil/GetIndexAll` 及指数周期便捷方法 | 对应 `GetKline/GetKlineUntil/GetKlineAll/GetKlineDay…`，自动选择指数解码；`GetIndexCodeAll` 是代码列表入口，仍保留 |
+| `ExMarkets()` | `GetMarkets()`，返回 `[]MarketExchange`，原分类字段在 `Extended.Category` |
+| `ExCount()` | `GetCount(exchange)`，返回指定市场的 `int` 数量，语义不再是全局总数 |
+| `ExInstruments(start, count)` | `GetCode(exchange, start, count)`，按市场内偏移分页，返回 `*MarketCodeResp` |
+
+原标准 `Client.GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 的返回类型也分别改为 `[]MarketQuote`、`*MarketKlineResp`、`*MarketMinuteResp`、`*MarketTradeResp`，与 `MarketClient` 相同。日期统一使用有效 `YYYYMMDD` 字符串；代码包含市场前缀，可用 `protocol.Instrument{Exchange: ex, Code: code}.String()` 构造。
+
+统一价格为原币种/报价单位浮点值；未知量单位、扩展分笔价格和金额语义保持显式未确认。需要旧字段或旧数值单位时，从记录的 `Standard/Extended` 获取原始解码结构。例如旧 `quote.Kline.Close.Float64()` 改为统一 `quote.Price`，期货持仓从 `quote.Extended.ChiCang` 读取。标准成交转指标时，将每条 `MarketTrade.Standard` 收集为 `protocol.Trades`；不要把未知扩展量按百股直接换算。
+
+`DialDefault/DialExHqDefault` 仍只连接对应服务，通用 `Get*` 查询其他协议品种会报错；跨市场使用 `NewClient()`。`Client` 与 `MarketClient` 的全部 K线周期、`All/Until` 便捷方法均返回 `MarketKlineResp`；`Until` 的回调参数改为 `MarketKline`。独立指数 K线查询和 `ExBarsRange` 均已移除，无兼容别名。统一代码路由仍只覆盖已接入的市场；此前直接用任意市场编号调用六组 `Ex*` 的代码，在未接入市场上需使用已有 `SendFrame` 与 `protocol.MEx.Frame*`，不能仅把市场编号替换成未知前缀。
+
+完整成交查询 `GetTradeAll/GetHistoryTradeDay/GetHistoryTradeBefore/GetHistoryTradeFull` 统一返回 `*MarketTradeResp`，支持两类协议。单日历史响应和逐条 `MarketTrade.Date` 保留请求日期；跨日响应的整体 `Date` 为空，每条记录有自己的日期。分页顺序、协议偏移 65535 护栏及标准跨页昨收保持；中途失败不返回部分历史。`Count` 使用 int，原标准 uint16 结果需要显式转换。
+
+`GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。现有 `*Workday` 可继续传入，但它是沪深交易日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
+
+标准指标、复权、存储和旧 HTTP 结构可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/TradeResp`。它只提取原始字段，不从浮点价格重建整数，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。例如：
+
+```go
+r, err := c.GetKlineDayAll("sz000001")
+if err != nil { return err }
+raw, err := r.StandardResponse()
+if err != nil { return err }
+// raw.List 可继续用于 protocol.Klines 的指标或标准复权 API。
+```
+
+`GetKlineRange(code,startDate,endDate)` 固定查询一分钟线，日期使用 YYYYMMDD，包含两端日期。扩展保留原区间协议的固定请求周期 7（与普通扩展一分钟查询的周期映射不同），持仓和结算价等字段在 `RangeExtended`，金额及量单位未确认时保持未知；标准通过分页筛选日期区间，超出可读取分页范围时报错。未接入的协议市场仍须使用 `SendFrame`。`GetKlineMinute241Until` 在两种 Client 上使用同一签名及统一返回类型，仅适用于标准股票/ETF；指数或扩展品种明确报错，普通分钟查询使用 `GetKlineMinuteUntil`。
+
+代码查询在 `Client` 与 `MarketClient` 上使用相同签名：`GetCount(exchange) (int, error)`、`GetCode(exchange, start uint32, count uint16) (*MarketCodeResp, error)`、`GetCodeAll(exchange) (*MarketCodeResp, error)`。原标准 `GetCode(exchange, start)` 需增加 `count`（旧分页大小为 1000）；`code.Code` 改为 `code.Instrument.Code`，小数位等特有元数据从 `code.Standard` 读取。分页 `count` 为 1..1000；扩展协议需扫描全局列表再按市场过滤，偏移按过滤后的列表计算。北交所数量和分页使用与完整列表相同的报表来源。
+
+`Client.GetMarkets()` 在标准连接上返回内置沪深北，在扩展连接上返回服务器市场表；`NewClient().GetMarkets()` 合并两者，并在扩展发现失败时返回错误。服务器列出的市场不一定已接入统一行情查询。需要旧扩展全局总数或全局分页时，使用既有 `SendFrame(protocol.MEx.FrameCount())` / `SendFrame(protocol.MEx.FrameInstrument(start, count))`，不能用任意单市场查询替代。历史 HTTP `/ex/count`、`/ex/instruments` 继续通过协议层保持原全局语义。pull 的全局品种快照入口改名 `Service.GetInstruments()`，本轮缓存范围保持不变。
+
+HTTP 内部已迁移到统一函数，但仍返回原 `protocol` 数据，原价格单位、字段名和空列表形状不变。扩展日线/一分钟参数经市场周期映射；特殊市场、周期能否取得数据仍以实际服务支持为准。内置 pull 接口已同步迁移并保留原存储口径。
+
 ## 接口替换
 
 | 已移除的入口 | v2 入口 |

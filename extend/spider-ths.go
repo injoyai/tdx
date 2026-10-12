@@ -57,9 +57,13 @@ func GetTHSDayKlineFull(code string, c *tdx.Client) ([3]protocol.Klines, error) 
 	if err != nil {
 		return [3]protocol.Klines{}, err
 	}
+	raw, err := resp.StandardResponse()
+	if err != nil {
+		return [3]protocol.Klines{}, err
+	}
 	mAmount := make(map[int64]protocol.Price)
 	bfq := protocol.Klines(nil)
-	for _, v := range resp.List {
+	for _, v := range raw.List {
 		mAmount[v.Time.Unix()] = v.Amount
 		bfq = append(bfq, v)
 	}

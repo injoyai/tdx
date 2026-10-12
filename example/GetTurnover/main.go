@@ -18,7 +18,9 @@ func main() {
 	e, err := tdx.NewGbbq(tdx.WithGbbqClient(c))
 	logs.PanicErr(err)
 
-	resp, err := c.GetKlineDay(code, 0, 1)
+	result, err := c.GetKlineDay(code, 0, 1)
+	logs.PanicErr(err)
+	resp, err := result.StandardResponse()
 	logs.PanicErr(err)
 
 	eq := e.GetEquity(code, time.Now())

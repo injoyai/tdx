@@ -19,7 +19,7 @@ func main() {
 		return
 	}
 	for _, v := range resp.List {
-		logs.Debug("bj" + v.Code)
+		logs.Debug("bj" + v.Instrument.Code)
 	}
 	logs.Debug("总数量:", len(resp.List))
 }

@@ -109,23 +109,23 @@ func TestStandardLive(t *testing.T) {
 	}
 	c := liveTestClient(t, false, true)
 	count, err := c.GetCount(protocol.ExchangeSZ)
-	if err != nil || count.Count == 0 {
+	if err != nil || count == 0 {
 		t.Fatal("GetCount", count, err)
 	}
-	t.Logf("SZ codes=%d", count.Count)
+	t.Logf("SZ codes=%d", count)
 	day, err := c.GetKlineDay("sz000001", 0, 5)
 	if err != nil || len(day.List) == 0 {
 		t.Fatal("GetKlineDay", day, err)
 	}
-	date := day.List[len(day.List)-1].Time.Format("20060102")
-	t.Logf("day count=%d latest=%s close=%s", day.Count, date, day.List[len(day.List)-1].Close)
+	date := day.List[len(day.List)-1].Standard.Time.Format("20060102")
+	t.Logf("day count=%d latest=%s close=%.3f", day.Count, date, day.List[len(day.List)-1].Close)
 	hour, err := c.GetKline60Minute("sz000001", 0, 5)
 	if err != nil || len(hour.List) == 0 {
 		t.Fatal("GetKline60Minute", hour, err)
 	}
 	t.Logf("60 minute count=%d", hour.Count)
 	for _, historical := range []bool{false, true} {
-		var trades *protocol.TradeResp
+		var trades *MarketTradeResp
 		if historical {
 			trades, err = c.GetHistoryTrade(date, "sz000001", 0, 5)
 		} else {
@@ -134,10 +134,10 @@ func TestStandardLive(t *testing.T) {
 		if err != nil || trades.Count == 0 || int(trades.Count) != len(trades.List) {
 			t.Fatalf("trade historical=%v: %v %v", historical, trades, err)
 		}
-		if trades.List[0].Price <= 0 || trades.List[0].Volume < 0 {
+		if trades.List[0].Price == nil || *trades.List[0].Price <= 0 || trades.List[0].Volume < 0 {
 			t.Fatal("invalid trade", trades.List[0])
 		}
-		t.Logf("trade historical=%v count=%d first=%s", historical, trades.Count, trades.List[0])
+		t.Logf("trade historical=%v count=%d first=%+v", historical, trades.Count, trades.List[0])
 	}
 	r, err := c.SendFrame(protocol.MBlock.FrameMeta(protocol.BlockFileZS))
 	if err != nil {
@@ -171,7 +171,7 @@ func TestStandardLive(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if r, err := c.GetCount(protocol.ExchangeSZ); err != nil || r.Count != count.Count {
+	if r, err := c.GetCount(protocol.ExchangeSZ); err != nil || r != count {
 		t.Fatal("GetCount after reconnect", r, err)
 	}
 	t.Log("one controlled reconnect verified")

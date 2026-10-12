@@ -8,6 +8,14 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+func standardCodePayload(r *tdx.MarketCodeResp) *protocol.CodeResp {
+	out := &protocol.CodeResp{Count: uint16(r.Count)}
+	for _, k := range r.List {
+		out.List = append(out.List, k.Standard)
+	}
+	return out
+}
+
 // ---- 代码/数量 ----
 
 func (s *Server) handleCount(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +31,10 @@ func (s *Server) handleCount(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.CountResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetCount(ex)
+		n, err := c.GetCount(ex)
+		if err == nil {
+			resp = &protocol.CountResp{Count: uint16(n)}
+		}
 		return err
 	})
 	if err != nil {
@@ -51,7 +62,10 @@ func (s *Server) handleCode(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.CodeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetCode(ex, start)
+		r, err := c.GetCode(ex, uint32(start), 1000)
+		if err == nil {
+			resp = standardCodePayload(r)
+		}
 		return err
 	})
 	if err != nil {
@@ -74,7 +88,10 @@ func (s *Server) handleCodeAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.CodeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetCodeAll(ex)
+		r, err := c.GetCodeAll(ex)
+		if err == nil {
+			resp = standardCodePayload(r)
+		}
 		return err
 	})
 	if err != nil {
@@ -137,8 +154,14 @@ func (s *Server) handleQuote(w http.ResponseWriter, r *http.Request) {
 	codes := strings.Split(codesStr, ",")
 	var resp protocol.QuotesResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetQuote(codes...)
-		return err
+		quotes, err := c.GetQuote(codes...)
+		if err != nil {
+			return err
+		}
+		for _, q := range quotes {
+			resp = append(resp, q.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -292,8 +315,15 @@ func (s *Server) handleMinute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.MinuteResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetMinute(code)
-		return err
+		r, err := c.GetMinute(code)
+		if err != nil {
+			return err
+		}
+		resp = &protocol.MinuteResp{Count: uint16(r.Count)}
+		for _, k := range r.List {
+			resp.List = append(resp.List, *k.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -315,8 +345,15 @@ func (s *Server) handleHistoryMinute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.MinuteResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetHistoryMinute(date, code)
-		return err
+		r, err := c.GetHistoryMinute(date, code)
+		if err != nil {
+			return err
+		}
+		resp = &protocol.MinuteResp{Count: uint16(r.Count)}
+		for _, k := range r.List {
+			resp.List = append(resp.List, *k.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -343,8 +380,15 @@ func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetTrade(code, start, count)
-		return err
+		r, err := c.GetTrade(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp = &protocol.TradeResp{Count: uint16(r.Count)}
+		for _, k := range r.List {
+			resp.List = append(resp.List, k.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -361,7 +405,11 @@ func (s *Server) handleTradeAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetTradeAll(code)
+		r, err := c.GetTradeAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -394,8 +442,15 @@ func (s *Server) handleHistoryTrade(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetHistoryTrade(date, code, start, count)
-		return err
+		r, err := c.GetHistoryTrade(date, code, start, count)
+		if err != nil {
+			return err
+		}
+		resp = &protocol.TradeResp{Count: uint16(r.Count)}
+		for _, k := range r.List {
+			resp.List = append(resp.List, k.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -417,7 +472,11 @@ func (s *Server) handleHistoryTradeDay(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.TradeResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetHistoryTradeDay(date, code)
+		r, err := c.GetHistoryTradeDay(date, code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -452,8 +511,15 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline(typ, code, start, count)
-		return err
+		r, err := c.GetKline(typ, code, start, count)
+		if err != nil {
+			return err
+		}
+		resp = &protocol.KlineResp{Count: uint16(r.Count)}
+		for _, k := range r.List {
+			resp.List = append(resp.List, k.Standard)
+		}
+		return nil
 	})
 	if err != nil {
 		respondErr(w, http.StatusOK, err.Error())
@@ -475,7 +541,11 @@ func (s *Server) handleKlineAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineAll(typ, code)
+		r, err := c.GetKlineAll(typ, code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -505,7 +575,11 @@ func (s *Server) handleKlineMinute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineMinute(code, start, count)
+		r, err := c.GetKlineMinute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -523,7 +597,11 @@ func (s *Server) handleKlineMinuteAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineMinuteAll(code)
+		r, err := c.GetKlineMinuteAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -551,7 +629,11 @@ func (s *Server) handleKline5Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline5Minute(code, start, count)
+		r, err := c.GetKline5Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -569,7 +651,11 @@ func (s *Server) handleKline5MinuteAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline5MinuteAll(code)
+		r, err := c.GetKline5MinuteAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -597,7 +683,11 @@ func (s *Server) handleKline15Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline15Minute(code, start, count)
+		r, err := c.GetKline15Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -615,7 +705,11 @@ func (s *Server) handleKline15MinuteAll(w http.ResponseWriter, r *http.Request) 
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline15MinuteAll(code)
+		r, err := c.GetKline15MinuteAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -643,7 +737,11 @@ func (s *Server) handleKline30Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline30Minute(code, start, count)
+		r, err := c.GetKline30Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -661,7 +759,11 @@ func (s *Server) handleKline30MinuteAll(w http.ResponseWriter, r *http.Request) 
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline30MinuteAll(code)
+		r, err := c.GetKline30MinuteAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -689,7 +791,11 @@ func (s *Server) handleKline60Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline60Minute(code, start, count)
+		r, err := c.GetKline60Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -707,7 +813,11 @@ func (s *Server) handleKline60MinuteAll(w http.ResponseWriter, r *http.Request) 
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKline60MinuteAll(code)
+		r, err := c.GetKline60MinuteAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -735,7 +845,11 @@ func (s *Server) handleKlineDay(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineDay(code, start, count)
+		r, err := c.GetKlineDay(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -753,7 +867,11 @@ func (s *Server) handleKlineDayAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineDayAll(code)
+		r, err := c.GetKlineDayAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -781,7 +899,11 @@ func (s *Server) handleKlineWeek(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineWeek(code, start, count)
+		r, err := c.GetKlineWeek(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -799,7 +921,11 @@ func (s *Server) handleKlineWeekAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineWeekAll(code)
+		r, err := c.GetKlineWeekAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -827,7 +953,11 @@ func (s *Server) handleKlineMonth(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineMonth(code, start, count)
+		r, err := c.GetKlineMonth(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -845,7 +975,11 @@ func (s *Server) handleKlineMonthAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineMonthAll(code)
+		r, err := c.GetKlineMonthAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -873,7 +1007,11 @@ func (s *Server) handleKlineQuarter(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineQuarter(code, start, count)
+		r, err := c.GetKlineQuarter(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -891,7 +1029,11 @@ func (s *Server) handleKlineQuarterAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineQuarterAll(code)
+		r, err := c.GetKlineQuarterAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -919,7 +1061,11 @@ func (s *Server) handleKlineYear(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineYear(code, start, count)
+		r, err := c.GetKlineYear(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -937,7 +1083,11 @@ func (s *Server) handleKlineYearAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetKlineYearAll(code)
+		r, err := c.GetKlineYearAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -972,7 +1122,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndex(typ, code, start, count)
+		r, err := c.GetKline(typ, code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -995,7 +1149,11 @@ func (s *Server) handleIndexAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexAll(typ, code)
+		r, err := c.GetKlineAll(typ, code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1025,7 +1183,11 @@ func (s *Server) handleIndexMinute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexMinute(code, start, count)
+		r, err := c.GetKlineMinute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1053,7 +1215,11 @@ func (s *Server) handleIndex5Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndex5Minute(code, start, count)
+		r, err := c.GetKline5Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1081,7 +1247,11 @@ func (s *Server) handleIndex15Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndex15Minute(code, start, count)
+		r, err := c.GetKline15Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1109,7 +1279,11 @@ func (s *Server) handleIndex30Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndex30Minute(code, start, count)
+		r, err := c.GetKline30Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1137,7 +1311,11 @@ func (s *Server) handleIndex60Minute(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndex60Minute(code, start, count)
+		r, err := c.GetKline60Minute(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1165,7 +1343,11 @@ func (s *Server) handleIndexDay(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexDay(code, start, count)
+		r, err := c.GetKlineDay(code, start, count)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1185,7 +1367,11 @@ func (s *Server) handleIndexDayAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexDayAll(code)
+		r, err := c.GetKlineDayAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1203,7 +1389,11 @@ func (s *Server) handleIndexWeekAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexWeekAll(code)
+		r, err := c.GetKlineWeekAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1221,7 +1411,11 @@ func (s *Server) handleIndexMonthAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexMonthAll(code)
+		r, err := c.GetKlineMonthAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1239,7 +1433,11 @@ func (s *Server) handleIndexQuarterAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexQuarterAll(code)
+		r, err := c.GetKlineQuarterAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {
@@ -1257,7 +1455,11 @@ func (s *Server) handleIndexYearAll(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp *protocol.KlineResp
 	err = s.pool.Do(func(c *tdx.Client) error {
-		resp, err = c.GetIndexYearAll(code)
+		r, err := c.GetKlineYearAll(code)
+		if err != nil {
+			return err
+		}
+		resp, err = r.StandardResponse()
 		return err
 	})
 	if err != nil {

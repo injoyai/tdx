@@ -1,12 +1,12 @@
 // Package market 实现各市场的拉取 Unit（可插拔）。
-// 港股市场：走扩展行情(7727) ExBars 拉取日线/分钟线。
+// 港股市场：走扩展行情(7727) GetKline 拉取日线/分钟线。
 package market
 
 import (
 	"github.com/injoyai/tdx/v2/extend/pull"
 )
 
-// 港股市场编码（扩展行情 ExInstruments.Market）。
+// 港股市场编码（扩展行情 ExInstrument.Market）。
 const marketHK = 31 // 香港交易所
 
 // HK 港股市场。
