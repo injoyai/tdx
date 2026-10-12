@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func (c *Client) GetKlineRange(code, startDate, endDate string) (*MarketKlineResp, error) {
+func (c *Conn) GetKlineRange(code, startDate, endDate string) (*MarketKlineResp, error) {
 	return c.queryClient().GetKlineRange(code, startDate, endDate)
 }
 

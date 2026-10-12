@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"io"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,17 +21,17 @@ import (
 
 type tradeTestPool struct {
 	tdx.IPool
-	c *tdx.Client
+	c *tdx.Conn
 }
 
-func (p tradeTestPool) Do(fn func(*tdx.Client) error) error { return fn(p.c) }
+func (p tradeTestPool) Do(fn func(*tdx.Conn) error) error { return fn(p.c) }
 
 type tradeTestCodes struct{ tdx.ICodes }
 
 func (tradeTestCodes) GetName(string) string { return "测试股票" }
 
 func TestPullTradePeriods(t *testing.T) {
-	var c *tdx.Client
+	var c *tdx.Conn
 	reader, server := net.Pipe()
 	t.Cleanup(func() { server.Close() })
 	go func() {
@@ -43,11 +44,26 @@ func TestPullTradePeriods(t *testing.T) {
 			if _, err := io.ReadFull(server, body); err != nil {
 				return
 			}
-			if binary.LittleEndian.Uint16(header[10:12]) != protocol.TypeHistoryTrade {
+			typ := binary.LittleEndian.Uint16(header[10:12])
+			if typ != protocol.TypeHistoryTrade && typ != protocol.TypeKline {
 				continue
 			}
 			// 每日一笔：09:29，10 元，1 手；响应包含记录数及四字节保留位。
 			data := []byte{1, 0, 0, 0, 0, 0, 0x39, 0x02, 0xa8, 0x0f, 1, 0, 0}
+			if typ == protocol.TypeKline {
+				data = protocol.Bytes(uint16(2))
+				for _, day := range []uint32{20250102, 20250103} {
+					data = append(data, protocol.Bytes(day)...)
+					price := []byte{0}
+					if day == 20250102 {
+						price = []byte{0x90, 0x9c, 1}
+					}
+					data = append(data, price...)
+					data = append(data, 0, 0, 0)
+					data = append(data, protocol.Bytes(math.Float32bits(1))...)
+					data = append(data, protocol.Bytes(math.Float32bits(1000))...)
+				}
+			}
 			resp := make([]byte, 16+len(data))
 			copy(resp, []byte{0xb1, 0xcb, 0x74, 0, 0x1c})
 			copy(resp[5:9], header[1:5])

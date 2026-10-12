@@ -16,7 +16,7 @@ import (
 
 type (
 	WorkdayOption   func(w *Workday)
-	DialWorkdayFunc func(c *Client) (*Workday, error)
+	DialWorkdayFunc func(c Client) (*Workday, error)
 )
 
 func WithWorkdaySpec(spec string) WorkdayOption {
@@ -43,9 +43,9 @@ func WithWorkdayDialDB(dial DialDBFunc) WorkdayOption {
 	}
 }
 
-func WithWorkdayClient(c *Client) WorkdayOption {
+func WithWorkdayClient(c Client) WorkdayOption {
 	return func(w *Workday) {
-		w.c = c
+		w.c = clientOrNil(c)
 	}
 }
 
@@ -102,11 +102,15 @@ func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 
 	if w.c == nil {
 		if w.dialClient == nil {
-			w.dialClient = func() (*Client, error) { return DialDefault() }
+			w.dialClient = func() (Client, error) { return DialDefault() }
 		}
 		w.c, err = w.dialClient()
 		if err != nil {
 			return nil, err
+		}
+		w.c = clientOrNil(w.c)
+		if w.c == nil {
+			return nil, errors.New("client is nil")
 		}
 	}
 
@@ -122,7 +126,7 @@ type Workday struct {
 	dialDB     DialDBFunc
 	dialClient DialClientFunc
 
-	c     *Client
+	c     Client
 	db    *xorms.Engine
 	cache maps.Bit
 }

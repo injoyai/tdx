@@ -12,15 +12,15 @@ import (
 )
 
 func TestMarketClientSlowDialKeepsOtherProtocolUsable(t *testing.T) {
-	c := NewClient()
+	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
-	c.dial[0] = func() (*Client, error) { return std, nil }
+	c.dial[0] = func() (*Conn, error) { return std, nil }
 	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
 	dialDone := make(chan error, 1)
-	c.dial[1] = func() (*Client, error) {
+	c.dial[1] = func() (*Conn, error) {
 		close(started)
 		<-release
 		return nil, io.ErrClosedPipe
@@ -48,16 +48,16 @@ func TestMarketClientSlowDialKeepsOtherProtocolUsable(t *testing.T) {
 }
 
 func TestMarketClientCloseDuringDialDiscardsLateConnection(t *testing.T) {
-	c := NewClient()
+	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
 	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
-	c.dial[0] = func() (*Client, error) { return std, nil }
+	c.dial[0] = func() (*Conn, error) { return std, nil }
 	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
 	dialDone := make(chan error, 1)
-	c.dial[1] = func() (*Client, error) { close(started); <-release; return ex, nil }
+	c.dial[1] = func() (*Conn, error) { close(started); <-release; return ex, nil }
 	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
 	<-started
 	closeDone := make(chan error, 1)
@@ -93,10 +93,10 @@ func TestMarketClientCloseDuringDialDiscardsLateConnection(t *testing.T) {
 }
 
 func TestMarketClientTimeoutChangedDuringDial(t *testing.T) {
-	c := NewClient()
+	c := newMarketClient()
 	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
 	started, release := make(chan struct{}), make(chan struct{})
-	c.dial[1] = func() (*Client, error) { close(started); <-release; return ex, nil }
+	c.dial[1] = func() (*Conn, error) { close(started); <-release; return ex, nil }
 	dialDone := make(chan error, 1)
 	go func() { _, err := c.connection(protocol.ExchangeHK); dialDone <- err }()
 	<-started

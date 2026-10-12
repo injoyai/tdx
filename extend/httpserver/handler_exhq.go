@@ -17,7 +17,7 @@ func (s *Server) handleExMarkets(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp []protocol.ExMarket
 	var err error
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetMarkets()
 		if err != nil {
 			return err
@@ -42,7 +42,7 @@ func (s *Server) handleExCount(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp int
 	var err error
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		// 此历史路由返回扩展全局总数，不能改为单市场 GetCount。
 		r, err := c.SendFrame(protocol.MEx.FrameCount())
 		if err == nil {
@@ -73,7 +73,7 @@ func (s *Server) handleExInstruments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var resp []protocol.ExInstrument
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		// 保留此路由的全局分页偏移。
 		r, err := c.SendFrame(protocol.MEx.FrameInstrument(start, count))
 		if err == nil {
@@ -104,7 +104,7 @@ func (s *Server) handleExQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var resp *protocol.ExQuote
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetQuote((protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String())
 		if err != nil {
 			return err
@@ -145,7 +145,7 @@ func (s *Server) handleExQuoteList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var resp []protocol.ExQuoteListItem
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		resp, err = c.GetQuoteList(market, category, start, count)
 		return err
 	})
@@ -187,7 +187,7 @@ func (s *Server) handleExBars(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := []protocol.ExKline{}
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetKline(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String(), start, count)
 		if err != nil {
 			return err
@@ -220,7 +220,7 @@ func (s *Server) handleExMinute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := []protocol.ExMinuteTick{}
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetMinute((protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String())
 		if err != nil {
 			return err
@@ -258,7 +258,7 @@ func (s *Server) handleExHistMinute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := []protocol.ExMinuteTick{}
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetHistoryMinute(strconv.FormatUint(uint64(date), 10), (protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String())
 		if err != nil {
 			return err
@@ -301,7 +301,7 @@ func (s *Server) handleExTrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := []protocol.ExTradeTick{}
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetTrade((protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String(), start, count)
 		if err != nil {
 			return err
@@ -349,7 +349,7 @@ func (s *Server) handleExHistTrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := []protocol.ExTradeTick{}
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetHistoryTrade(strconv.FormatUint(uint64(date), 10), (protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String(), start, count)
 		if err != nil {
 			return err
@@ -392,7 +392,7 @@ func (s *Server) handleExBarsRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var resp []protocol.ExRangeKline
-	err = s.exPool.Do(func(c *tdx.Client) error {
+	err = s.exPool.Do(func(c *tdx.Conn) error {
 		r, err := c.GetKlineRange((protocol.Instrument{Exchange: protocol.Exchange(market), Code: code}).String(), strconv.FormatUint(uint64(date), 10), strconv.FormatUint(uint64(date2), 10))
 		if err != nil {
 			return err

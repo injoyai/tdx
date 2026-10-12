@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		resp, err := c.GetGbbq("sz000001")
 		logs.PanicErr(err)
 

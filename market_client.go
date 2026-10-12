@@ -11,13 +11,13 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// MarketClient 统一业务入口，每类协议最多持有一条连接；旧 Client 仍表示单条连接。
+// MarketClient 统一业务入口，每类协议最多持有一条连接；Conn 表示单条连接并实现同一业务接口。
 type MarketClient struct {
 	mu         sync.Mutex
 	dialMu     [2]sync.Mutex
 	dialing    sync.WaitGroup
-	links      [2]*Client
-	dial       [2]func() (*Client, error)
+	links      [2]*Conn
+	dial       [2]func() (*Conn, error)
 	timeout    time.Duration
 	timeoutSet bool
 	closed     bool
@@ -29,19 +29,23 @@ type MarketClient struct {
 
 // NewClient 不立即联网；首次访问某类市场时连接，对应错误由查询方法返回。
 // options 应用于两类底层连接，例如 WithRedial(false)、WithLevel(LevelNone)。
-func NewClient(options ...client.Option) *MarketClient {
+func NewClient(options ...client.Option) Client {
+	return newMarketClient(options...)
+}
+
+func newMarketClient(options ...client.Option) *MarketClient {
 	op := append([]client.Option(nil), options...)
 	return &MarketClient{
-		dial: [2]func() (*Client, error){
-			func() (*Client, error) { return DialDefault(op...) },
-			func() (*Client, error) { return DialExHqDefault(op...) },
+		dial: [2]func() (*Conn, error){
+			func() (*Conn, error) { return DialDefault(op...) },
+			func() (*Conn, error) { return DialExHqDefault(op...) },
 		},
 		closeDone:  make(chan struct{}),
 		quoteCodes: NewCodesBase(),
 	}
 }
 
-func (c *MarketClient) connection(ex protocol.Exchange) (*Client, error) {
+func (c *MarketClient) connection(ex protocol.Exchange) (*Conn, error) {
 	i := protocol.Instrument{Exchange: ex}
 	m, err := i.Market()
 	if err != nil {
@@ -320,7 +324,7 @@ func (c *MarketClient) GetQuoteList(market, category uint8, start, count uint16)
 }
 
 // standardQuotes 在需要价格精度校准时取元数据，避免全局 DefaultCodes 和额外数据库/连接。
-func (c *MarketClient) standardQuotes(link *Client, codes []string) (protocol.QuotesResp, error) {
+func (c *MarketClient) standardQuotes(link *Conn, codes []string) (protocol.QuotesResp, error) {
 	c.quoteMu.Lock()
 	defer c.quoteMu.Unlock()
 	loaded := map[protocol.Exchange]bool{}

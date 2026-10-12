@@ -9,7 +9,7 @@ import (
 
 func TestCodesHTTPStartupErrors(t *testing.T) {
 	want := errors.New("offline initialization failure")
-	options := []tdx.CodesOption{tdx.WithCodesDialClient(func() (*tdx.Client, error) { return nil, want })}
+	options := []tdx.CodesOption{tdx.WithCodesDialClient(func() (tdx.Client, error) { return nil, want })}
 	for _, test := range []struct {
 		name string
 		fn   func() error

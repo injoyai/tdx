@@ -264,6 +264,6 @@ curl "http://localhost:8080/ex/markets"
 curl "http://localhost:8080/ex/quote?market=47&code=600519"
 ```
 
-Go Client 的代码查询已统一为 `GetCount/GetCode/GetCodeAll/GetMarkets`。HTTP 仍保留原路由和响应结构；`/ex/count` 返回扩展全局总数，`/ex/instruments` 使用全局分页偏移，与新的按市场 Go 查询语义不同。
+Go Client 业务接口的代码查询已统一为 `GetCount/GetCode/GetCodeAll/GetMarkets`。HTTP 仍保留原路由和响应结构；`/ex/count` 返回扩展全局总数，`/ex/instruments` 使用全局分页偏移，与新的按市场 Go 查询语义不同。
 
 Go 的独立指数 K线入口和 `ExBarsRange` 已移除；历史 `/index/*`、`/ex/bars/range` 路由仍保留原字段格式，内部改用统一 K线函数。`/ex/bars/range` 仍查询固定一分钟区间，统一路由仅支持已接入市场。

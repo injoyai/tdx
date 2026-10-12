@@ -143,7 +143,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 		})
 	}
 	// The bound common methods must have identical callable contracts.
-	c, m := new(Client), new(MarketClient)
+	c, m := new(Conn), new(MarketClient)
 	ct, mt := reflect.TypeOf(c), reflect.TypeOf(m)
 	for n := 0; n < ct.NumMethod(); n++ {
 		cm := ct.Method(n)
@@ -192,7 +192,15 @@ func TestUnifiedTradePaging(t *testing.T) {
 		for _, historical := range []bool{false, true} {
 			t.Run(map[bool]string{false: "standard", true: "extended"}[extended]+map[bool]string{false: "today", true: "history"}[historical], func(t *testing.T) {
 				var calls atomic.Int32
-				c := respondingTestClient(t, extended, func(_, b []byte) []byte {
+				var daily atomic.Int32
+				c := respondingTestClient(t, extended, func(h, b []byte) []byte {
+					if typ := binary.LittleEndian.Uint16(h[10:]); typ == protocol.TypeKline || typ == protocol.TypeExBars {
+						daily.Add(1)
+						if extended {
+							return testExtendedBar(20261009)
+						}
+						return testStandardBar(false)
+					}
 					calls.Add(1)
 					offset := 8
 					if historical {
@@ -268,15 +276,22 @@ func TestUnifiedTradePaging(t *testing.T) {
 				if historical && (r.List[0].Date != "20261009" || r.List[n-1].Date != "20261009") {
 					t.Fatal("history date lost")
 				}
+				wantDaily := int32(0)
+				if historical {
+					wantDaily = 1
+				}
+				if daily.Load() != wantDaily {
+					t.Fatal("daily guard repeated for each trade page", daily.Load())
+				}
 				if extended && (r.List[0].Price != nil || r.List[0].Extended.Price != 500000) {
 					t.Fatal("extended scale changed")
 				}
 			})
 		}
 	}
-	c := NewClient()
+	c := newMarketClient()
 	defer c.Close()
-	c.dial[0] = func() (*Client, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func() (*Conn, error) { return nil, io.ErrClosedPipe }
 	if r, err := c.GetTradeAll("sz000001"); r != nil || !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal("partial result returned", r, err)
 	}
@@ -295,6 +310,12 @@ func (c completionCalendar) Range(start, end time.Time, visit func(time.Time) bo
 func TestUnifiedHistoryCalendar(t *testing.T) {
 	c := respondingTestClient(t, true, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeExBars {
+			if binary.LittleEndian.Uint16(b[10:]) == 4 {
+				r := testExtendedBar(20261008)
+				r = append(r, testExtendedBar(20261009)[20:]...)
+				binary.LittleEndian.PutUint16(r[18:], 2)
+				return r
+			}
 			return testExtendedBar(20261001)
 		}
 		r := make([]byte, 32)
@@ -316,6 +337,12 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 	}
 	failed := respondingTestClient(t, true, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeExBars {
+			if binary.LittleEndian.Uint16(b[10:]) == 4 {
+				r := testExtendedBar(20261008)
+				r = append(r, testExtendedBar(20261009)[20:]...)
+				binary.LittleEndian.PutUint16(r[18:], 2)
+				return r
+			}
 			return testExtendedBar(20261001)
 		}
 		if binary.LittleEndian.Uint32(b) == 20261009 {
@@ -331,8 +358,11 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 }
 
 func TestUnifiedAuctionMinute(t *testing.T) {
-	c := respondingTestClient(t, false, func(h, _ []byte) []byte {
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if b[8] == protocol.TypeKlineDay {
+				return testStandardBar(false)
+			}
 			return completionStandardBars([]uint32{20261009}, []uint16{571}, false)
 		}
 		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0} // 历史9:25成交1手、10元。

@@ -71,11 +71,11 @@ func TestNewFailureClosesPool(t *testing.T) {
 func TestCloseReleasesPools(t *testing.T) {
 	var closed atomic.Int32
 	newPool := func() *tdx.Pool {
-		p, err := tdx.NewPool(func() (*tdx.Client, error) {
+		p, err := tdx.NewPool(func() (*tdx.Conn, error) {
 			c := client.New(nil)
 			c.Closer.Reset()
 			c.SetCloseFunc(func(error) error { closed.Add(1); return nil })
-			return &tdx.Client{Client: c}, nil
+			return &tdx.Conn{Client: c}, nil
 		}, 2)
 		if err != nil {
 			t.Fatal(err)

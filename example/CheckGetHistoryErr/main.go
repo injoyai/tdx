@@ -18,7 +18,7 @@ func main() {
 	//}
 
 	for _, code := range codes {
-		m.Do(func(c *tdx.Client) error {
+		m.Do(func(c *tdx.Conn) error {
 			resp, err := c.GetHistoryMinute(time.Now().Format("20060102"), code)
 			logs.PanicErr(err)
 

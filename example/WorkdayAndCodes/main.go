@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 
 		_, err := tdx.NewWorkday(tdx.WithWorkdayClient(c))
 		logs.PanicErr(err)

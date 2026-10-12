@@ -70,7 +70,7 @@ func New(opts ...Option) (*Server, error) {
 		opt(cfg)
 	}
 
-	pool, err := tdx.NewPool(func() (*tdx.Client, error) {
+	pool, err := tdx.NewPool(func() (*tdx.Conn, error) {
 		return tdx.DialHostsRange(cfg.hosts, cfg.options...)
 	}, cfg.poolSize)
 	if err != nil {
@@ -104,7 +104,7 @@ func New(opts ...Option) (*Server, error) {
 		if cfg.exPoolSize <= 0 {
 			cfg.exPoolSize = 1
 		}
-		exPool, err := tdx.NewPool(func() (*tdx.Client, error) {
+		exPool, err := tdx.NewPool(func() (*tdx.Conn, error) {
 			return tdx.DialExHqHosts(cfg.exHqHosts, cfg.options...)
 		}, cfg.exPoolSize)
 		if err != nil {

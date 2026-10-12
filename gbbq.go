@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"errors"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -21,7 +22,7 @@ type IGbbq interface {
 type (
 	GbbqOption func(e *Gbbq)
 
-	DialGbbqFunc func(c *Client) (IGbbq, error)
+	DialGbbqFunc func(c Client) (IGbbq, error)
 )
 
 func WithGbbqRetry(retry int) GbbqOption {
@@ -48,9 +49,9 @@ func WithGbbqDialDB(dial func() (*xorms.Engine, error)) GbbqOption {
 	}
 }
 
-func WithGbbqClient(c *Client) GbbqOption {
+func WithGbbqClient(c Client) GbbqOption {
 	return func(s *Gbbq) {
-		s.c = c
+		s.c = clientOrNil(c)
 	}
 }
 
@@ -86,11 +87,15 @@ func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
 	//初始化客户端
 	if s.c == nil {
 		if s.dialClient == nil {
-			s.dialClient = func() (*Client, error) { return DialDefault() }
+			s.dialClient = func() (Client, error) { return DialDefault() }
 		}
 		s.c, err = s.dialClient()
 		if err != nil {
 			return nil, err
+		}
+		s.c = clientOrNil(s.c)
+		if s.c == nil {
+			return nil, errors.New("client is nil")
 		}
 	}
 
@@ -127,7 +132,7 @@ type Gbbq struct {
 	dialDB     DialDBFunc
 	dialClient DialClientFunc
 
-	c       *Client
+	c       Client
 	db      *xorms.Engine
 	updated *Updated
 	m       map[string][]*protocol.Gbbq

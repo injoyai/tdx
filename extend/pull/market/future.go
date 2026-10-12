@@ -158,7 +158,7 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 		return nil, err
 	}
 	var out []protocol.ExKline
-	err = p.Do(func(c *tdx.Client) error {
+	err = p.Do(func(c *tdx.Conn) error {
 		var err error
 		out, err = readExBars(from, func(start, count uint16) ([]protocol.ExKline, error) {
 			r, err := c.GetKline(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), start, count)

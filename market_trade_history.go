@@ -11,16 +11,16 @@ type TradingCalendar interface {
 	Range(start, end time.Time, visit func(time.Time) bool)
 }
 
-func (c *Client) GetTradeAll(code string) (*MarketTradeResp, error) {
+func (c *Conn) GetTradeAll(code string) (*MarketTradeResp, error) {
 	return c.queryClient().GetTradeAll(code)
 }
-func (c *Client) GetHistoryTradeDay(date, code string) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeDay(date, code string) (*MarketTradeResp, error) {
 	return c.queryClient().GetHistoryTradeDay(date, code)
 }
-func (c *Client) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeBefore(code string, calendar TradingCalendar, before time.Time) (*MarketTradeResp, error) {
 	return c.queryClient().GetHistoryTradeBefore(code, calendar, before)
 }
-func (c *Client) GetHistoryTradeFull(code string, calendar TradingCalendar) (*MarketTradeResp, error) {
+func (c *Conn) GetHistoryTradeFull(code string, calendar TradingCalendar) (*MarketTradeResp, error) {
 	return c.queryClient().GetHistoryTradeFull(code, calendar)
 }
 
@@ -41,7 +41,7 @@ func (c *MarketClient) tradeAll(date, code string) (*MarketTradeResp, error) {
 	}
 	var out *MarketTradeResp
 	for start := 0; start <= 65535; start += size {
-		r, err := c.getTrade(date, code, uint16(start), uint16(size))
+		r, err := c.getTrade(date, code, uint16(start), uint16(size), start == 0)
 		if err != nil {
 			return nil, err
 		}

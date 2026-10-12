@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		result, err := c.GetKlineMinute241Until("sz000001", func(record tdx.MarketKline) bool {
 			k := record.Standard
 			return k.Time.Format("20060102") < "20260223"

@@ -1,6 +1,6 @@
 # 统一行情 Client
 
-`tdx.NewClient()` 返回 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组 `Market*` 结果类型。旧 `*tdx.Client` 仍表示单条连接，原有 `Dial*` 与连接池继续使用；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和 `Market*` 返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
+`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组 `Market*` 结果类型。原单连接结构体改名 `*tdx.Conn`，同样实现业务接口，原有 `Dial*` 与连接池继续使用；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和 `Market*` 返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
 
 ## 使用
 
@@ -44,6 +44,8 @@ ETF、可转债等标准报价需要价格精度元数据时，使用同一连�
 
 `protocol.ParseInstrument` 返回 `{Exchange, Code}`，`Instrument.String()` 返回点分隔代码，港股指数统一为 `hk.HSI`。统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
+业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议；`Dial*()` 立即创建绑定一种协议的 `*Conn`，可赋给 Client，但不会自动建立另一类连接。`Client.Close()` 统一结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 `SendFrame`、连接状态、日志、读取关闭信号等仅在 Conn 上提供；现有连接池继续使用 `*Conn`，不得改为指向接口的 `*Client`。完整迁移见 [v2 指南](v2-migration.md)。
+
 ## 查询接口
 
 | 方法 | 返回 |
@@ -77,6 +79,8 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 完整分笔按递增偏移查询，较早页放在结果前面；偏移超过 65535、响应超出请求数量或请求失败均报错。跨日 `Before/Full` 需要实现 `TradingCalendar.Range` 的对应市场日历，沪深可继续用 `*Workday`；不自动用沪深日历判断港美股或期货交易日。每条历史分笔的 `Date` 为请求交易日期，夜盘自然日和未知价格尺度仍不推断。查询始于服务器最早可获取月线所在月份，不保证上市以来的全部历史。
 
+历史分笔 `GetHistoryTrade/GetHistoryTradeDay` 在请求前查询同代码、同交易日期的日线；`Before/Full` 逐日沿用此检查。没有对应日线时不发送分笔请求，返回保留证券及日期的空响应（`Count=0`）；日线查询失败直接返回带代码、日期的错误。整日分页仅在首个分笔请求前检查一次，单页查询每次检查，包括非零偏移。检查只要求日期存在，不以日线成交量判定；当天实时 `GetTrade/GetTradeAll` 保持原行为。较早日期可能需要多页日线查询；服务器不再保留对应日线时，即使分笔接口非空也会跳过，日线存在也不保证分笔内容准确。
+
 ## 数据契约
 
 - 统一价格为 `float64`，使用证券原币种/报价单位；标准整数厘通过现有 `Float64()` 转换，扩展浮点价格保留底层精度。没有汇率换算，也不把美元、港币或指数点标为人民币元。
@@ -86,7 +90,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
 - K 线 `Time` 为源数据墙上时间 `YYYY-MM-DD HH:MM`，分时/分笔为 `HH:MM`/`HH:MM:SS`。不生成 UTC 时间戳，不猜测美股时区、夜盘自然日或交易日；历史返回 `Date` 为请求日期，当日查询 `Date` 为空。标准当日分时仍沿用底层按运行环境当前日期请求历史分时的行为。
 
-`Dial*` 返回的单连接 `Client` 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `MarketKline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、报表等特有接口仍使用单连接 `Client`。`Market*` 结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
+`Dial*` 返回的单连接 `Conn` 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `MarketKline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。`Market*` 结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要这些标准能力时调用 `StandardResponse()` 获取原始 protocol 响应；它保留整数价格和时间，不转换扩展数据，并检查旧 uint16 数量上限。
 
 ## 验证
 

@@ -3,6 +3,7 @@ package tdx
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/injoyai/tdx/v2/protocol"
@@ -72,17 +73,17 @@ func (c *MarketClient) getMinute(date, code string) (*MarketMinuteResp, error) {
 }
 
 func (c *MarketClient) GetTrade(code string, start, count uint16) (*MarketTradeResp, error) {
-	return c.getTrade("", code, start, count)
+	return c.getTrade("", code, start, count, false)
 }
 
 func (c *MarketClient) GetHistoryTrade(date, code string, start, count uint16) (*MarketTradeResp, error) {
 	if _, err := parseMarketDate(date); err != nil {
 		return nil, err
 	}
-	return c.getTrade(date, code, start, count)
+	return c.getTrade(date, code, start, count, true)
 }
 
-func (c *MarketClient) getTrade(date, code string, start, count uint16) (*MarketTradeResp, error) {
+func (c *MarketClient) getTrade(date, code string, start, count uint16, checkDay bool) (*MarketTradeResp, error) {
 	i, info, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
@@ -94,11 +95,26 @@ func (c *MarketClient) getTrade(date, code string, start, count uint16) (*Market
 	if count == 0 || count > limit {
 		return nil, fmt.Errorf("分笔单次数量必须为1..%d", limit)
 	}
+	out := &MarketTradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	if date != "" && checkDay {
+		day, _ := time.Parse("20060102", date)
+		target := day.Format(time.DateOnly)
+		// 无对应日线时，服务器仍可能返回异常分笔，必须先确认交易日期。
+		days, err := c.GetKlineDayUntil(code, func(k MarketKline) bool {
+			d, _, _ := strings.Cut(k.Time, " ")
+			return d <= target
+		})
+		if err != nil {
+			return nil, fmt.Errorf("%s %s 查询分笔前检查日线: %w", code, date, err)
+		}
+		if len(days.List) == 0 || !strings.HasPrefix(days.List[0].Time, target+" ") {
+			return out, nil
+		}
+	}
 	link, err := c.connection(i.Exchange)
 	if err != nil {
 		return nil, err
 	}
-	out := &MarketTradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
 	if info.Protocol == protocol.ProtocolStandard {
 		var r *protocol.TradeResp
 		if date == "" {

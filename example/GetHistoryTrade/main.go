@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		resp, err := c.GetHistoryTrade("20251201", "sz159399", 0, 20)
 		logs.PanicErr(err)
 

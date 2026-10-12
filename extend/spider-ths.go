@@ -22,7 +22,7 @@ const (
 )
 
 // GetTHSDayKlineFactorFull 增加计算复权因子
-func GetTHSDayKlineFactorFull(code string, c *tdx.Client) ([3]protocol.Klines, []*Factor, error) {
+func GetTHSDayKlineFactorFull(code string, c *tdx.Conn) ([3]protocol.Klines, []*Factor, error) {
 	ks, err := GetTHSDayKlineFull(code, c)
 	if err != nil {
 		return [3]protocol.Klines{}, nil, err
@@ -52,7 +52,7 @@ GetTHSDayKlineFull
 前复权,和通达信对的上,和东方财富对不上
 后复权,和通达信,东方财富都对不上
 */
-func GetTHSDayKlineFull(code string, c *tdx.Client) ([3]protocol.Klines, error) {
+func GetTHSDayKlineFull(code string, c *tdx.Conn) ([3]protocol.Klines, error) {
 	resp, err := c.GetKlineDayAll(code)
 	if err != nil {
 		return [3]protocol.Klines{}, err

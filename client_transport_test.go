@@ -43,13 +43,13 @@ func writeTestResponse(w io.Writer, h, data []byte) error {
 	return err
 }
 
-func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...client.Option) *Client {
+func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...client.Option) *Conn {
 	t.Helper()
 	a, b := net.Pipe()
 	serverDone := make(chan struct{})
 	go func() { defer close(serverDone); serve(b) }()
 	dial := func(context.Context) (ios.ReadWriteCloser, string, error) { return a, "offline-test", nil }
-	var c *Client
+	var c *Conn
 	var err error
 	op := append([]client.Option{WithRedial(false), WithLevel(LevelNone)}, options...)
 	if ex {
@@ -72,7 +72,7 @@ func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...clie
 	return c
 }
 
-func respondingTestClient(t *testing.T, ex bool, data func([]byte, []byte) []byte) *Client {
+func respondingTestClient(t *testing.T, ex bool, data func([]byte, []byte) []byte) *Conn {
 	return pipeTestClient(t, ex, func(s net.Conn) {
 		for {
 			h, b, err := readTestFrame(s)
@@ -209,7 +209,10 @@ func TestTradePaginationOverflow(t *testing.T) {
 	for _, historical := range []bool{false, true} {
 		t.Run(map[bool]string{false: "current", true: "historical"}[historical], func(t *testing.T) {
 			var previous uint16
-			c := respondingTestClient(t, false, func(_ []byte, b []byte) []byte {
+			c := respondingTestClient(t, false, func(h []byte, b []byte) []byte {
+				if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+					return completionStandardBars([]uint32{20250102}, nil, false)
+				}
 				pos := 8
 				if historical {
 					pos = 12
@@ -247,7 +250,12 @@ func TestTradePaginationOverflow(t *testing.T) {
 }
 
 func TestTradeDecodeErrorReachesRequester(t *testing.T) {
-	c := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{1, 0, 0, 0, 0, 0} })
+	c := respondingTestClient(t, false, func(h, _ []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			return completionStandardBars([]uint32{20250102}, nil, false)
+		}
+		return []byte{1, 0, 0, 0, 0, 0}
+	})
 	_, err := c.GetHistoryTrade("20250102", "sz000001", 0, 1)
 	if err == nil || err.Error() == "超时" {
 		t.Fatalf("expected decode error, got %v", err)
@@ -325,7 +333,7 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 				}()
 				return a, string(rune('a' + n)), nil
 			}
-			var c *Client
+			var c *Conn
 			var err error
 			if ex {
 				c, err = dialExHqWith(dial, WithRedial(), WithDebug(false))
@@ -458,7 +466,7 @@ func TestCloseAllStopsReconnection(t *testing.T) {
 }
 
 func TestNilDialReturnsError(t *testing.T) {
-	for _, dial := range []func(ios.DialFunc, ...client.Option) (*Client, error){DialWith, dialExHqWith} {
+	for _, dial := range []func(ios.DialFunc, ...client.Option) (*Conn, error){DialWith, dialExHqWith} {
 		if c, err := dial(nil); err == nil || c != nil {
 			t.Fatal("nil dial must return an error", c, err)
 		}

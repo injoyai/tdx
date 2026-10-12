@@ -8,7 +8,7 @@ import (
 
 func main() {
 
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		resp, err := c.GetHistoryMinute("20250314", "sz000001")
 		logs.PanicErr(err)
 

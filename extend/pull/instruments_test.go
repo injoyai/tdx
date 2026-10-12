@@ -38,7 +38,7 @@ type failOnceInstrumentPool struct {
 	fail bool
 }
 
-func (p *failOnceInstrumentPool) Do(fn func(*tdx.Client) error) error {
+func (p *failOnceInstrumentPool) Do(fn func(*tdx.Conn) error) error {
 	if p.fail {
 		p.fail = false
 		return errors.New("instrument discovery failed")
@@ -98,7 +98,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.SetTimeout(time.Second)
-	p, err := tdx.NewPool(func() (*tdx.Client, error) { return c, nil }, 1)
+	p, err := tdx.NewPool(func() (*tdx.Conn, error) { return c, nil }, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

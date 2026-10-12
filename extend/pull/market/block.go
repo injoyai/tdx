@@ -26,7 +26,7 @@ func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
 		return nil, err
 	}
 	var blocks []*protocol.Block
-	err = m.IPool.Do(func(c *tdx.Client) error {
+	err = m.IPool.Do(func(c *tdx.Conn) error {
 		var err error
 		blocks, err = c.GetBlockDataWithIndex(protocol.BlockFileZS)
 		return err

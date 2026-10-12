@@ -39,9 +39,9 @@
 - **数据库支持边界**：内置存储统一使用 SQLite；已移除 MySQL 专用构造函数和驱动注册。外部调用须使用默认构造函数或传入 SQLite 引擎，MySQL 存量数据需单独转换，见 `docs/v2-migration.md`。
 - **默认缓存路径**：元数据缓存位于 `./output/data/database`。历史 `./data/database` 不自动搬迁，使用旧缓存时须显式配置 DB 或在停机后完整复制（含 SQLite WAL/SHM），见 `docs/v2-migration.md`。
 
-- **请求等待依赖约束**：`base/maps/wait` 的等待注册与响应完成不能并发修改同一回调列表。Client 在发送前完整注册异步回调，并由同一互斥锁保护注册/处理/清理；超时通过 `Client.SetTimeout` 配置，直接修改 `Client.Wait` 不调整请求计时器。
+- **请求等待依赖约束**：`base/maps/wait` 的等待注册与响应完成不能并发修改同一回调列表。Conn 在发送前完整注册异步回调，并由同一互斥锁保护注册/处理/清理；超时通过 `Client.SetTimeout` 配置，直接修改 `Conn.Wait` 不调整请求计时器。
 
-- **统一行情 API 与连接边界**：`NewClient()` 返回跨市场 `*MarketClient`，`Dial*` 返回单协议 `*Client`。两者六组基础查询统一为 `GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 及 `Market*` 返回；对应公开 `Ex*` 已移除，市场行情分页列表改为 `GetQuoteList`。代码查询统一为 `GetCount(exchange)`（int）、`GetCode(exchange,start uint32,count uint16)` 和 `GetCodeAll(exchange)`（MarketCodeResp），公开 `ExCount/ExInstruments` 已移除；扩展单市场数量和分页扫描全局列表，不新增持久缓存。`GetMarkets` 返回内置标准市场或服务器扩展表（跨市场门面合并），发现不等于行情路由接入。历史 HTTP 全局数量/分页与 pull 一轮发现缓存使用协议层保留语义；pull 快照入口为 `GetInstruments`。单连接复用查询层但不额外建连；K线全部周期及 All/Until、完整分笔均使用统一返回类型，独立指数 K线和 ExBarsRange 已移除；区间入口 GetKlineRange 固定一分钟，原扩展区间字段在 RangeExtended。标准指标/复权通过 StandardResponse 提取原始整数价格与时间，扩展或旧响应数量溢出时报错。标准分页继续回填跨页昨收；241分钟线只用于标准股票/ETF。跨日分笔要求对应市场 TradingCalendar，Workday 是沪深日历，逐条保留交易日期，不自动补夜盘自然日。HTTP 适配保留原字段和单位。两类初始化独立同步，关闭清理晚到连接；未知数据尺度保留原始字段，不推测换算。支持范围及迁移说明见 `docs/unified-client.md` 和 `docs/v2-migration.md`。
+- **统一行情 API 与连接边界**：`Client` 是统一业务接口；`NewClient()` 返回该接口，默认实现为跨市场 `*MarketClient`，`Dial*` 返回单协议 `*Conn`。接口 Close 完整关闭生命周期并停止重连；原 Conn.CloseAll 保留。业务不使用指向接口的 *Client，连接池和原始 SendFrame/状态/日志继续使用 *Conn。Codes/Gbbq/Workday 的客户端注入与相应工厂改为 Client 接口，保留空指针注入行为。财务、F10、除权、集合竞价、板块和报表已接入门面，仍只支持标准协议和原标准结果类型，非法市场或扩展单连接提前报错。两者六组基础查询统一为 `GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 及 `Market*` 返回；对应公开 `Ex*` 已移除，市场行情分页列表改为 `GetQuoteList`。代码查询统一为 `GetCount(exchange)`（int）、`GetCode(exchange,start uint32,count uint16)` 和 `GetCodeAll(exchange)`（MarketCodeResp），公开 `ExCount/ExInstruments` 已移除；扩展单市场数量和分页扫描全局列表，不新增持久缓存。`GetMarkets` 返回内置标准市场或服务器扩展表（跨市场门面合并），发现不等于行情路由接入。历史 HTTP 全局数量/分页与 pull 一轮发现缓存使用协议层保留语义；pull 快照入口为 `GetInstruments`。单连接复用查询层但不额外建连；K线全部周期及 All/Until、完整分笔均使用统一返回类型，独立指数 K线和 ExBarsRange 已移除；区间入口 GetKlineRange 固定一分钟，原扩展区间字段在 RangeExtended。标准指标/复权通过 StandardResponse 提取原始整数价格与时间，扩展或旧响应数量溢出时报错。标准分页继续回填跨页昨收；241分钟线只用于标准股票/ETF。跨日分笔要求对应市场 TradingCalendar，Workday 是沪深日历，逐条保留交易日期，不自动补夜盘自然日。HTTP 适配保留原字段和单位。两类初始化独立同步，关闭清理晚到连接；未知数据尺度保留原始字段，不推测换算。支持范围及迁移说明见 `docs/unified-client.md` 和 `docs/v2-migration.md`。
 
 - **连接生命周期依赖约束**：`ios` 的完整写入流程（包括写入统计）和重连初始化须共用门控；初始化在连接回调之前，故门控从 Dial 成功返回前开始，到连接回调发布写入快照后结束。对外使用稳定的 `MoreWriter` 入口，心跳只持有当次连接及其关闭信号。请求超时覆盖排队、发送、等待；发送被中断时关闭当次连接，防止半帧污染。底层关闭会立即归还读缓存，故协议分包使用每条连接独立的读取缓存；`CloseAll` 取消运行上下文并关闭传输，等待读取流程退出后释放底层资源，避免与读取初始化或重连状态重置竞争。
 
@@ -90,6 +90,7 @@
 
 ## 踩坑记录
 
+- **无日线仍返回分笔**：用户遇到过无日线但分笔接口非空且内容异常的情况；不能以分笔非空判断历史数据可用。历史分笔统一先查同代码、同交易日期的日线；缺少对应日线即跳过，检查失败必须报错，不能当作无数据。只查最近一根不足以判断历史日期，需分页定位请求日；整日分笔分页只检查一次。离线模拟确认旧路径缺少此检查；原异常证券/日期尚无真实样本核验。当天实时分笔不套用该历史检查，日线存在也不能证明分笔准确。
 - **`.day` 价格是 uint32×(100)** 而非 float32——旧实现用 bytesToFloat 解析价格/成交量完全错误，日期解析也有误（现已修复）。
 - **分钟线价格/成交额是 float32**，必须用 `math.Float32frombits` 转，直接 `Uint32` 得位模式会得到天文数字价格。
 - **float32 精度限制**：分钟线价格以 float32(元) 存，两位小数价格经 float32 往返会差 ±1厘（如 11.2 元→11.199999），测试断言需容差。

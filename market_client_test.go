@@ -17,10 +17,10 @@ import (
 
 func marketTestClient(t *testing.T, std, ex func([]byte, []byte) []byte) *MarketClient {
 	t.Helper()
-	c := NewClient()
+	c := newMarketClient()
 	for j, serve := range []func([]byte, []byte) []byte{std, ex} {
 		index, respond := j, serve
-		c.dial[index] = func() (*Client, error) {
+		c.dial[index] = func() (*Conn, error) {
 			if respond == nil {
 				t.Error("unexpected connection")
 				return nil, errors.New("unexpected connection")
@@ -158,6 +158,8 @@ func TestMarketClientMixedQuotesAndMetadata(t *testing.T) {
 func TestMarketClientTicks(t *testing.T) {
 	c := marketTestClient(t, func(h, _ []byte) []byte {
 		switch binary.LittleEndian.Uint16(h[10:12]) {
+		case protocol.TypeKline:
+			return testStandardBar(false)
 		case protocol.TypeHistoryMinute:
 			return []byte{1, 0, 0, 0, 0, 0, 0xa8, 0x0f, 0, 2}
 		case protocol.TypeTrade:
@@ -167,6 +169,9 @@ func TestMarketClientTicks(t *testing.T) {
 		}
 	}, func(h, _ []byte) []byte {
 		typ := binary.LittleEndian.Uint16(h[10:12])
+		if typ == protocol.TypeExBars {
+			return testExtendedBar(20261009)
+		}
 		if typ == protocol.TypeExMinute || typ == protocol.TypeExHistMinute {
 			header := 12
 			if typ == protocol.TypeExHistMinute {
@@ -251,11 +256,11 @@ func TestMarketClientCodesFilterGlobalPages(t *testing.T) {
 }
 
 func TestMarketClientLazyLifecycleAndFailures(t *testing.T) {
-	c := NewClient()
+	c := newMarketClient()
 	var dials atomic.Int32
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{5, 0} })
-	c.dial[0] = func() (*Client, error) { dials.Add(1); return std, nil }
-	c.dial[1] = func() (*Client, error) {
+	c.dial[0] = func() (*Conn, error) { dials.Add(1); return std, nil }
+	c.dial[1] = func() (*Conn, error) {
 		t.Error("unused extended protocol was connected")
 		return nil, io.ErrClosedPipe
 	}
@@ -348,10 +353,10 @@ func TestMarketClientMinuteCategories(t *testing.T) {
 }
 
 func TestMarketClientDialFailureDoesNotPoisonOtherProtocol(t *testing.T) {
-	c := NewClient()
+	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
-	c.dial[0] = func() (*Client, error) { return std, nil }
-	c.dial[1] = func() (*Client, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func() (*Conn, error) { return std, nil }
+	c.dial[1] = func() (*Conn, error) { return nil, io.ErrClosedPipe }
 	defer c.Close()
 	if _, err := c.GetKlineDay("hk00700", 0, 1); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal(err)

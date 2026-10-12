@@ -53,45 +53,45 @@ func WithRedial(b ...bool) client.Option {
 }
 
 // DialDefault 默认连接方式
-func DialDefault(op ...client.Option) (cli *Client, err error) {
+func DialDefault(op ...client.Option) (cli *Conn, err error) {
 	op = append([]client.Option{WithRedial()}, op...)
 	return DialHostsRange(Hosts, op...)
 }
 
 // Dial 与服务器建立连接
-func Dial(addr string, op ...client.Option) (cli *Client, err error) {
+func Dial(addr string, op ...client.Option) (cli *Conn, err error) {
 	return DialWith(NewTCPDial(addr), op...)
 }
 
 // DialHosts 与服务器建立连接,多个服务器轮询,开启重试生效
-func DialHosts(hosts []string, op ...client.Option) (cli *Client, err error) {
+func DialHosts(hosts []string, op ...client.Option) (cli *Conn, err error) {
 	return DialWith(NewHostDial(hosts), op...)
 }
 
 // DialHostsRandom 与服务器建立连接,多个服务器随机连接
-func DialHostsRandom(hosts []string, op ...client.Option) (cli *Client, err error) {
+func DialHostsRandom(hosts []string, op ...client.Option) (cli *Conn, err error) {
 	return DialWith(NewRandomDial(hosts), op...)
 }
 
 // DialHostsRange 遍历设置的服务地址进行连接,成功则结束遍历
-func DialHostsRange(hosts []string, op ...client.Option) (cli *Client, err error) {
+func DialHostsRange(hosts []string, op ...client.Option) (cli *Conn, err error) {
 	return DialWith(NewRangeDial(hosts), op...)
 }
 
 // DialWith 与服务器建立连接
-func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Client, err error) {
+func DialWith(dial ios.DialFunc, op ...client.Option) (cli *Conn, err error) {
 	return dialWith(dial, false, op...)
 }
 
 // dialWith 两类行情共用连接生命周期，仅握手、心跳与默认超时不同。
-func dialWith(dial ios.DialFunc, extended bool, op ...client.Option) (cli *Client, err error) {
+func dialWith(dial ios.DialFunc, extended bool, op ...client.Option) (cli *Conn, err error) {
 	timeout := 2 * time.Second
 	setup, heartbeat := protocol.MConnect.Frame, protocol.MHeart.Frame
 	if extended {
 		timeout = 10 * time.Second
 		setup, heartbeat = protocol.MEx.FrameSetup, protocol.MEx.FrameCount
 	}
-	cli = &Client{
+	cli = &Conn{
 		Wait:        wait.New(timeout),
 		waitTimeout: timeout,
 		extended:    extended,
@@ -129,7 +129,8 @@ func dialWith(dial ios.DialFunc, extended bool, op ...client.Option) (cli *Clien
 	return cli, nil
 }
 
-type Client struct {
+// Conn 是绑定单种行情协议的具体连接；业务查询可通过 Client 接口使用。
+type Conn struct {
 	extended       bool
 	queryOnce      sync.Once
 	queries        *MarketClient
@@ -145,8 +146,11 @@ type Client struct {
 	cancelRun      context.CancelFunc
 }
 
+// Close 关闭整个连接生命周期，关闭后不再重连。
+func (c *Conn) Close() error { return c.CloseAll() }
+
 // CloseAll 取消整个连接生命周期，避免并发修改底层库的重连开关。
-func (c *Client) CloseAll() error {
+func (c *Conn) CloseAll() error {
 	if c.cancelRun != nil {
 		c.cancelRun()
 		c.waitMu.Lock()
@@ -161,7 +165,7 @@ func (c *Client) CloseAll() error {
 }
 
 // handlerDealMessage 处理服务器响应的数据
-func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
+func (this *Conn) handlerDealMessage(c *client.Client, msg ios.Acker) {
 
 	defer func() {
 		if e := recover(); e != nil {
@@ -297,7 +301,7 @@ func (this *Client) handlerDealMessage(c *client.Client, msg ios.Acker) {
 }
 
 // SetTimeout 设置超时时间
-func (this *Client) SetTimeout(t time.Duration) {
+func (this *Conn) SetTimeout(t time.Duration) {
 	this.waitMu.Lock()
 	defer this.waitMu.Unlock()
 	this.waitTimeout = t
@@ -305,7 +309,7 @@ func (this *Client) SetTimeout(t time.Duration) {
 }
 
 // SendFrame 发送数据,并等待响应
-func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
+func (this *Conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	f.MsgID = atomic.AddUint32(&this.msgID, 1)
 	key := conv.String(f.MsgID)
 	if len(cache) > 0 {
@@ -356,7 +360,7 @@ func (this *Client) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 }
 
 // getStandardCount 获取标准市场内的证券数量
-func (this *Client) getStandardCount(exchange protocol.Exchange) (*protocol.CountResp, error) {
+func (this *Conn) getStandardCount(exchange protocol.Exchange) (*protocol.CountResp, error) {
 	f := protocol.MCount.Frame(exchange)
 	result, err := this.SendFrame(f)
 	if err != nil {
@@ -370,7 +374,7 @@ func (this *Client) getStandardCount(exchange protocol.Exchange) (*protocol.Coun
 // 600开头的股票是上证A股，属于大盘股，其中6006开头的股票是最早上市的股票， 6016开头的股票为大盘蓝筹股；900开头的股票是上证B股；
 // 000开头的股票是深证A股，001、002开头的股票也都属于深证A股， 其中002开头的股票是深证A股中小企业股票；200开头的股票是深证B股；
 // 300开头的股票是创业板股票；400开头的股票是三板市场股票。
-func (this *Client) getStandardCode(exchange protocol.Exchange, start uint16) (*protocol.CodeResp, error) {
+func (this *Conn) getStandardCode(exchange protocol.Exchange, start uint16) (*protocol.CodeResp, error) {
 	f := protocol.MCode.Frame(exchange, start)
 	result, err := this.SendFrame(f)
 	if err != nil {
@@ -380,7 +384,7 @@ func (this *Client) getStandardCode(exchange protocol.Exchange, start uint16) (*
 }
 
 // getStandardCodeAll 通过多次请求的方式获取全部证券代码
-func (this *Client) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
+func (this *Conn) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
 	resp := &protocol.CodeResp{}
 
 	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
@@ -421,7 +425,10 @@ func (this *Client) getStandardCodeAll(exchange protocol.Exchange) (*protocol.Co
 }
 
 // GetStockCodeAll 获取所有股票代码,带前缀例sz000001
-func (this *Client) GetStockCodeAll() ([]string, error) {
+func (this *Conn) GetStockCodeAll() ([]string, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
 		resp, err := this.getStandardCodeAll(ex)
@@ -438,7 +445,10 @@ func (this *Client) GetStockCodeAll() ([]string, error) {
 }
 
 // GetETFCodeAll 获取所有ETF代码,带前缀例sz159399
-func (this *Client) GetETFCodeAll() ([]string, error) {
+func (this *Conn) GetETFCodeAll() ([]string, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
 	ls := []string(nil)
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
 		resp, err := this.getStandardCodeAll(ex)
@@ -455,7 +465,10 @@ func (this *Client) GetETFCodeAll() ([]string, error) {
 }
 
 // GetIndexCodeAll 获取所有指数代码,带前缀例sz399001
-func (this *Client) GetIndexCodeAll() ([]string, error) {
+func (this *Conn) GetIndexCodeAll() ([]string, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
 	ls := []string{"bj899050"}
 	for _, ex := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ} {
 		resp, err := this.getStandardCodeAll(ex)
@@ -472,7 +485,7 @@ func (this *Client) GetIndexCodeAll() ([]string, error) {
 }
 
 // getStandardQuotes 按代码元数据校准标准行情价格。
-func (this *Client) getStandardQuotes(metadata ICodes, codes ...string) (protocol.QuotesResp, error) {
+func (this *Conn) getStandardQuotes(metadata ICodes, codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
 		//如果是股票代码,则加上前缀
 		codes[i] = protocol.AddPrefix(codes[i])
@@ -527,7 +540,15 @@ func (this *Client) getStandardQuotes(metadata ICodes, codes ...string) (protoco
 	return quotes, nil
 }
 
-func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+func (this *Conn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
+	i, err := standardInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	code = standardCode(i)
 	f, err := protocol.MCallAuction.Frame(code)
 	if err != nil {
 		return nil, err
@@ -539,8 +560,15 @@ func (this *Client) GetCallAuction(code string) (*protocol.CallAuctionResp, erro
 	return result.(*protocol.CallAuctionResp), nil
 }
 
-func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
-	code = protocol.AddPrefix(code)
+func (this *Conn) GetGbbq(code string) (*protocol.GbbqResp, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
+	i, err := standardInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	code = standardCode(i)
 	f, err := protocol.MGbbq.Frame(code)
 	if err != nil {
 		return nil, err
@@ -552,7 +580,7 @@ func (this *Client) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	return result.(*protocol.GbbqResp), nil
 }
 
-func (this *Client) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
+func (this *Conn) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	codes, err := this.GetStockCodeAll()
 	if err != nil {
 		return nil, err
@@ -575,7 +603,15 @@ func (this *Client) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 }
 
 // GetCompanyCategory 获取 F10 公司信息分类目录。
-func (this *Client) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
+func (this *Conn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
+	normalized, err := standardSecurity(exchange, code)
+	if err != nil {
+		return nil, err
+	}
+	code = normalized
 	r, err := this.SendFrame(protocol.MCompanyCat.Frame(exchange.Uint8(), code))
 	if err != nil {
 		return nil, err
@@ -584,7 +620,15 @@ func (this *Client) GetCompanyCategory(exchange protocol.Exchange, code string) 
 }
 
 // GetCompanyContent 获取 F10 某分类的文本内容。
-func (this *Client) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
+func (this *Conn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
+	if err := this.requireStandard(); err != nil {
+		return "", err
+	}
+	normalized, err := standardSecurity(exchange, code)
+	if err != nil {
+		return "", err
+	}
+	code = normalized
 	r, err := this.SendFrame(protocol.MCompanyContent.Frame(exchange.Uint8(), code, filename, start, length))
 	if err != nil {
 		return "", err
@@ -593,7 +637,15 @@ func (this *Client) GetCompanyContent(exchange protocol.Exchange, code, filename
 }
 
 // GetFinanceInfo 获取标的财务/基本面信息（流通股本/总股本/行业/地域/股东户数/财务）。
-func (this *Client) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
+func (this *Conn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
+	normalized, err := standardSecurity(exchange, code)
+	if err != nil {
+		return nil, err
+	}
+	code = normalized
 	f := protocol.MFinance.Frame(exchange.Uint8(), code)
 	result, err := this.SendFrame(f)
 	if err != nil {
@@ -604,7 +656,10 @@ func (this *Client) GetFinanceInfo(exchange protocol.Exchange, code string) (*pr
 
 // GetBlockFileRaw 下载通达信服务器文件（板块/配置）原始字节，分块拉取后拼接。
 // 适用于二进制板块文件(block*.dat)与文本配置(tdxhy.cfg 等)。
-func (this *Client) GetBlockFileRaw(file string) ([]byte, error) {
+func (this *Conn) GetBlockFileRaw(file string) ([]byte, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
 	mr, err := this.SendFrame(protocol.MBlock.FrameMeta(file))
 	if err != nil {
 		return nil, err
@@ -638,7 +693,7 @@ func (this *Client) GetBlockFileRaw(file string) ([]byte, error) {
 }
 
 // GetBlockData 下载并解析通达信板块文件（如 protocol.BlockFileGN 概念）→ 板块列表。
-func (this *Client) GetBlockData(file string) ([]*protocol.Block, error) {
+func (this *Conn) GetBlockData(file string) ([]*protocol.Block, error) {
 	buf, err := this.GetBlockFileRaw(file)
 	if err != nil {
 		return nil, err
@@ -650,7 +705,10 @@ func (this *Client) GetBlockData(file string) ([]*protocol.Block, error) {
 // 与 GetBlockFileRaw 共用同一传输帧，区别在于报表文件无 0x02C5 元信息预查文件大小，
 // 故按 0x7530 块大小循环递增 offset 拉取，直到返回块短于请求块（末块）或为空时终止。
 // 对齐 pytdx GetReportFile / mitdx get_report_file。
-func (this *Client) GetReportFile(file string) ([]byte, error) {
+func (this *Conn) GetReportFile(file string) ([]byte, error) {
+	if err := this.requireStandard(); err != nil {
+		return nil, err
+	}
 	const chunk = uint32(0x7530)
 	var buf []byte
 	start := uint32(0)
@@ -674,7 +732,7 @@ func (this *Client) GetReportFile(file string) ([]byte, error) {
 
 // GetZHBFiles 下载板块/配置数据总包 zhb.zip(report file 0x06B9)并解压，返回 文件名→原始字节。
 // zhb.zip 内含 tdxzs.cfg(板块指数代码)、tdxbk.cfg(概念板块)、incon.dat(行业分类)等配置文件。
-func (this *Client) GetZHBFiles() (map[string][]byte, error) {
+func (this *Conn) GetZHBFiles() (map[string][]byte, error) {
 	raw, err := this.GetReportFile(protocol.ReportZHB)
 	if err != nil {
 		return nil, err
@@ -703,7 +761,7 @@ func (this *Client) GetZHBFiles() (map[string][]byte, error) {
 }
 
 // GetTdxZs 下载并解析板块指数配置 tdxzs.cfg(来自 zhb.zip) → 板块名↔指数代码(id) 列表。
-func (this *Client) GetTdxZs() ([]*protocol.TdxZs, error) {
+func (this *Conn) GetTdxZs() ([]*protocol.TdxZs, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -716,7 +774,7 @@ func (this *Client) GetTdxZs() ([]*protocol.TdxZs, error) {
 }
 
 // GetTdxBk 下载并解析 tdxbk.cfg(来自 zhb.zip) → 概念板块简称↔全称。
-func (this *Client) GetTdxBk() ([]*protocol.TdxBk, error) {
+func (this *Conn) GetTdxBk() ([]*protocol.TdxBk, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -731,7 +789,7 @@ func (this *Client) GetTdxBk() ([]*protocol.TdxBk, error) {
 // GetBlockDataWithIndex 下载板块文件(block_*.dat)并按名称回填板块指数代码(id)。
 // block 文件本身无 id，关联链: 板块名 →(tdxzs.cfg)→ id；直接未命中再经
 // 简称 →(tdxbk.cfg)→ 全称 →(tdxzs.cfg)→ id 二次匹配。三个文件均来自 zhb.zip(仅下载一次)。
-func (this *Client) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
+func (this *Conn) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
 	blocks, err := this.GetBlockData(file)
 	if err != nil {
 		return nil, err
@@ -747,7 +805,7 @@ func (this *Client) GetBlockDataWithIndex(file string) ([]*protocol.Block, error
 }
 
 // GetTdxStat 下载并解析 tdxstat.cfg(来自 zhb.zip) → 全市场个股综合统计指标。
-func (this *Client) GetTdxStat() ([]*protocol.TdxStat, error) {
+func (this *Conn) GetTdxStat() ([]*protocol.TdxStat, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -761,7 +819,7 @@ func (this *Client) GetTdxStat() ([]*protocol.TdxStat, error) {
 
 // GetTdxStat2 下载并解析 tdxstat2.cfg(来自 zhb.zip) → 全市场个股资金流向 + 板块归属。
 // 其 BlockIndex 字段提供 股→板块指数代码(id) 的反向映射(见 protocol.StockBlockIndex)。
-func (this *Client) GetTdxStat2() ([]*protocol.TdxStat2, error) {
+func (this *Conn) GetTdxStat2() ([]*protocol.TdxStat2, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -774,7 +832,7 @@ func (this *Client) GetTdxStat2() ([]*protocol.TdxStat2, error) {
 }
 
 // GetXgsg 下载并解析 xgsg.cfg(来自 zhb.zip) → 新股申购列表。
-func (this *Client) GetXgsg() ([]*protocol.TdxXgsg, error) {
+func (this *Conn) GetXgsg() ([]*protocol.TdxXgsg, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -791,7 +849,7 @@ func (this *Client) GetXgsg() ([]*protocol.TdxXgsg, error) {
 // spblock.dat 承载 block_zs.dat 无法容纳的大型指数成分, 如
 // 中证2000/中证1000/中证500/中证A500/国证2000/深证成指 等(block_*.dat 单板块成分上限 400)。
 // 用 protocol.SpBlockByName 按名取单个板块。注意: 沪深300 不在此文件, 在 block_zs.dat(见 GetBlockData)。
-func (this *Client) GetSpBlock() ([]*protocol.SpBlock, error) {
+func (this *Conn) GetSpBlock() ([]*protocol.SpBlock, error) {
 	files, err := this.GetZHBFiles()
 	if err != nil {
 		return nil, err
@@ -804,7 +862,7 @@ func (this *Client) GetSpBlock() ([]*protocol.SpBlock, error) {
 }
 
 // GetTdxHy 下载并解析 tdxhy.cfg → 每只股票的通达信/申万行业归属。
-func (this *Client) GetTdxHy() ([]*protocol.TdxHy, error) {
+func (this *Conn) GetTdxHy() ([]*protocol.TdxHy, error) {
 	buf, err := this.GetBlockFileRaw(protocol.FileTdxHy)
 	if err != nil {
 		return nil, err
@@ -813,13 +871,13 @@ func (this *Client) GetTdxHy() ([]*protocol.TdxHy, error) {
 }
 
 // getStandardMinute 获取标准分时数据,todo 解析好像不对,先用历史数据
-func (this *Client) getStandardMinute(code string) (*protocol.MinuteResp, error) {
+func (this *Conn) getStandardMinute(code string) (*protocol.MinuteResp, error) {
 	// 实时分时解析存疑，移植后暂统一走历史分时（去除原 unreachable 实现以过 vet）。
 	return this.getStandardHistoryMinute(time.Now().Format("20060102"), code)
 }
 
 // getStandardHistoryMinute 获取标准历史分时数据
-func (this *Client) getStandardHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
+func (this *Conn) getStandardHistoryMinute(date, code string) (*protocol.MinuteResp, error) {
 	f, err := protocol.MHistoryMinute.Frame(date, code)
 	if err != nil {
 		return nil, err
@@ -832,7 +890,7 @@ func (this *Client) getStandardHistoryMinute(date, code string) (*protocol.Minut
 }
 
 // getStandardTrade 获取标准分时交易详情,服务器最多返回1800条,count-start<=1800
-func (this *Client) getStandardTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
+func (this *Conn) getStandardTrade(code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MTrade.Frame(code, start, count)
 	if err != nil {
@@ -848,7 +906,7 @@ func (this *Client) getStandardTrade(code string, start, count uint16) (*protoco
 	return result.(*protocol.TradeResp), nil
 }
 
-func (this *Client) getStandardHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
+func (this *Conn) getStandardHistoryTrade(date, code string, start, count uint16) (*protocol.TradeResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MHistoryTrade.Frame(date, code, start, count)
 	if err != nil {
@@ -864,7 +922,7 @@ func (this *Client) getStandardHistoryTrade(date, code string, start, count uint
 	return result.(*protocol.TradeResp), nil
 }
 
-func (this *Client) getStandardKline(Type uint8, code string, start, count uint16, kind string) (*protocol.KlineResp, error) {
+func (this *Conn) getStandardKline(Type uint8, code string, start, count uint16, kind string) (*protocol.KlineResp, error) {
 	code = protocol.AddPrefix(code)
 	f, err := protocol.MKline.Frame(Type, code, start, count)
 	if err != nil {

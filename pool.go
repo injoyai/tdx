@@ -9,20 +9,20 @@ import (
 
 type (
 	IPool interface {
-		Get() (*Client, error)
-		Put(c *Client)
-		Do(fn func(c *Client) error) error
-		Go(fn func(c *Client)) error
+		Get() (*Conn, error)
+		Put(c *Conn)
+		Do(fn func(c *Conn) error) error
+		Go(fn func(c *Conn)) error
 	}
 	DialPoolFunc = func() (IPool, error)
 )
 
 // NewPool 简易版本的连接池
-func NewPool(dial func() (*Client, error), number int) (*Pool, error) {
+func NewPool(dial func() (*Conn, error), number int) (*Pool, error) {
 	if number <= 0 {
 		number = 1
 	}
-	ch := make(chan *Client, number)
+	ch := make(chan *Conn, number)
 	p := &Pool{ch: ch, Closer: safe.NewCloser()}
 	p.SetCloseFunc(func(error) error {
 		p.mu.Lock()
@@ -46,12 +46,12 @@ func NewPool(dial func() (*Client, error), number int) (*Pool, error) {
 }
 
 type Pool struct {
-	ch chan *Client
+	ch chan *Conn
 	mu sync.Mutex // 归还与关闭 channel 互斥；借用中的连接归还后再关闭。
 	*safe.Closer
 }
 
-func (this *Pool) Get() (*Client, error) {
+func (this *Pool) Get() (*Conn, error) {
 	select {
 	case <-this.Done():
 		return nil, this.Err()
@@ -69,7 +69,7 @@ func (this *Pool) Get() (*Client, error) {
 	}
 }
 
-func (this *Pool) Put(c *Client) {
+func (this *Pool) Put(c *Conn) {
 	this.mu.Lock()
 	// 已关闭时不能进入发送分支，即使 select 同时发现两个就绪分支。
 	select {
@@ -88,7 +88,7 @@ func (this *Pool) Put(c *Client) {
 	}
 }
 
-func (this *Pool) Do(fn func(c *Client) error) error {
+func (this *Pool) Do(fn func(c *Conn) error) error {
 	c, err := this.Get()
 	if err != nil {
 		return err
@@ -97,12 +97,12 @@ func (this *Pool) Do(fn func(c *Client) error) error {
 	return fn(c)
 }
 
-func (this *Pool) Go(fn func(c *Client)) error {
+func (this *Pool) Go(fn func(c *Conn)) error {
 	c, err := this.Get()
 	if err != nil {
 		return err
 	}
-	go func(c *Client) {
+	go func(c *Conn) {
 		defer this.Put(c)
 		fn(c)
 	}(c)

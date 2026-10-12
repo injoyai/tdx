@@ -35,7 +35,7 @@ func liveWrite(bs []byte) ([]byte, error) {
 	return bs, nil
 }
 
-func liveTestClient(t *testing.T, ex, redial bool) *Client {
+func liveTestClient(t *testing.T, ex, redial bool) *Conn {
 	t.Helper()
 	hosts, port, env := Hosts, "7709", "TDX_STD_HOST"
 	if ex {
@@ -82,7 +82,7 @@ func liveTestClient(t *testing.T, ex, redial bool) *Client {
 			return 0, errors.New("live test stops after failed dial")
 		}
 	}}
-	var c *Client
+	var c *Conn
 	var err error
 	if ex {
 		c, err = dialExHqWith(dial, op...)

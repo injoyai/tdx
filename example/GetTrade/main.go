@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		resp, err := c.GetTrade("sz000001", 0, 200)
 		logs.PanicErr(err)
 

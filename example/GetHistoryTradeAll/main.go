@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		result, err := c.GetHistoryTradeDay("20170704", "sh000001")
 		logs.PanicErr(err)
 		resp, err := result.StandardResponse()

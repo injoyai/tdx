@@ -22,7 +22,7 @@ func main() {
 	}
 
 	// 扩展行情连接池（期货/港股/美股必需）
-	ex, err := tdx.NewPool(func() (*tdx.Client, error) {
+	ex, err := tdx.NewPool(func() (*tdx.Conn, error) {
 		return tdx.DialExHqDefault()
 	}, 4)
 	logs.PanicErr(err)
@@ -64,7 +64,7 @@ func pullAll() error {
 	}
 
 	// 扩展行情连接池（期货/港股/美股必需）
-	ex, err := tdx.NewPool(func() (*tdx.Client, error) {
+	ex, err := tdx.NewPool(func() (*tdx.Conn, error) {
 		return tdx.DialExHqDefault()
 	}, 4)
 	if err != nil {
@@ -101,7 +101,7 @@ func pullCustom() error {
 		defer closer.Close()
 	}
 
-	ex, err := tdx.NewPool(func() (*tdx.Client, error) {
+	ex, err := tdx.NewPool(func() (*tdx.Conn, error) {
 		return tdx.DialExHqDefault()
 	}, 2)
 	if err != nil {

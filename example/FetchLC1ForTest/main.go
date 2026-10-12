@@ -37,7 +37,7 @@ func main() {
 }
 
 // writeMinute1 拉取 1 分钟K线,编码为通达信 .lc1 字节流并写入本地文件
-func writeMinute1(c *tdx.Client, code string, outDir string) {
+func writeMinute1(c tdx.Client, code string, outDir string) {
 	result, err := c.GetKlineMinuteAll(code)
 	logs.PanicErr(err)
 	resp, err := result.StandardResponse()
@@ -54,7 +54,7 @@ func writeMinute1(c *tdx.Client, code string, outDir string) {
 }
 
 // writeMinute5 拉取 5 分钟K线,编码为通达信 .lc5 字节流并写入本地文件
-func writeMinute5(c *tdx.Client, code string, outDir string) {
+func writeMinute5(c tdx.Client, code string, outDir string) {
 	result, err := c.GetKline5MinuteAll(code)
 	logs.PanicErr(err)
 	resp, err := result.StandardResponse()

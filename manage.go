@@ -35,7 +35,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	if m.IPool == nil {
 		if m.dialPool == nil {
 			m.dialPool = func() (IPool, error) {
-				return NewPool(func() (*Client, error) { return DialDefault() }, m.poolClients)
+				return NewPool(func() (*Conn, error) { return DialDefault() }, m.poolClients)
 			}
 		}
 		owner := m
@@ -62,7 +62,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	//代码管理
 	if m.Codes == nil {
 		if m.dialCodes == nil {
-			m.dialCodes = func(c *Client) (ICodes, error) { return NewCodes(WithCodesClient(c)) }
+			m.dialCodes = func(c Client) (ICodes, error) { return NewCodes(WithCodesClient(c)) }
 		}
 		m.Codes, err = m.dialCodes(c)
 		if err != nil {
@@ -73,7 +73,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	//工作日管理
 	if m.Workday == nil {
 		if m.dialWorkday == nil {
-			m.dialWorkday = func(c *Client) (*Workday, error) { return NewWorkday(WithWorkdayClient(c)) }
+			m.dialWorkday = func(c Client) (*Workday, error) { return NewWorkday(WithWorkdayClient(c)) }
 		}
 		m.Workday, err = m.dialWorkday(c)
 		if err != nil {
@@ -84,7 +84,7 @@ func NewManage(op ...Option) (m *Manage, err error) {
 	//股本管理
 	if m.Gbbq == nil {
 		if m.dialGbbq == nil {
-			m.dialGbbq = func(c *Client) (IGbbq, error) { return NewGbbq(WithGbbqClient(c)) }
+			m.dialGbbq = func(c Client) (IGbbq, error) { return NewGbbq(WithGbbqClient(c)) }
 		}
 		m.Gbbq, err = m.dialGbbq(c)
 		if err != nil {
@@ -106,7 +106,7 @@ type (
 
 	DialDBFunc func() (*xorms.Engine, error)
 
-	DialClientFunc func() (*Client, error)
+	DialClientFunc func() (Client, error)
 )
 
 func WithClients(clients int) Option {
@@ -168,7 +168,7 @@ func WithDialGbbq(dial DialGbbqFunc) Option {
 }
 
 func WithDialGbbqDefault() Option {
-	return WithDialGbbq(func(c *Client) (IGbbq, error) {
+	return WithDialGbbq(func(c Client) (IGbbq, error) {
 		return NewGbbq(WithGbbqClient(c))
 	})
 }

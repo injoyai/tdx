@@ -70,7 +70,7 @@ func TestReviewRegressionMetadataSnapshot(t *testing.T) {
 			if err = zw.Close(); err != nil {
 				t.Fatal(err)
 			}
-			c := &Client{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+			c := &Conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
 			c.SetTimeout(time.Second)
 			c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(bs []byte) (int, error) {
 				var r any
@@ -173,13 +173,13 @@ func TestReviewRegressionManageFailureCleanup(t *testing.T) {
 		name    string
 		options []Option
 	}{
-		{"codes", []Option{WithDialCodes(func(*Client) (ICodes, error) { return nil, want })}},
-		{"workday", []Option{WithCodes(NewCodesBase()), WithDialWorkday(func(*Client) (*Workday, error) { return nil, want })}},
-		{"equity", []Option{WithCodes(NewCodesBase()), WithWorkday(&Workday{}), WithDialGbbq(func(*Client) (IGbbq, error) { return nil, want })}},
+		{"codes", []Option{WithDialCodes(func(Client) (ICodes, error) { return nil, want })}},
+		{"workday", []Option{WithCodes(NewCodesBase()), WithDialWorkday(func(Client) (*Workday, error) { return nil, want })}},
+		{"equity", []Option{WithCodes(NewCodesBase()), WithWorkday(&Workday{}), WithDialGbbq(func(Client) (IGbbq, error) { return nil, want })}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var closed atomic.Int32
-			p, err := NewPool(func() (*Client, error) { return poolTestClient(&closed), nil }, 1)
+			p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -243,13 +243,13 @@ func TestRangeDialCancelsRetryWait(t *testing.T) {
 
 func TestManagePreservesExternalPoolOnFailure(t *testing.T) {
 	var closed atomic.Int32
-	p, err := NewPool(func() (*Client, error) { return poolTestClient(&closed), nil }, 1)
+	p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
 	want := errors.New("offline codes initialization failed")
-	if _, err := NewManage(WithPool(p), WithDialCodes(func(*Client) (ICodes, error) { return nil, want })); !errors.Is(err, want) {
+	if _, err := NewManage(WithPool(p), WithDialCodes(func(Client) (ICodes, error) { return nil, want })); !errors.Is(err, want) {
 		t.Fatal(err)
 	}
 	if closed.Load() != 0 {

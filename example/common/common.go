@@ -5,7 +5,7 @@ import (
 	"github.com/injoyai/tdx/v2"
 )
 
-func Test(f func(c *tdx.Client)) {
+func Test(f func(c tdx.Client)) {
 
 	//重连方式1,优点,同一个客户端指针
 	c, err := tdx.DialWith(tdx.NewHostDial(tdx.Hosts), tdx.WithDebug())

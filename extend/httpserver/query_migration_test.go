@@ -14,7 +14,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func migrationPool(t *testing.T, extended bool) *tdx.Pool {
+func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -110,6 +110,12 @@ func migrationPool(t *testing.T, extended bool) *tdx.Pool {
 				binary.LittleEndian.PutUint32(data[42:], math.Float32bits(9))
 			case protocol.TypeExBars:
 				data = make([]byte, 20) // 合法空列表；原 HTTP 响应必须仍为 []。
+				if hasDaily && binary.LittleEndian.Uint16(b[18:20]) == 800 {
+					// 历史分笔的交易日检查需要对应日线；直接单根查询仍为空。
+					data = make([]byte, 52)
+					binary.LittleEndian.PutUint16(data[18:], 1)
+					binary.LittleEndian.PutUint32(data[20:], 20261009)
+				}
 			case protocol.TypeExMinute, protocol.TypeExHistMinute:
 				header := 12
 				if typ == protocol.TypeExHistMinute {
@@ -150,7 +156,7 @@ func migrationPool(t *testing.T, extended bool) *tdx.Pool {
 		<-done
 		t.Fatal(err)
 	}
-	p, err := tdx.NewPool(func() (*tdx.Client, error) { return c, nil }, 1)
+	p, err := tdx.NewPool(func() (*tdx.Conn, error) { return c, nil }, 1)
 	if err != nil {
 		c.CloseAll()
 		l.Close()
@@ -162,7 +168,7 @@ func migrationPool(t *testing.T, extended bool) *tdx.Pool {
 }
 
 func TestUnifiedQueriesPreserveHTTPPayloads(t *testing.T) {
-	s := &Server{pool: migrationPool(t, false), exPool: migrationPool(t, true)}
+	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	for _, tc := range []struct {
@@ -180,7 +186,6 @@ func TestUnifiedQueriesPreserveHTTPPayloads(t *testing.T) {
 		{"/ex/minute?market=31&code=00700", "price", 10, true},
 		{"/ex/minute/hist?market=31&code=00700&date=20261009", "price", 10, true},
 		{"/ex/trade?market=31&code=00700&start=0&count=1", "price", 10000, true},
-		{"/ex/trade/hist?market=31&code=00700&date=20261009&start=0&count=1", "price", 10000, true},
 	} {
 		t.Run(tc.url, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -226,8 +231,24 @@ func TestUnifiedQueriesPreserveHTTPPayloads(t *testing.T) {
 	}
 }
 
+func TestHistoryTradeHTTPWithoutDailyKline(t *testing.T) {
+	s := &Server{exPool: migrationPool(t, true, false)}
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/ex/trade/hist?market=31&code=00700&date=20261009&start=0&count=1", nil))
+	var result struct {
+		Code int
+		Data json.RawMessage
+	}
+	// 模拟服务器没有日线，但分笔接口非空，HTTP 应返回空列表。
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || string(result.Data) != "[]" {
+		t.Fatal(w.Body.String(), err)
+	}
+}
+
 func TestUnifiedCodesPreserveHTTPPayloads(t *testing.T) {
-	s := &Server{pool: migrationPool(t, false), exPool: migrationPool(t, true)}
+	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	for _, tc := range []struct{ url, want string }{
@@ -254,7 +275,7 @@ func TestUnifiedCodesPreserveHTTPPayloads(t *testing.T) {
 }
 
 func TestUnifiedConveniencePreserveHTTPPayloads(t *testing.T) {
-	s := &Server{pool: migrationPool(t, false), exPool: migrationPool(t, true)}
+	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	paths := []string{"/kline/all?type=9", "/index?type=9", "/index/all?type=9"}

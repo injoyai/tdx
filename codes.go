@@ -16,7 +16,7 @@ import (
 type (
 	CodesOption func(*Codes)
 
-	DialCodesFunc func(c *Client) (ICodes, error)
+	DialCodesFunc func(c Client) (ICodes, error)
 )
 
 type ICodes interface {
@@ -58,9 +58,9 @@ func WithCodesRetry(retry int) CodesOption {
 	}
 }
 
-func WithCodesClient(c *Client) CodesOption {
+func WithCodesClient(c Client) CodesOption {
 	return func(cs *Codes) {
-		cs.c = c
+		cs.c = clientOrNil(c)
 	}
 }
 
@@ -99,11 +99,15 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 	// 初始化连接
 	if cs.c == nil {
 		if cs.dialClient == nil {
-			cs.dialClient = func() (*Client, error) { return DialDefault() }
+			cs.dialClient = func() (Client, error) { return DialDefault() }
 		}
 		cs.c, err = cs.dialClient()
 		if err != nil {
 			return nil, err
+		}
+		cs.c = clientOrNil(cs.c)
+		if cs.c == nil {
+			return nil, errors.New("client is nil")
 		}
 	}
 
@@ -144,7 +148,7 @@ type Codes struct {
 		内部字段
 	*/
 
-	c         *Client
+	c         Client
 	db        *xorms.Engine
 	updateKey string
 	updated   *Updated
@@ -192,11 +196,15 @@ func (this *Codes) update() ([]*CodeModel, error) {
 	insert := []*CodeModel(nil)
 	update := []*CodeModel(nil)
 	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
-		resp, err := this.c.getStandardCodeAll(exchange)
+		resp, err := this.c.GetCodeAll(exchange)
 		if err != nil {
 			return nil, err
 		}
-		for _, v := range resp.List {
+		for _, item := range resp.List {
+			v := item.Standard
+			if v == nil {
+				return nil, errors.New("代码管理需要标准市场原始数据")
+			}
 			code := &CodeModel{
 				Name:      v.Name,
 				Code:      v.Code,

@@ -10,17 +10,17 @@ import (
 	"github.com/injoyai/ios/client"
 )
 
-func poolTestClient(closed *atomic.Int32) *Client {
+func poolTestClient(closed *atomic.Int32) *Conn {
 	c := client.New(nil)
 	c.Closer.Reset()
 	c.SetCloseFunc(func(error) error { closed.Add(1); return nil })
-	return &Client{Client: c}
+	return &Conn{Client: c}
 }
 
 func TestPoolCloseAndReturn(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		var closed atomic.Int32
-		p, err := NewPool(func() (*Client, error) { return poolTestClient(&closed), nil }, 2)
+		p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,11 +50,11 @@ func TestPoolCloseAndReturn(t *testing.T) {
 func TestPoolConcurrentCloseAndReturn(t *testing.T) {
 	var closed atomic.Int32
 	const n = 32
-	p, err := NewPool(func() (*Client, error) { return poolTestClient(&closed), nil }, n)
+	p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, n)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var clients []*Client
+	var clients []*Conn
 	for i := 0; i < n; i++ {
 		c, err := p.Get()
 		if err != nil {
@@ -66,7 +66,7 @@ func TestPoolConcurrentCloseAndReturn(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, c := range clients {
 		wg.Add(1)
-		go func(c *Client) { defer wg.Done(); <-start; p.Put(c) }(c)
+		go func(c *Conn) { defer wg.Done(); <-start; p.Put(c) }(c)
 	}
 	close(start)
 	if err := p.Close(); err != nil {
@@ -80,14 +80,14 @@ func TestPoolConcurrentCloseAndReturn(t *testing.T) {
 
 func TestPoolCloseDuringDo(t *testing.T) {
 	var closed atomic.Int32
-	p, err := NewPool(func() (*Client, error) { return poolTestClient(&closed), nil }, 1)
+	p, err := NewPool(func() (*Conn, error) { return poolTestClient(&closed), nil }, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	entered, finish := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- p.Do(func(*Client) error { close(entered); <-finish; return nil })
+		done <- p.Do(func(*Conn) error { close(entered); <-finish; return nil })
 	}()
 	<-entered
 	if err := p.Close(); err != nil {
@@ -114,7 +114,7 @@ func TestPoolDialFailureClosesExistingClients(t *testing.T) {
 	var closed atomic.Int32
 	want := errors.New("dial failed")
 	calls := 0
-	p, err := NewPool(func() (*Client, error) {
+	p, err := NewPool(func() (*Conn, error) {
 		calls++
 		if calls == 2 {
 			return nil, want

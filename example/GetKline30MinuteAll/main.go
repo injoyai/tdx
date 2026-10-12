@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		result, err := c.GetKline30Minute("sz000001", 0, 20)
 		logs.PanicErr(err)
 		resp, err := result.StandardResponse()

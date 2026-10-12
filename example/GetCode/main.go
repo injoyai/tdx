@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	common.Test(func(c *tdx.Client) {
+	common.Test(func(c tdx.Client) {
 		resp, err := c.GetCode(protocol.ExchangeSH, 369, 1000)
 		logs.PanicErr(err)
 

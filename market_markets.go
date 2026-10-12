@@ -15,7 +15,7 @@ func standardMarkets() []MarketExchange {
 }
 
 // GetMarkets 标准连接返回内置市场，扩展连接返回服务器发现的市场。
-func (c *Client) GetMarkets() ([]MarketExchange, error) {
+func (c *Conn) GetMarkets() ([]MarketExchange, error) {
 	select {
 	case <-c.Done():
 		return nil, net.ErrClosed
