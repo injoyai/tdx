@@ -38,8 +38,6 @@
 | 新股申购           | ✅ 已完成 | `GetXgsg`                                       |
 | 扩展行情(期货/港股/外盘) | ✅ 已完成 | `DialExHq` + `ExQuote` `ExBars` `ExTrade` 等     |
 
-> `protocol.Trades.Klines()` 合成分钟 K 线时保留成交记录的日期和时区，不使用宿主机时区重新解释交易时间。
-
 ---
 
 ## 🚀 快速开始
