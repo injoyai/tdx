@@ -74,7 +74,7 @@ func main() {
 }
 ```
 
-> 完整演示见 [`example/PullV2`](../../example/PullV2)：全市场 / 自定义代码列表 / 只拉日线 三种用法。
+> 完整演示见 [`examples/data/PullV2`](../../examples/data/PullV2)：默认拉取单证券，可通过代码参数、`-all` 或 `-minute=false` 选择指定范围、全市场或只拉日线。
 
 ### 两种拉取模式
 
@@ -325,4 +325,4 @@ func init() { pull.Register(&MyUnit{}) }
 go test ./extend/pull/... -count=1
 ```
 
-> 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `example/PullV2`。
+> 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/data/PullV2`。

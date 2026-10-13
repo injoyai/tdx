@@ -121,7 +121,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 ```sh
 go test -race . ./protocol/... ./extend/... ./lib/...
-go test ./example/... -run '^$'
+go test ./examples/... -run '^$'
 ```
 
 验证产物和发布版本固定样本对照保存在 `output/unified-client/`，该目录不提交。

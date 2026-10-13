@@ -43,6 +43,8 @@
 
 ## 🚀 快速开始
 
+全部示例按主题整理在 [examples](examples/README.md)，包含运行命令、使用条件与输出目录说明。
+
 跨市场行情可只创建一个业务对象，自动路由标准和扩展连接：
 
 ```go
@@ -58,7 +60,7 @@ if err != nil { panic(err) }
 _ = a; _ = h; _ = f
 ```
 
-`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StConn` / `ExConn`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](example/UnifiedClient/main.go)。标准 `Dial*` 返回 `*StConn`，`DialExHq*` 返回 `*ExConn`，两者均实现 `Client`；连接池使用 `Client`，通用传输仅在内部复用；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
+`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StConn` / `ExConn`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](examples/client/UnifiedClient/main.go)。标准 `Dial*` 返回 `*StConn`，`DialExHq*` 返回 `*ExConn`，两者均实现 `Client`；连接池使用 `Client`，通用传输仅在内部复用；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
 
@@ -133,7 +135,7 @@ if b := protocol.SpBlockByName(sp, "中证2000"); b != nil {
 }
 ```
 
-> 演示: [`example/GetSpBlock`](example/GetSpBlock)。
+> 演示: [`examples/codes/GetBlockData`](examples/codes/GetBlockData)。
 
 ---
 
@@ -170,7 +172,7 @@ for _, f := range fs {
 ```
 
 > 价格类型 `protocol.Price` 为 **int64, 单位厘(元×1000)**，`.Float64()` 得元。股票最小变动 0.01 元(分)，ETF/可转债/指数到 0.001 元(厘)。
-> 完整演示见 [`example/GetQFQKline`](example/GetQFQKline)。
+> 完整演示见 [`examples/finance/GetQFQKline`](examples/finance/GetQFQKline)。
 
 ---
 
@@ -194,7 +196,7 @@ hy, _ := c.GetTdxHy()
 for _, v := range hy { _ = v.TdxHy; _ = v.SwHy }
 ```
 
-> 演示: [`example/GetFinanceInfo`](example/GetFinanceInfo)、[`example/GetTdxHy`](example/GetTdxHy)。
+> 演示: [`examples/finance/GetFinanceInfo`](examples/finance/GetFinanceInfo)、[`examples/codes/GetTdxHy`](examples/codes/GetTdxHy)。
 
 ---
 
@@ -242,7 +244,7 @@ for _, x := range xgsg {
 }
 ```
 
-> 完整演示见 [`example/DumpReportFile`](example/DumpReportFile)：下载 zhb.zip、解压、解析、板块 id 关联一条龙。
+> 完整演示见 [`examples/data/DumpReportFile`](examples/data/DumpReportFile)：下载 zhb.zip、解压、解析、板块 id 关联一条龙。
 
 ---
 
@@ -360,7 +362,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 
 ```sh
 go test . ./protocol/... ./extend/... ./lib/...
-go test ./example/... -run '^$'
+go test ./examples/... -run '^$'
 ```
 
 爬虫和扩展行情的实连测试需显式启用：

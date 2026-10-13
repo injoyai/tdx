@@ -7,13 +7,13 @@
   - `client_interface.go`：统一业务接口；`conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：标准/扩展业务连接；`query.go`：共享业务算法；`gbbq.go`、`manage.go` 等根级扩展。
   - `extend/`：离线数据读写（`local.go` 读写）、行情拉取、爬虫、HTTP server、指标计算统一在 `protocol.Klines`。
   - `lib/`：gbbq、xorms、zip 工具；北交所代码统一由 `Client.GetCodeAll(ExchangeBJ)` 获取。
-  - `example/`：大量独立可运行示例，每个示例一个目录，`go run <dir>` 直接运行。
+  - `examples/`：按主题分类的独立可运行示例，每个示例一个目录；从项目根目录运行 `go run ./examples/<分类>/<示例>`，索引见 `examples/README.md`。
 - **外部依赖**：真实连接通达信服务器（`Dial*`/`DialDefault`）；示例与测试大多需要联网，测试可能因行情服务器/数据源而异，失败时先排查网络与数据可用性。
 
 ### 8.2 输出数据统一放 `./output/`（约定）
 
 - 所有示例、脚本、爬虫、测试等**生成/落盘的数据文件**统一写入项目根目录 `./output/`，并按场景建子目录（如 `./output/dump/`、`./output/lc1/`）。
-- **禁止**：把输出数据写入项目根目录其他位置、`example/` 内部、或散落任意路径。
+- **禁止**：把输出数据写入项目根目录其他位置、`examples/` 内部、或散落任意路径。
 - 目录若不存在则自动创建（如 `os.MkdirAll("./output/<sub>/", 0o755)`）。
 - `./output/` 已加入 `.gitignore`，不提交到版本库。
 - 已有历史产物（如 `dump/`、`.testdata_lc1/`）如继续使用，应迁移至 `./output/` 下的对应子目录，迁移完成后删除旧目录。
