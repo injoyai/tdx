@@ -1,19 +1,18 @@
 package tdx
 
 import (
+	"context"
 	"net"
-	"strings"
-	"sync"
+	"sort"
 	"time"
 
-	"github.com/injoyai/base/safe"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 )
 
 var (
 
-	// Hosts 所有服务器地址(2024-11-30测试通过)
+	// Hosts 标准行情服务器地址，格式为 IP:端口(2024-11-30测试通过)
 	Hosts = func() []string {
 		lenSH := len(SHHosts)
 		lenBJ := len(BJHosts)
@@ -30,101 +29,150 @@ var (
 
 	// SHHosts 上海服务器地址
 	SHHosts = []string{
-		"124.71.187.122",  //华为
-		"122.51.120.217",  //腾讯
-		"111.229.247.189", //腾讯
-		"122.51.232.182",  //腾讯
-		"118.25.98.114",   //腾讯
-		"124.70.199.56",   //华为
-		"121.36.225.169",  //华为
-		"123.60.70.228",   //华为
-		"123.60.73.44",    //华为
-		"124.70.133.119",  //华为
-		"124.71.187.72",   //华为
-		"123.60.84.66",    //华为
-		"124.223.163.242", //腾讯云
-		"150.158.160.2",   //腾讯云
-		"101.35.121.35",   //腾讯云
-		"111.231.113.208", //腾讯云
+		"124.71.187.122:7709",  //华为
+		"122.51.120.217:7709",  //腾讯
+		"111.229.247.189:7709", //腾讯
+		"122.51.232.182:7709",  //腾讯
+		"118.25.98.114:7709",   //腾讯
+		"124.70.199.56:7709",   //华为
+		"121.36.225.169:7709",  //华为
+		"123.60.70.228:7709",   //华为
+		"123.60.73.44:7709",    //华为
+		"124.70.133.119:7709",  //华为
+		"124.71.187.72:7709",   //华为
+		"123.60.84.66:7709",    //华为
+		"124.223.163.242:7709", //腾讯云
+		"150.158.160.2:7709",   //腾讯云
+		"101.35.121.35:7709",   //腾讯云
+		"111.231.113.208:7709", //腾讯云
 	}
 
 	// BJHosts 北京服务器地址
 	BJHosts = []string{
-		"62.234.50.143",   //腾讯云
-		"81.70.151.186",   //腾讯云
-		"101.42.240.54",   //腾讯云
-		"101.43.159.194",  //腾讯云
-		"120.53.8.251",    //腾讯云
-		"152.136.191.169", //腾讯云
-		"49.232.15.141",   //腾讯云
-		"82.156.174.84",   //腾讯云
-		"101.42.164.241",  //腾讯云
+		"62.234.50.143:7709",   //腾讯云
+		"81.70.151.186:7709",   //腾讯云
+		"101.42.240.54:7709",   //腾讯云
+		"101.43.159.194:7709",  //腾讯云
+		"120.53.8.251:7709",    //腾讯云
+		"152.136.191.169:7709", //腾讯云
+		"49.232.15.141:7709",   //腾讯云
+		"82.156.174.84:7709",   //腾讯云
+		"101.42.164.241:7709",  //腾讯云
 
 	}
 
 	// GZHosts 广州服务器地址,客户端上可能显示深圳
 	GZHosts = []string{
-		"124.71.9.153",    //华为
-		"116.205.163.254", //华为
-		"116.205.171.132", //华为
-		"116.205.183.150", //华为
-		"111.230.186.52",  //腾讯
-		"110.41.2.72",     //华为
-		"110.41.147.114",  //华为,这个客户端显示深圳线路1,IP查询是广州的
-		"101.33.225.16",   //腾讯云
-		"175.178.112.197", //腾讯云
-		"175.178.128.227", //腾讯云
-		"43.139.95.83",    //腾讯云
-		"159.75.29.111",   //腾讯云
-		"43.139.18.171",   //腾讯云
-		"81.71.32.47",     //腾讯云
-		"129.204.230.128", //腾讯云
+		"124.71.9.153:7709",    //华为
+		"116.205.163.254:7709", //华为
+		"116.205.171.132:7709", //华为
+		"116.205.183.150:7709", //华为
+		"111.230.186.52:7709",  //腾讯
+		"110.41.2.72:7709",     //华为
+		"110.41.147.114:7709",  //华为,这个客户端显示深圳线路1,IP查询是广州的
+		"101.33.225.16:7709",   //腾讯云
+		"175.178.112.197:7709", //腾讯云
+		"175.178.128.227:7709", //腾讯云
+		"43.139.95.83:7709",    //腾讯云
+		"159.75.29.111:7709",   //腾讯云
+		"43.139.18.171:7709",   //腾讯云
+		"81.71.32.47:7709",     //腾讯云
+		"129.204.230.128:7709", //腾讯云
 	}
 
 	// WHHosts 武汉服务器地址
 	WHHosts = []string{
-		"119.97.185.59", //电信
+		"119.97.185.59:7709", //电信
 	}
 )
 
-// SortHosts 通过tcp(ping不可用)连接速度的方式筛选排序可用的地址
-func SortHosts(timeout ...time.Duration) []string {
+// 扩展行情(TdxExHq)服务器,端口 7727,地址取自通达信 connect.cfg [DSHOST] 段。
+// 按地域拆分子表，地址统一使用 IP:端口。
+const ExPort = "7727"
 
-	//超时时间
-	_timeout := conv.Default(time.Second, timeout...)
+var (
 
-	//至少需要一个
-	chMustOne := safe.NewCloser()
+	// ExHosts 扩展行情服务器地址，格式为 IP:端口(connect.cfg [DSHOST])
+	// 广州段在前:2026-06 实测仅 116.205.143.214(广州双线1)完全可用,置首位使
+	// range-dial 默认优先命中;其余多为连接超时/受限节点,可用 SortHosts(ExHosts) 重排。
+	ExHosts = func() []string {
+		lenGZ := len(ExGZHosts)
+		lenSH := len(ExSHHosts)
+		lenBJ := len(ExBJHosts)
 
-	mu := sync.Mutex{}
-	ls := []string(nil)
-	for _, host := range Hosts {
+		ls := make([]string, lenGZ+lenSH+lenBJ)
+		copy(ls[:lenGZ], ExGZHosts)
+		copy(ls[lenGZ:lenGZ+lenSH], ExSHHosts)
+		copy(ls[lenGZ+lenSH:lenGZ+lenSH+lenBJ], ExBJHosts)
+		return ls
+	}()
+
+	// ExSHHosts 扩展行情上海服务器地址
+	ExSHHosts = []string{
+		"175.24.47.69:7727",   //扩展市场上海双线7
+		"150.158.9.199:7727",  //扩展市场上海双线1
+		"150.158.20.127:7727", //扩展市场上海双线2
+		"49.235.119.116:7727", //扩展市场上海双线3
+		"49.234.13.160:7727",  //扩展市场上海双线4
+		"123.60.173.210:7727", //扩展市场上海双线5
+		"118.89.69.202:7727",  //扩展市场上海双线6
+	}
+
+	// ExBJHosts 扩展行情北京服务器地址
+	ExBJHosts = []string{
+		"112.74.214.43:7727",  //扩展市场北京双线1
+		"120.25.218.6:7727",   //扩展市场北京双线2
+		"43.139.173.246:7727", //扩展市场北京双线3
+		"159.75.90.107:7727",  //扩展市场北京双线4
+		"106.52.170.195:7727", //扩展市场北京双线5
+		"139.9.191.175:7727",  //扩展市场北京双线6
+	}
+
+	// ExGZHosts 扩展行情广州服务器地址
+	ExGZHosts = []string{
+		"116.205.143.214:7727", //扩展市场广州双线1
+		"124.71.223.19:7727",   //扩展市场广州双线2
+		"113.45.175.47:7727",   //扩展市场广州双线4
+	}
+)
+
+// SortHosts 按 TCP 连接耗时筛选排序指定的地址列表，地址须包含端口。
+// 返回新列表，不修改输入或默认列表；空输入不使用默认地址。
+// timeout 是整轮测速的时间上限，默认一秒；没有可用地址时返回空列表。
+func SortHosts(hosts []string, timeout ...time.Duration) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), conv.Default(time.Second, timeout...))
+	defer cancel()
+	type result struct {
+		host    string
+		elapsed time.Duration
+	}
+	results := make(chan result, len(hosts))
+	for _, host := range hosts {
 		go func(host string) {
-			addr := host
-			if !strings.Contains(addr, ":") {
-				addr += ":7709"
-			}
-
 			now := time.Now()
-			c, err := net.Dial("tcp", addr)
+			c, err := (&net.Dialer{}).DialContext(ctx, "tcp", host)
+			r := result{}
 			if err != nil {
 				logs.Err(err)
-				return
+			} else {
+				r = result{host: host, elapsed: time.Since(now)}
+				c.Close()
+				logs.Debugf("Host: %-21s  Speed: %s\n", host, r.elapsed)
 			}
-			c.Close()
-
-			logs.Debugf("Host: %-15s  Speed: %s\n", host, time.Since(now))
-			mu.Lock()
-			ls = append(ls, host)
-			mu.Unlock()
-			chMustOne.Close()
+			results <- r
 		}(host)
 	}
 
-	<-time.After(_timeout)
-	<-chMustOne.Done()
-
-	Hosts = ls
-
-	return ls
+	var available []result
+	for range hosts {
+		if r := <-results; r.host != "" {
+			available = append(available, r)
+		}
+	}
+	sort.Slice(available, func(i, j int) bool { return available[i].elapsed < available[j].elapsed })
+	var addrs []string
+	for _, r := range available {
+		addrs = append(addrs, r.host)
+	}
+	return addrs
 }

@@ -6,12 +6,202 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
+
+func TestHistoryTradeRequiresDailyKline(t *testing.T) {
+	for _, extended := range []bool{false, true} {
+		for _, wholeDay := range []bool{false, true} {
+			for _, state := range []string{"missing", "older-date", "newer-date", "present", "error"} {
+				name := map[bool]string{false: "standard", true: "extended"}[extended] + "/" + map[bool]string{false: "page", true: "day"}[wholeDay] + "/" + state
+				t.Run(name, func(t *testing.T) {
+					var daily, trades atomic.Int32
+					c := respondingTestClient(t, extended, func(h, b []byte) []byte {
+						typ := binary.LittleEndian.Uint16(h[10:])
+						if typ == protocol.TypeKline || typ == protocol.TypeExBars {
+							daily.Add(1)
+							if state == "error" {
+								return nil
+							}
+							day := uint32(20261009)
+							if state == "older-date" {
+								day = 20261008
+							}
+							if state == "newer-date" {
+								day = 20261010
+							}
+							if extended {
+								if binary.LittleEndian.Uint16(b[10:]) != 4 {
+									t.Error("incorrect extended daily category")
+								}
+								if state == "missing" {
+									return make([]byte, 20)
+								}
+								return testExtendedBar(day)
+							}
+							if b[8] != protocol.TypeKlineDay {
+								t.Error("incorrect standard daily category")
+							}
+							if state == "missing" {
+								return []byte{0, 0}
+							}
+							return completionStandardBars([]uint32{day}, nil, false)
+						}
+						trades.Add(1)
+						if extended {
+							r := make([]byte, 32)
+							binary.LittleEndian.PutUint16(r[14:], 1)
+							binary.LittleEndian.PutUint16(r[16:], 570)
+							return r
+						}
+						return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 0, 0}
+					})
+					code := "sz000001"
+					if extended {
+						code = "hk00700"
+					}
+					var r *TradeResp
+					var err error
+					if wholeDay {
+						r, err = c.GetHistoryTradeDay("20261009", code)
+					} else {
+						r, err = c.GetHistoryTrade("20261009", code, 100, 1)
+					}
+					if state == "error" {
+						if r != nil || err == nil || extended && !errors.Is(err, io.ErrUnexpectedEOF) || daily.Load() != 1 || trades.Load() != 0 {
+							t.Fatal("daily error must prevent trade request", r, err, trades.Load())
+						}
+						return
+					}
+					want := 0
+					if state == "present" {
+						want = 1
+					}
+					instrument, _ := protocol.ParseInstrument(code)
+					if err != nil || r == nil || r.Count != want || len(r.List) != want || r.Date != "20261009" || r.Instrument != instrument || r.VolumeUnit != VolumeUnknown || daily.Load() != 1 || trades.Load() != int32(want) {
+						t.Fatal("daily guard failed", r, err, daily.Load(), trades.Load())
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestHistoryTradeDailyPagination(t *testing.T) {
+	var daily, trades atomic.Int32
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			daily.Add(1)
+			if binary.LittleEndian.Uint16(b[12:]) == 0 {
+				days := make([]uint32, 800)
+				for j := range days {
+					days[j] = 20261010
+				}
+				return completionStandardBars(days, nil, false)
+			}
+			return completionStandardBars([]uint32{20261008, 20261009}, nil, false)
+		}
+		trades.Add(1)
+		return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 0, 0}
+	})
+	r, err := c.GetHistoryTradeDay("20261009", "sz000001")
+	if err != nil || r.Count != 1 || daily.Load() != 2 || trades.Load() != 1 {
+		t.Fatal("daily pagination missed requested date", r, err, daily.Load(), trades.Load())
+	}
+}
+
+func TestTradePaginationOverflow(t *testing.T) {
+	for _, historical := range []bool{false, true} {
+		t.Run(map[bool]string{false: "current", true: "historical"}[historical], func(t *testing.T) {
+			var previous uint16
+			c := respondingTestClient(t, false, func(h []byte, b []byte) []byte {
+				if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+					return completionStandardBars([]uint32{20250102}, nil, false)
+				}
+				pos := 8
+				if historical {
+					pos = 12
+				}
+				start := binary.LittleEndian.Uint16(b[pos : pos+2])
+				count := binary.LittleEndian.Uint16(b[pos+2 : pos+4])
+				if start < previous {
+					t.Error("pagination wrapped", previous, start)
+				}
+				previous = start
+				out := protocol.Bytes(count)
+				if historical {
+					out = append(out, 0, 0, 0, 0)
+				}
+				for i := uint16(0); i < count; i++ {
+					out = append(out, 0x3a, 2, 0xa8, 0x0f, 1, 0, 0)
+					if !historical {
+						out = append(out, 0)
+					}
+				}
+				return out
+			})
+			var r *TradeResp
+			var err error
+			if historical {
+				r, err = c.GetHistoryTradeDay("20250102", "sz000001")
+			} else {
+				r, err = c.GetTradeAll("sz000001")
+			}
+			if err == nil || !strings.Contains(err.Error(), "uint16") || r != nil {
+				t.Fatal("expected pagination limit error", r, err)
+			}
+		})
+	}
+}
+
+func TestOtherPaginationLimits(t *testing.T) {
+	for _, mode := range []string{"code", "stock", "index", "until"} {
+		t.Run(mode, func(t *testing.T) {
+			c := respondingTestClient(t, false, func(h, _ []byte) []byte {
+				if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeCode {
+					return append(protocol.Bytes(uint16(1000)), make([]byte, 1000*29)...)
+				}
+				record := make([]byte, 16)
+				binary.LittleEndian.PutUint32(record, 20250102)
+				if mode == "index" {
+					record = append(record, 0, 0, 0, 0)
+				}
+				out := protocol.Bytes(uint16(800))
+				for i := 0; i < 800; i++ {
+					out = append(out, record...)
+				}
+				return out
+			})
+			var err error
+			switch mode {
+			case "code":
+				_, err = c.GetCodeAll(protocol.ExchangeSZ)
+			case "index":
+				_, err = c.GetKlineAll(protocol.TypeKlineDay, "sh000001")
+			case "stock":
+				_, err = c.GetKlineAll(protocol.TypeKlineDay, "sz000001")
+			case "until":
+				seen := 0
+				r, e := c.GetKlineUntil(protocol.TypeKlineDay, "sz000001", func(Kline) bool {
+					seen++
+					return seen == 65535
+				})
+				if e != nil || r.Count != 65535 || len(r.List) != 65535 {
+					t.Fatal("valid boundary stop failed", e)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "uint16") {
+				t.Fatal("expected pagination limit error", err)
+			}
+		})
+	}
+}
 
 func completionStandardBars(days []uint32, minutes []uint16, index bool) []byte {
 	b := protocol.Bytes(uint16(len(days)))

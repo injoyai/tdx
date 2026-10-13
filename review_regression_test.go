@@ -207,7 +207,7 @@ func TestReviewRegressionCanceledDial(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		factory func([]string) ios.DialFunc
-	}{{"host", NewHostDial}, {"random", NewRandomDial}, {"range", NewRangeDial}, {"ex range", NewExRangeDial}} {
+	}{{"host", NewHostDial}, {"random", NewRandomDial}, {"range", NewRangeDial}} {
 		t.Run(test.name, func(t *testing.T) {
 			c, _, err := test.factory([]string{listener.Addr().String()})(ctx)
 			if c != nil {
@@ -227,17 +227,15 @@ func TestRangeDialCancelsRetryWait(t *testing.T) {
 	}
 	addr := listener.Addr().String()
 	listener.Close()
-	for _, factory := range []func([]string) ios.DialFunc{NewRangeDial, NewExRangeDial} {
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		start := time.Now()
-		c, _, err := factory([]string{addr, addr})(ctx)
-		cancel()
-		if c != nil {
-			c.Close()
-		}
-		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
-			t.Fatal("retry wait ignored context", err, time.Since(start))
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	start := time.Now()
+	c, _, err := NewRangeDial([]string{addr, addr})(ctx)
+	cancel()
+	if c != nil {
+		c.Close()
+	}
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > time.Second {
+		t.Fatal("retry wait ignored context", err, time.Since(start))
 	}
 }
 

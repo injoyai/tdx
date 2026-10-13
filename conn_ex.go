@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
-	"github.com/injoyai/ios/module/tcp"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -468,15 +466,18 @@ func DialExHqDefault(op ...client.Option) (*ExConn, error) {
 
 // DialExHq 连接指定扩展行情服务器。
 func DialExHq(addr string, op ...client.Option) (*ExConn, error) {
-	if !strings.Contains(addr, ":") {
-		addr += ":" + ExPort
-	}
-	return dialExHqWith(tcp.NewDial(addr), op...)
+	return dialExHqWith(NewTCPDial(withPort(addr, ExPort)), op...)
 }
 
-// DialExHqHosts 连接扩展行情服务器,多服务器轮询。
+// DialExHqHosts 遍历扩展行情服务器，裸 IP 默认使用端口 7727。
 func DialExHqHosts(hosts []string, op ...client.Option) (*ExConn, error) {
-	return dialExHqWith(NewExRangeDial(hosts), op...)
+	if len(hosts) == 0 {
+		hosts = ExHosts
+	}
+	if len(hosts) == 0 {
+		return nil, errors.New("扩展行情服务器列表为空")
+	}
+	return dialExHqWith(NewRangeDial(hostAddrs(hosts, ExPort)), op...)
 }
 
 // dialExHqWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。

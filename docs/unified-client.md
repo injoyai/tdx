@@ -32,6 +32,8 @@ ETF、可转债等标准报价需要价格精度元数据时，使用同一连�
 
 源码按职责集中：`client_interface.go` 定义统一接口；`client.go` 集中 `MarketClient` 门面、市场路由、统一返回模型和标准结果转换，对应测试放在 `client_test.go`。`conn_st.go` 包含标准连接、建连入口、业务请求和解码；`conn_ex.go` 对应拓展连接。内部 `conn.go` 仅负责收发、请求关联和生命周期；`query.go` 及 `conn_query.go` 保存共享业务算法及校验。内部传输不实现 `Client`，业务查询不经传输层转发到门面。
 
+根目录测试按职责归并：`client_test.go` 验证统一门面和接口；`conn_test.go` 验证标准/扩展连接、协议请求和共享传输；`query_test.go` 验证分页、停止条件及历史日期检查。两类协议共用的表驱动用例保持在同一个文件中；`conn_live_test.go` 集中实连测试及限流辅助函数，仍须通过原有环境变量显式启用。连接池和元数据、管理器等其他回归测试分别保留在 `pool_test.go` 和 `review_regression_test.go`。
+
 `StConn`、`ExConn` 分别实现 `Client`，`MarketClient` 通过同一接口选择两者。混合报价仍保持原输入顺序，标准品种合并请求、拓展品种逐个请求。共享分页、停止条件和历史交易日期检查直接调用绑定业务对象的基本查询。
 
 通常只需 `NewClient()`。需要单协议连接时直接建连：

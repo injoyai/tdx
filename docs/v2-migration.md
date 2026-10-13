@@ -153,13 +153,28 @@ HTTP 内部已迁移到统一函数，但仍返回原 `protocol` 数据，原价
 
 TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断开回调与缓存清理；`Origin()` 返回值仍支持 `net.Conn` 接口，调用方应依赖接口而非断言具体的 `*net.TCPConn` 类型。
 
-真实只读验证按 `PROJECT_RULES.md` 第 8.5 节执行。标准与扩展行情测试共用每秒一次、最多 1000 次的写入限流，可用 `TDX_STD_LIVE=1 TDX_EXHQ_LIVE=1 go test -race . -run '^(TestStandardLive|TestExHqLive)$' -count=1 -v -timeout=150s` 启用；分别用 `TDX_STD_HOST` / `TDX_EX_HOST` 指定不含端口的服务器 IP。标准测试只做一次受控重连，普通离线测试跳过真实访问。HTTP 上游验证用 `TDX_HTTP_LIVE=1 go test -race ./extend/httpserver -run '^TestServerLive$' -count=1 -v -timeout=45s`，须在行情测试完成后单独执行，不并行启动。
+真实只读验证按 `PROJECT_RULES.md` 第 8.5 节执行。标准与扩展行情测试共用每秒一次、最多 1000 次的写入限流，可用 `TDX_STD_LIVE=1 TDX_EXHQ_LIVE=1 go test -race . -run '^(TestStandardLive|TestExHqLive)$' -count=1 -v -timeout=150s` 启用；分别用 `TDX_STD_HOST` / `TDX_EX_HOST` 指定服务器 IP 或 `IP:端口`。标准测试只做一次受控重连，普通离线测试跳过真实访问。HTTP 上游验证用 `TDX_HTTP_LIVE=1 go test -race ./extend/httpserver -run '^TestServerLive$' -count=1 -v -timeout=45s`，须在行情测试完成后单独执行，不并行启动。
 
 数据准确性还须按项目规则第 8.6 节对照独立来源，其他来源单线程、请求起始间隔至少 5 秒。`TDX_CROSS_LIVE=1 go test -race . -run '^TestCrossValidationSamplesLive$' -count=1 -v -timeout=45s` 保存小样本到 `output/live-validation/cross/tdx-samples.json`，供另行串行获取独立数据并逐字段比较；该测试成功只表示样本获取成功。港股主板日线现用 category=4，腾讯控股样本的 `ExKline.Trade` 为百股，×100 与独立来源在整数百股精度内一致；不能将该单位推广到其他扩展接口。小时线的来源聚合差异和港股分时的时间标签仍须确认。
 
 标准行情代码、K 线与五档报价也检查记录边界和变长整数；截断或溢出响应直接返回解码错误。`protocol.MQuote.Decode` 保留原返回类型，异常数据返回 `nil`；需要错误详情时改用 `protocol.MQuote.DecodeChecked`。
 
-`NewHostDial`、`NewRandomDial`、`NewRangeDial`、`NewExRangeDial` 使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。`NewManage` 初始化失败会关闭内部创建的、支持 `Close()` 的连接池；`WithPool` 传入的外部池仍由调用方关闭。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化失败会返回错误。
+`Hosts`、`ExHosts` 及地域子列表统一存储 `IP:端口`，从列表取得地址后不要再拼接端口。`NewExRangeDial` 已移除，使用 `NewRangeDial(tdx.ExHosts)`；自定义扩展列表必须显式带端口，若需要保留裸 IP 默认补 `7727` 和空列表使用 `ExHosts` 的行为，直接使用 `DialExHqHosts(hosts)`。标准拨号仍兼容裸 IP，默认补 `7709`；`DialExHq` 仍默认补 `7727`，显式端口均保留。
+
+默认地址列表也为空时，拨号返回错误；扩展拨号不会回退到标准列表。将测速结果赋给默认列表后无可用地址时也适用此规则。
+
+`NewHostDial`、`NewRandomDial`、`NewRangeDial` 使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。
+
+测速入口统一为 `SortHosts(hosts []string, timeout ...time.Duration)`，`SortExHosts` 已移除。原 `SortHosts(timeout...)` 改为 `SortHosts(tdx.Hosts, timeout...)`，原 `SortExHosts(timeout...)` 改为 `SortHosts(tdx.ExHosts, timeout...)`。地址须包含端口；函数返回新列表，不修改输入或全局默认列表。需要保留原更新默认列表的行为时显式赋值：
+
+```go
+tdx.Hosts = tdx.SortHosts(tdx.Hosts)
+tdx.ExHosts = tdx.SortHosts(tdx.ExHosts)
+```
+
+超时是整轮测速的时间上限（默认一秒），按 TCP 连接耗时排序；全不可用或输入为空时返回空列表，不使用默认地址，也不无限等待第一个可用地址。测速仅检查 TCP 建连，不代表行情握手或查询成功。
+
+`NewManage` 初始化失败会关闭内部创建的、支持 `Close()` 的连接池；`WithPool` 传入的外部池仍由调用方关闭。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化失败会返回错误。
 
 代码元数据刷新使用 SQLite 增量事务，保留未变化记录和原主键，更新名称、倍数、小数位与昨收价，删除退市项；内存缓存使用提交后的数据库快照。
 
