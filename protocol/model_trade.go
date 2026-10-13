@@ -145,7 +145,7 @@ func (this Trades) Klines() Klines {
 	mKline := types.SortMap[int64, Klines]{}
 	for date, v := range m {
 		//生成一分钟k线
-		t := time.Unix(date, 0)
+		t := time.Unix(date, 0).In(v[0].Time.Location())
 		mKline[date] = v.klinesForDay(t)
 	}
 	//按时间排序
