@@ -6,6 +6,6 @@ import (
 )
 
 func main() {
-	ls := tdx.SortHosts(tdx.Hosts)
+	ls := tdx.Hosts.Sort()
 	logs.Debug("总数量:", len(ls))
 }

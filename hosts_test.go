@@ -1,15 +1,16 @@
 package tdx
 
 import (
+	"context"
 	"net"
 	"slices"
 	"testing"
 	"time"
 )
 
-func TestSortHostsUnavailable(t *testing.T) {
+func TestAddrsSortUnavailable(t *testing.T) {
 	done := make(chan []string, 1)
-	go func() { done <- SortHosts([]string{"127.0.0.1:0"}, 20*time.Millisecond) }()
+	go func() { done <- (Addrs{"127.0.0.1:0"}).Sort(20 * time.Millisecond) }()
 	select {
 	case hosts := <-done:
 		if len(hosts) != 0 {
@@ -20,13 +21,13 @@ func TestSortHostsUnavailable(t *testing.T) {
 	}
 }
 
-func TestSortHostsFiltersUnavailable(t *testing.T) {
+func TestAddrsSortFiltersUnavailable(t *testing.T) {
 	listener := localDialListener(t)
 	addr := listener.Addr().String()
-	input := []string{"127.0.0.1:0", addr}
+	input := Addrs{"127.0.0.1:0", addr}
 	before := slices.Clone(input)
 	standard, extended := slices.Clone(Hosts), slices.Clone(ExHosts)
-	hosts := SortHosts(input, time.Second)
+	hosts := input.Sort(time.Second)
 	if len(hosts) != 1 || hosts[0] != addr {
 		t.Fatalf("available hosts = %v, want [%s]", hosts, addr)
 	}
@@ -34,20 +35,30 @@ func TestSortHostsFiltersUnavailable(t *testing.T) {
 	if !slices.Equal(input, before) || !slices.Equal(Hosts, standard) || !slices.Equal(ExHosts, extended) {
 		t.Fatal("sorting or modifying the result changed the input or default lists")
 	}
-	if hosts := SortHosts(nil, time.Second); len(hosts) != 0 {
+	if hosts := Addrs(nil).Sort(time.Second); len(hosts) != 0 {
 		t.Fatalf("empty input returned hosts: %v", hosts)
 	}
-	if hosts := SortHosts([]string{addr}, 0); len(hosts) != 0 {
+	if hosts := (Addrs{addr}).Sort(0); len(hosts) != 0 {
 		t.Fatalf("expired deadline returned hosts: %v", hosts)
 	}
 }
 
-func TestSortHostsMixedPorts(t *testing.T) {
+func TestAddrsSortMixedPorts(t *testing.T) {
 	first, second := localDialListener(t), localDialListener(t)
-	input := []string{first.Addr().String(), second.Addr().String()}
-	hosts := SortHosts(input)
+	input := Addrs{first.Addr().String(), second.Addr().String()}
+	hosts := input.Sort()
 	if len(hosts) != 2 || !slices.Contains(hosts, input[0]) || !slices.Contains(hosts, input[1]) {
 		t.Fatalf("mixed ports returned %v, want both addresses %v", hosts, input)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	c, key, err := NewRangeDial(hosts)(ctx)
+	if err != nil {
+		t.Fatal("sorted Addrs could not be passed to the dialer:", err)
+	}
+	defer c.Close()
+	if key != hosts[0] {
+		t.Fatalf("dial address = %q, want fastest address %q", key, hosts[0])
 	}
 }
 

@@ -159,18 +159,20 @@ TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断�
 
 标准行情代码、K 线与五档报价也检查记录边界和变长整数；截断或溢出响应直接返回解码错误。`protocol.MQuote.Decode` 保留原返回类型，异常数据返回 `nil`；需要错误详情时改用 `protocol.MQuote.DecodeChecked`。
 
-`Hosts`、`ExHosts` 及地域子列表统一存储 `IP:端口`，从列表取得地址后不要再拼接端口。`NewExRangeDial` 已移除，使用 `NewRangeDial(tdx.ExHosts)`；自定义扩展列表必须显式带端口，若需要保留裸 IP 默认补 `7727` 和空列表使用 `ExHosts` 的行为，直接使用 `DialExHqHosts(hosts)`。标准拨号仍兼容裸 IP，默认补 `7709`；`DialExHq` 仍默认补 `7727`，显式端口均保留。
+`Hosts`、`ExHosts` 及地域子列表类型改为 `Addrs`（底层为 `[]string`），统一存储 `IP:端口`，从列表取得地址后不要再拼接端口。`NewExRangeDial` 已移除，使用 `NewRangeDial(tdx.ExHosts)`；自定义扩展列表必须显式带端口，若需要保留裸 IP 默认补 `7727` 和空列表使用 `ExHosts` 的行为，直接使用 `DialExHqHosts(hosts)`。标准拨号仍兼容裸 IP，默认补 `7709`；`DialExHq` 仍默认补 `7727`，显式端口均保留。
 
 默认地址列表也为空时，拨号返回错误；扩展拨号不会回退到标准列表。将测速结果赋给默认列表后无可用地址时也适用此规则。
 
 `NewHostDial`、`NewRandomDial`、`NewRangeDial` 使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。
 
-测速入口统一为 `SortHosts(hosts []string, timeout ...time.Duration)`，`SortExHosts` 已移除。原 `SortHosts(timeout...)` 改为 `SortHosts(tdx.Hosts, timeout...)`，原 `SortExHosts(timeout...)` 改为 `SortHosts(tdx.ExHosts, timeout...)`。地址须包含端口；函数返回新列表，不修改输入或全局默认列表。需要保留原更新默认列表的行为时显式赋值：
+测速实现移入 `Addrs.Sort(timeout ...time.Duration) Addrs` 方法，`SortHosts` / `SortExHosts` 已移除。原 `SortHosts(hosts, timeout...)` 改为 `tdx.Addrs(hosts).Sort(timeout...)`；标准和扩展内置列表直接使用 `tdx.Hosts.Sort(timeout...)` / `tdx.ExHosts.Sort(timeout...)`。地址须包含端口；方法返回新的 `Addrs`，不修改输入或全局默认列表。需要保留原更新默认列表的行为时显式赋值：
 
 ```go
-tdx.Hosts = tdx.SortHosts(tdx.Hosts)
-tdx.ExHosts = tdx.SortHosts(tdx.ExHosts)
+tdx.Hosts = tdx.Hosts.Sort()
+tdx.ExHosts = tdx.ExHosts.Sort()
 ```
+
+`Addrs` 可直接传给现有接收 `[]string` 的拨号函数，无需转换或泛型；普通 `[]string` 也可以赋给默认列表。若外部代码使用反射或断言检查默认列表的具体类型，需要同步改为 `Addrs`。
 
 超时是整轮测速的时间上限（默认一秒），按 TCP 连接耗时排序；全不可用或输入为空时返回空列表，不使用默认地址，也不无限等待第一个可用地址。测速仅检查 TCP 建连，不代表行情握手或查询成功。
 

@@ -31,7 +31,7 @@ func TestDialExplicitPortAndDefaults(t *testing.T) {
 		new  func([]string) ios.DialFunc
 	}{{"host", NewHostDial}, {"random", NewRandomDial}, {"range", NewRangeDial}} {
 		for _, defaults := range []bool{false, true} {
-			hosts := []string{addr}
+			hosts := Addrs{addr}
 			name := factory.name + "/explicit"
 			if defaults {
 				hosts, name = nil, factory.name+"/default"
