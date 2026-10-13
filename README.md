@@ -271,7 +271,7 @@ _ = markets; _ = n; _ = insts; _ = q; _ = bars; _ = ticks; _ = rangeBars
 
 ## 🌐 服务器列表 (端口 7709)
 
-`Hosts`、`ExHosts` 及地域子列表使用 `Addrs`（底层为 `[]string`），统一存储 `IP:端口`，可直接传给 `NewHostDial`、`NewRandomDial` 或 `NewRangeDial`，无需再拼接端口。裸 IP 输入仍兼容：标准拨号默认补 `7709`，`DialExHq` / `DialExHqHosts` 默认补 `7727`；空扩展列表使用 `ExHosts`。
+`Hosts`、`ExHosts` 及地域子列表使用 `Addrs`（底层为 `[]string`），统一存储 `IP:端口`，可直接传给 `NewHostDial`、`NewRandomDial` 或 `NewRangeDial`，无需再拼接端口。通用 `New*Dial` 只使用传入的完整地址，空列表报错，不自动选择默认地址；每个地址的建连超时为 5 秒。协议入口仍兼容裸 IPv4/IPv6：`Dial` / `DialHosts*` 默认补 `7709`，`DialExHq` / `DialExHqHosts` 默认补 `7727`；空标准/扩展列表分别使用 `Hosts` / `ExHosts`。完整 IPv6 地址使用 `[IPv6]:端口`。
 
 `Addrs.Sort(timeout...)` 对地址列表进行 TCP 测速，按连接耗时返回新的 `Addrs`，不修改输入或默认列表。标准行情使用 `tdx.Hosts.Sort()`，扩展行情使用 `tdx.ExHosts.Sort()`；自定义列表使用 `tdx.Addrs(hosts).Sort()`。需要更新默认列表时显式赋值，例如 `tdx.Hosts = tdx.Hosts.Sort()`。地址须包含端口，空输入返回空列表；超时是整轮测速的时间上限（默认一秒）。测速仅检查 TCP 建连，不验证行情协议。
 

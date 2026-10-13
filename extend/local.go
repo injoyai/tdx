@@ -193,7 +193,7 @@ func WriteDay(code string, ks protocol.Klines) ([]byte, error) {
 // WriteMinute1 将 1 分钟 K 线编码为通达信 .lc1 格式字节流(不落盘,由调用方自由处理)。
 // code 需带交易所前缀(如 sz000001)。
 // 成交量单位处理与 WriteDay 一致(指数为手,股票×100转股)。
-// 注意: 与真实通达信 .lc1 一致,每个交易日末尾(最后一条真实数据 15:00 之前)会补一条
+// 注意: 与真实通达信 .lc1 一致,含 15:00 收盘记录的交易日末尾会补一条
 // "量=0额=0"的 14:59 占位记录;若数据本身已含尾盘占位则不再重复补(否则会多一条)。
 func WriteMinute1(code string, ks protocol.Klines) ([]byte, error) {
 	return writeMinute(code, true, ks)
@@ -225,7 +225,8 @@ func writeMinute(code string, placeholder bool, ks protocol.Klines) ([]byte, err
 		}
 		dayKs := ks[start:end]
 		// 是否需补占位: 仅 1 分钟线,且该交易日数据中尚未含尾盘占位(14:58/14:59 且 量=0额=0)
-		needPlaceholder := placeholder && !dayHasTailPlaceholder(dayKs)
+		last := dayKs[len(dayKs)-1].Time
+		needPlaceholder := placeholder && last.Hour() == 15 && last.Minute() == 0 && !dayHasTailPlaceholder(dayKs)
 		for j, k := range dayKs {
 			// 占位记录插在当日最后一条真实数据(15:00)之前
 			if needPlaceholder && j == len(dayKs)-1 {

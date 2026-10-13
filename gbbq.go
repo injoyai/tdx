@@ -71,7 +71,7 @@ func WithGbbqOption(op ...GbbqOption) GbbqOption {
 	}
 }
 
-func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
+func NewGbbq(op ...GbbqOption) (result *Gbbq, err error) {
 	s := &Gbbq{
 		spec:      DefaultGbbqSpec,
 		retry:     DefaultRetry,
@@ -82,7 +82,18 @@ func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
 
 	WithGbbqOption(op...)(s)
 
-	var err error
+	ownedClient, ownedDB := s.c == nil, s.db == nil
+	ready := false
+	defer func() {
+		if !ready {
+			if ownedClient && clientOrNil(s.c) != nil {
+				err = errors.Join(err, s.c.Close())
+			}
+			if ownedDB && s.db != nil {
+				err = errors.Join(err, s.db.Close())
+			}
+		}
+	}()
 
 	//初始化客户端
 	if s.c == nil {
@@ -121,8 +132,11 @@ func NewGbbq(op ...GbbqOption) (*Gbbq, error) {
 
 	// 定时/立即更新
 	err = NewTimer(s.spec, s.retry, s)
-
-	return s, err
+	if err != nil {
+		return nil, err
+	}
+	ready = true
+	return s, nil
 }
 
 type Gbbq struct {

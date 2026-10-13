@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -471,19 +472,17 @@ func DialExHq(addr string, op ...client.Option) (*ExConn, error) {
 
 // DialExHqHosts 遍历扩展行情服务器，裸 IP 默认使用端口 7727。
 func DialExHqHosts(hosts []string, op ...client.Option) (*ExConn, error) {
-	if len(hosts) == 0 {
-		hosts = ExHosts
-	}
-	if len(hosts) == 0 {
-		return nil, errors.New("扩展行情服务器列表为空")
-	}
-	return dialExHqWith(NewRangeDial(hostAddrs(hosts, ExPort)), op...)
+	return dialExHqWith(NewRangeDial(hostAddrs(hosts, ExHosts, ExPort)), op...)
 }
 
 // dialExHqWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。
 func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *ExConn, err error) {
+	return dialEx(context.Background(), dial, op...)
+}
+
+func dialEx(ctx context.Context, dial ios.DialFunc, op ...client.Option) (*ExConn, error) {
 	c := newExConn(nil)
-	core, err := dialWith(dial, 10*time.Second, protocol.MEx.FrameSetup, protocol.MEx.FrameCount, c.decode, op...)
+	core, err := dialWith(ctx, dial, 10*time.Second, protocol.MEx.FrameSetup, protocol.MEx.FrameCount, c.decode, op...)
 	if err != nil {
 		return nil, err
 	}

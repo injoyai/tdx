@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -125,6 +126,7 @@ type MarketClient struct {
 	dialing    sync.WaitGroup
 	links      [2]protocolClient
 	dial       [2]func() (protocolClient, error)
+	cancel     context.CancelFunc
 	timeout    time.Duration
 	timeoutSet bool
 	closed     bool
@@ -140,10 +142,16 @@ func NewClient(options ...client.Option) Client {
 
 func newMarketClient(options ...client.Option) *MarketClient {
 	op := append([]client.Option(nil), options...)
+	ctx, cancel := context.WithCancel(context.Background())
 	c := &MarketClient{
+		cancel: cancel,
 		dial: [2]func() (protocolClient, error){
-			func() (protocolClient, error) { return DialDefault(op...) },
-			func() (protocolClient, error) { return DialExHqDefault(op...) },
+			func() (protocolClient, error) {
+				return dialSt(ctx, NewRangeDial(hostAddrs(Hosts, Hosts, stPort)), append([]client.Option{WithRedial()}, op...)...)
+			},
+			func() (protocolClient, error) {
+				return dialEx(ctx, NewRangeDial(hostAddrs(ExHosts, ExHosts, ExPort)), append([]client.Option{WithRedial()}, op...)...)
+			},
 		},
 		closeDone: make(chan struct{}),
 	}
@@ -229,6 +237,7 @@ func (c *MarketClient) Close() error {
 		return c.closeErr
 	}
 	c.closed = true
+	c.cancel()
 	links := c.links
 	c.mu.Unlock()
 	var err error

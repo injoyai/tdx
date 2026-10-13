@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"io"
 )
 
 // F10 公司信息协议。参考 pytdx GetCompanyInfoCategory / GetCompanyInfoContent。
@@ -39,15 +40,15 @@ func (companyCat) Frame(market uint8, code string) *Frame {
 // Decode 解析 F10 分类列表。
 func (companyCat) Decode(bs []byte) ([]CompanyCategory, error) {
 	if len(bs) < 2 {
-		return nil, nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	num := int(Uint16(bs[0:2]))
+	if len(bs)-2 < num*152 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	pos := 2
 	out := make([]CompanyCategory, 0, num)
 	for i := 0; i < num; i++ {
-		if pos+152 > len(bs) {
-			break
-		}
 		name := decodeGBKName(bs[pos : pos+64])
 		filename := cutAtNull(bs[pos+64 : pos+144])
 		start := Uint32(bs[pos+144 : pos+148])
@@ -99,12 +100,12 @@ func (companyContent) Frame(market uint8, code, filename string, start, length u
 // Decode 解析 F10 内容（GBK 文本）。
 func (companyContent) Decode(bs []byte) (string, error) {
 	if len(bs) < 12 {
-		return "", nil
+		return "", io.ErrUnexpectedEOF
 	}
 	length := int(Uint16(bs[10:12]))
 	end := 12 + length
 	if end > len(bs) {
-		end = len(bs)
+		return "", io.ErrUnexpectedEOF
 	}
 	return string(UTF8ToGBK(bs[12:end])), nil
 }

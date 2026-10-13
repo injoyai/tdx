@@ -3,8 +3,10 @@ package extend
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestCodesHTTPStartupErrors(t *testing.T) {
@@ -22,5 +24,22 @@ func TestCodesHTTPStartupErrors(t *testing.T) {
 				t.Errorf("initialization failure reported as success: got=%v", err)
 			}
 		})
+	}
+}
+
+func TestGbbqHTTPEffectiveDay(t *testing.T) {
+	day := time.Date(2026, 10, 12, 0, 0, 0, 0, time.Local)
+	old := &protocol.Gbbq{Code: "sz000001", Time: day.Add(-9 * time.Hour), Category: 5, C3: 100, C4: 200}
+	current := &protocol.Gbbq{Code: "sz000001", Time: day.Add(15 * time.Hour), Category: 5, C3: 300, C4: 400}
+	g := &GbbqHTTP{m: map[string][]*protocol.Gbbq{"sz000001": {old, current}}}
+	for _, tc := range []struct {
+		at   time.Time
+		want int64
+	}{
+		{day.Add(-time.Minute), 100}, {day, 300}, {day.Add(9*time.Hour + 30*time.Minute), 300}, {current.Time, 300},
+	} {
+		if got := g.GetEquity("sz000001", tc.at); got == nil || got.Float != tc.want {
+			t.Fatalf("equity at %s = %+v, want %d", tc.at, got, tc.want)
+		}
 	}
 }

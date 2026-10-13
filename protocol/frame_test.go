@@ -2,9 +2,38 @@ package protocol
 
 import (
 	"bytes"
+	"compress/zlib"
+	"encoding/binary"
 	"encoding/hex"
+	"runtime"
 	"testing"
 )
+
+func TestDecodeLimitsInflatedResponse(t *testing.T) {
+	var compressed bytes.Buffer
+	w := zlib.NewWriter(&compressed)
+	if _, err := w.Write(make([]byte, 8<<20)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	frame := make([]byte, 16+compressed.Len())
+	binary.LittleEndian.PutUint16(frame[12:14], uint16(compressed.Len()))
+	binary.LittleEndian.PutUint16(frame[14:16], 1)
+	copy(frame[16:], compressed.Bytes())
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	resp, err := Decode(frame)
+	runtime.ReadMemStats(&after)
+	if err == nil || resp != nil {
+		t.Fatal("accepted oversized response", resp, err)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 1<<20 {
+		t.Fatalf("allocated %d bytes before rejecting declared length 1", allocated)
+	}
+}
 
 func TestFrame_Bytes(t *testing.T) {
 	f := Frame{

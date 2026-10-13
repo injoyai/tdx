@@ -47,15 +47,16 @@ func (this *minute) Decode(bs []byte) (*MinuteResp, error) {
 		Count: Uint16(bs[:2]),
 	}
 	//2-6字节是啥?
-	bs = bs[6:]
-	price := Price(0)
+	d := wireDecoder{bs: bs[6:]}
 
 	t := time.Date(0, 0, 0, 9, 0, 0, 0, time.Local)
 	for i := uint16(0); i < resp.Count; i++ {
-		bs, price = GetPrice(bs)
-		bs, _ = CutInt(bs) //这个是什么
-		var number int
-		bs, number = CutInt(bs)
+		price := Price(d.number())
+		d.number() // 未知字段
+		number := d.number()
+		if d.err != nil {
+			return nil, d.err
+		}
 		if i == 120 {
 			t = t.Add(time.Hour * 2)
 		}

@@ -3,6 +3,7 @@ package tdx
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/tdx/v2/protocol"
 )
+
+const stPort = "7709"
 
 // StConn 是绑定标准行情协议的业务连接，实现 Client，复用内部 conn 的收发、超时和重连管理。
 // Dial* 直接返回该类型，不需要再包装通用连接。
@@ -875,28 +878,32 @@ func DialDefault(op ...client.Option) (cli *StConn, err error) {
 
 // Dial 与服务器建立连接
 func Dial(addr string, op ...client.Option) (cli *StConn, err error) {
-	return DialWith(NewTCPDial(addr), op...)
+	return DialWith(NewTCPDial(withPort(addr, stPort)), op...)
 }
 
 // DialHosts 与服务器建立连接,多个服务器轮询,开启重试生效
 func DialHosts(hosts []string, op ...client.Option) (cli *StConn, err error) {
-	return DialWith(NewHostDial(hosts), op...)
+	return DialWith(NewHostDial(hostAddrs(hosts, Hosts, stPort)), op...)
 }
 
 // DialHostsRandom 与服务器建立连接,多个服务器随机连接
 func DialHostsRandom(hosts []string, op ...client.Option) (cli *StConn, err error) {
-	return DialWith(NewRandomDial(hosts), op...)
+	return DialWith(NewRandomDial(hostAddrs(hosts, Hosts, stPort)), op...)
 }
 
 // DialHostsRange 遍历设置的服务地址进行连接,成功则结束遍历
 func DialHostsRange(hosts []string, op ...client.Option) (cli *StConn, err error) {
-	return DialWith(NewRangeDial(hosts), op...)
+	return DialWith(NewRangeDial(hostAddrs(hosts, Hosts, stPort)), op...)
 }
 
 // DialWith 与服务器建立连接
 func DialWith(dial ios.DialFunc, op ...client.Option) (*StConn, error) {
+	return dialSt(context.Background(), dial, op...)
+}
+
+func dialSt(ctx context.Context, dial ios.DialFunc, op ...client.Option) (*StConn, error) {
 	c := newStConn(nil)
-	core, err := dialWith(dial, 2*time.Second, protocol.MConnect.Frame, protocol.MHeart.Frame, c.decode, op...)
+	core, err := dialWith(ctx, dial, 2*time.Second, protocol.MConnect.Frame, protocol.MHeart.Frame, c.decode, op...)
 	if err != nil {
 		return nil, err
 	}

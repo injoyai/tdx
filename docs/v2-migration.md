@@ -147,7 +147,7 @@ HTTP 内部已迁移到统一函数，但仍返回原 `protocol` 数据，原价
 
 `SendFrame` 先注册回调再发送，避免快速响应早于等待注册而被丢弃；回调注册与响应处理互斥，超时或写入失败会清理回调与请求缓存，迟到响应会被忽略。标准行情默认请求超时仍为 2 秒，扩展行情仍为 10 秒，覆盖排队、发送和等待响应全过程。发送中途超时或短写会关闭当次连接，避免残缺帧污染后续请求；仅排队或等待响应超时则保留连接。
 
-标准与扩展行情的握手、心跳、业务请求和重连初始化共用写入门控，保护底层连接状态与写入统计；具体连接的 `Write` 及其字符串等写入方式保持稳定入口。心跳绑定当次连接。`Close()` 取消连接生命周期、关闭传输并等待读取流程退出后释放底层资源，不再并发修改底层重连开关。截断或非法的成交记录、可关联请求的帧解压错误直接传回调用方，不再表现为等待超时。
+标准与扩展行情的握手、心跳、业务请求和重连初始化共用写入门控，保护底层连接状态与写入统计；新连接先完整发送握手，再放行业务写入。具体连接的 `Write` 及其字符串等写入方式保持稳定入口。心跳绑定当次连接。`Close()` 取消连接生命周期、关闭传输并等待读取流程退出后释放底层资源，门面还会取消进行中的首次建连和重试。截断或非法的成交、分时、股本和 F10 响应直接返回解码错误；压缩帧最多读取声明解压长度加一字节，超长响应直接报错。
 
 扩展行情响应的头部或声明的记录不足时返回 `io.ErrUnexpectedEOF`，不再返回部分记录或把损坏响应当成空结果；合法的零记录响应仍正常返回。HTTP 服务的 `Close()` 同时释放自建的标准与扩展行情连接池，初始化失败也会清理已建连接池。
 
@@ -159,11 +159,13 @@ TCP 传输使用幂等关闭封装，避免重复关闭导致底层库跳过断�
 
 标准行情代码、K 线与五档报价也检查记录边界和变长整数；截断或溢出响应直接返回解码错误。`protocol.MQuote.Decode` 保留原返回类型，异常数据返回 `nil`；需要错误详情时改用 `protocol.MQuote.DecodeChecked`。
 
-`Hosts`、`ExHosts` 及地域子列表类型改为 `Addrs`（底层为 `[]string`），统一存储 `IP:端口`，从列表取得地址后不要再拼接端口。`NewExRangeDial` 已移除，使用 `NewRangeDial(tdx.ExHosts)`；自定义扩展列表必须显式带端口，若需要保留裸 IP 默认补 `7727` 和空列表使用 `ExHosts` 的行为，直接使用 `DialExHqHosts(hosts)`。标准拨号仍兼容裸 IP，默认补 `7709`；`DialExHq` 仍默认补 `7727`，显式端口均保留。
+`Hosts`、`ExHosts` 及地域子列表类型改为 `Addrs`（底层为 `[]string`），统一存储 `IP:端口`，从列表取得地址后不要再拼接端口。`NewExRangeDial` 已移除，使用 `NewRangeDial(tdx.ExHosts)`；自定义扩展列表必须显式带端口，若需要保留裸 IP 默认补 `7727` 和空列表使用 `ExHosts` 的行为，直接使用 `DialExHqHosts(hosts)`。`Dial` / `DialHosts*` 仍兼容裸 IP，默认补 `7709`；`DialExHq` / `DialExHqHosts` 默认补 `7727`，显式端口均保留。
 
 默认地址列表也为空时，拨号返回错误；扩展拨号不会回退到标准列表。将测速结果赋给默认列表后无可用地址时也适用此规则。
 
-`NewHostDial`、`NewRandomDial`、`NewRangeDial` 使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。
+`NewTCPDial`、`NewHostDial`、`NewRandomDial`、`NewRangeDial` 只使用传入的完整地址，不补端口、不选择协议默认列表；列表为空时返回拨号错误。原 `New*Dial(nil)` 选择标准列表的用法须改为显式传入 `tdx.Hosts`。需要兼容裸 IPv4/IPv6 和空列表选择协议默认地址时，使用 `Dial` / `DialHosts*` 或 `DialExHq` / `DialExHqHosts`。完整 IPv6 地址使用 `[IPv6]:端口`，裸 IPv6 可以带 zone，如 `fe80::1%eth0`。
+
+四个 `New*Dial` 都使用调用方的 context 建连，每个地址最多等待 5 秒；遍历地址间的退避等待也可取消。轮询和随机拨号函数可以在多个客户端之间并发复用。
 
 测速实现移入 `Addrs.Sort(timeout ...time.Duration) Addrs` 方法，`SortHosts` / `SortExHosts` 已移除。原 `SortHosts(hosts, timeout...)` 改为 `tdx.Addrs(hosts).Sort(timeout...)`；标准和扩展内置列表直接使用 `tdx.Hosts.Sort(timeout...)` / `tdx.ExHosts.Sort(timeout...)`。地址须包含端口；方法返回新的 `Addrs`，不修改输入或全局默认列表。需要保留原更新默认列表的行为时显式赋值：
 
@@ -177,6 +179,10 @@ tdx.ExHosts = tdx.ExHosts.Sort()
 超时是整轮测速的时间上限（默认一秒），按 TCP 连接耗时排序；全不可用或输入为空时返回空列表，不使用默认地址，也不无限等待第一个可用地址。测速仅检查 TCP 建连，不代表行情握手或查询成功。
 
 `NewManage` 初始化失败会关闭内部创建的、支持 `Close()` 的连接池；`WithPool` 传入的外部池仍由调用方关闭。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化失败会返回错误。
+
+`NewCodes`、`NewGbbq`、`NewWorkday` 初始化失败返回 nil 和错误，并释放本次通过工厂创建的客户端及数据库；`With*Client` / `With*DB` 直接注入的共享资源仍由调用方管理。相应 `With*DialClient` / `With*DialDB` 工厂应返回本次构造独占的资源。HTTP 股本查询和本地查询统一按记录日期的零点生效，协议记录中的 15:00 不作为生效时刻。
+
+`extend.WriteMinute1` 仅在当日包含 15:00 收盘记录时补尾盘占位，盘中或部分日的数据原样编码；已有占位不会重复补入。
 
 代码元数据刷新使用 SQLite 增量事务，保留未变化记录和原主键，更新名称、倍数、小数位与昨收价，删除退市项；内存缓存使用提交后的数据库快照。
 

@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 	"math"
 	"sort"
 	"time"
@@ -56,6 +57,9 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 	}
 
 	_count := Uint16(bs[9:11])
+	if len(bs)-11 < int(_count)*29 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	resp := &GbbqResp{
 		Count: _count,
 		List:  make([]*Gbbq, 0, _count),

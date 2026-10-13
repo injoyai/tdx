@@ -39,17 +39,18 @@ func (this historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 	//}
 
 	//2-4字节是啥?
-	bs = bs[6:]
+	d := wireDecoder{bs: bs[6:]}
 
 	lastPrice := Price(0)
 	t := time.Date(0, 0, 0, 9, 30, 0, 0, time.Local)
 	for i := uint16(0); i < resp.Count; i++ {
-		var price Price
-		bs, price = GetPrice(bs)
-		bs, _ = GetPrice(bs) //这个是什么
+		price := Price(d.number())
+		d.number() // 未知字段
 		lastPrice += price
-		var number int
-		bs, number = CutInt(bs)
+		number := d.number()
+		if d.err != nil {
+			return nil, d.err
+		}
 
 		if i == 120 {
 			t = t.Add(time.Minute * 90)

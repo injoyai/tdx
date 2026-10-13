@@ -122,6 +122,11 @@ func (w *frameWriter) write(ctx context.Context, bs []byte) (int, error) {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
+	return w.writeLocked(ctx, bs)
+}
+
+// writeLocked 也用于已经持有初始化门控的握手。
+func (w *frameWriter) writeLocked(ctx context.Context, bs []byte) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}

@@ -49,15 +49,17 @@ func WithRedial(b ...bool) client.Option {
 }
 
 // dialWith 两类行情共用连接生命周期，仅握手、心跳与默认超时不同。
-func dialWith(dial ios.DialFunc, timeout time.Duration, setup, heartbeat func() *protocol.Frame, decode func(*protocol.Response, any) (any, error), op ...client.Option) (cli *conn, err error) {
+func dialWith(ctx context.Context, dial ios.DialFunc, timeout time.Duration, setup, heartbeat func() *protocol.Frame, decode func(*protocol.Response, any) (any, error), op ...client.Option) (cli *conn, err error) {
+	ctx, cancel := context.WithCancel(ctx)
 	cli = &conn{
 		Wait:        wait.New(timeout),
 		waitTimeout: timeout,
 		decode:      decode,
 		m:           maps.NewSafe(),
+		cancelRun:   cancel,
 	}
 
-	cli.Client, err = client.Dial(cli.cancelableDial(dial), func(c *client.Client) {
+	cli.Client, err = client.DialContext(ctx, cli.cancelableDial(dial), func(c *client.Client) {
 		c.Logger.Debug(true)                           //关闭日志打印
 		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
 		c.Logger.WithHEX()                             //以HEX显示
@@ -65,9 +67,15 @@ func dialWith(dial ios.DialFunc, timeout time.Duration, setup, heartbeat func() 
 		c.Event.OnReadFrom = protocol.ReadFrom         //分包
 		c.Event.OnDealMessage = cli.handlerDealMessage //解析数据并处理
 		c.Event.OnConnected = func(c *client.Client) error {
+			defer func() { <-cli.writeGate }()
 			w := cli.wrapWriter(c)
-			<-cli.writeGate // 连接初始化完成，允许写入。
-			if _, err := cli.Write(setup().Bytes()); err != nil {
+			cli.waitMu.Lock()
+			timeout := cli.waitTimeout
+			cli.waitMu.Unlock()
+			handshake, stop := context.WithTimeout(ctx, timeout)
+			defer stop()
+			// 初始化仍持有门控，握手直接写当次连接，完成后才允许业务帧。
+			if _, err := w.writeLocked(handshake, setup().Bytes()); err != nil {
 				c.Close()
 				return err
 			}
@@ -76,11 +84,10 @@ func dialWith(dial ios.DialFunc, timeout time.Duration, setup, heartbeat func() 
 		}
 	})
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cli.cancelRun = cancel
 	go cli.Client.Run(ctx)
 
 	return cli, nil

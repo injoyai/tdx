@@ -78,6 +78,61 @@ func TestCheckedDecodersRejectInvalidIntegers(t *testing.T) {
 	}
 }
 
+func TestMetadataDecodersRejectTruncatedRecords(t *testing.T) {
+	minute := []byte{1, 0, 0, 0, 0, 0, 10, 0, 5}
+	gbbq := make([]byte, 11+29)
+	gbbq[9] = 1
+	copy(gbbq[12:18], "000001")
+	binary.LittleEndian.PutUint32(gbbq[19:23], 20261012)
+	gbbq[23] = 1
+	cat := make([]byte, 2+152)
+	cat[0] = 1
+	content := make([]byte, 12+3)
+	content[10] = 3
+	copy(content[12:], "abc")
+	for _, tc := range []struct {
+		name   string
+		data   []byte
+		decode func([]byte) error
+	}{
+		{"minute", minute, func(b []byte) error { _, err := MMinute.Decode(b); return err }},
+		{"history minute", minute, func(b []byte) error { _, err := MHistoryMinute.Decode(b); return err }},
+		{"gbbq", gbbq, func(b []byte) error { _, err := MGbbq.Decode(b); return err }},
+		{"company category", cat, func(b []byte) error { _, err := MCompanyCat.Decode(b); return err }},
+		{"company content", content, func(b []byte) error { _, err := MCompanyContent.Decode(b); return err }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.decode(tc.data); err != nil {
+				t.Fatal("valid response:", err)
+			}
+			for n := 0; n < len(tc.data); n++ {
+				if err := tc.decode(tc.data[:n]); err == nil {
+					t.Fatalf("accepted truncation at byte %d", n)
+				}
+			}
+		})
+	}
+	history, err := MHistoryMinute.Decode(minute)
+	if err != nil || history.Count != 1 || history.List[0].Price != 100 || history.List[0].Number != 5 || history.List[0].Time != "09:31" {
+		t.Fatal("valid minute fields changed", history, err)
+	}
+	for _, bad := range [][]byte{{0x80}, {0x80, 0x80, 0x80, 0x80, 0x10}} {
+		b := append([]byte{1, 0, 0, 0, 0, 0}, bad...)
+		if _, err := MMinute.Decode(b); err == nil {
+			t.Fatal("accepted invalid minute integer", bad)
+		}
+		if _, err := MHistoryMinute.Decode(b); err == nil {
+			t.Fatal("accepted invalid history integer", bad)
+		}
+	}
+	if cats, err := MCompanyCat.Decode([]byte{0, 0}); err != nil || len(cats) != 0 {
+		t.Fatal("valid empty directory", cats, err)
+	}
+	if text, err := MCompanyContent.Decode(content); err != nil || text != "abc" {
+		t.Fatal(text, err)
+	}
+}
+
 func TestCheckedQuoteCapturedSample(t *testing.T) {
 	data, err := hex.DecodeString("0136020000303030303031320bb2124c56105987e6d10cf212b78fa801ae01293dc54e8bd740acb8670086ca1e0001af36ba0c4102b467b6054203a68a0184094304891992114405862685108d0100000000e8ff320b0136303030333859098005464502468defd10cc005bed2668e05be15804d8ba12cb3b13a0083c3034100badc029d014201bc990384f70443029da503b7af074403a6e501b9db044504a6e2028dd5048d050000000000005909")
 	if err != nil {

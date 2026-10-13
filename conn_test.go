@@ -552,20 +552,30 @@ func TestConcurrentWritesDuringReconnect(t *testing.T) {
 				n := dials.Add(1)
 				if n == 1 {
 					first <- b
-				} else {
-					select {
-					case reconnected <- struct{}{}:
-					default:
-					}
 				}
 				servers.Add(1)
 				go func() {
 					defer servers.Done()
 					defer b.Close()
+					initialized := false
 					for {
 						h, _, err := readTestFrame(b)
 						if err != nil {
 							return
+						}
+						if !initialized {
+							want := uint16(protocol.TypeConnect)
+							if ex {
+								want = protocol.TypeExSetup
+							}
+							if got := binary.LittleEndian.Uint16(h[10:12]); got != want {
+								t.Errorf("business frame %04x preceded handshake %04x", got, want)
+								return
+							}
+							initialized = true
+							if n > 1 {
+								reconnected <- struct{}{}
+							}
 						}
 						if binary.LittleEndian.Uint32(h[1:5]) == 0 {
 							continue

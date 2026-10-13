@@ -169,7 +169,7 @@ func (this *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {
 	this.mu.RUnlock()
 	for i := len(ls) - 1; i >= 0; i-- {
 		v := ls[i]
-		if v.IsEquity() && t.Unix() >= v.Time.Unix() {
+		if v.IsEquity() && t.Unix() >= tdx.IntegerDay(v.Time).Unix() {
 			return v.Equity()
 		}
 	}

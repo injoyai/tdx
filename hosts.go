@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/injoyai/conv"
@@ -176,6 +177,36 @@ func (a Addrs) Sort(timeout ...time.Duration) Addrs {
 	var addrs Addrs
 	for _, r := range available {
 		addrs = append(addrs, r.host)
+	}
+	return addrs
+}
+
+func withPort(addr, port string) string {
+	if _, _, err := net.SplitHostPort(addr); err == nil {
+		return addr
+	}
+	// 裸 IPv6（含 zone）本身带冒号，不能据此判断已有端口。
+	host := addr
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	ip, _, _ := strings.Cut(host, "%")
+	if net.ParseIP(ip) != nil {
+		return net.JoinHostPort(host, port)
+	}
+	if !strings.Contains(addr, ":") {
+		return net.JoinHostPort(addr, port)
+	}
+	return addr
+}
+
+func hostAddrs(hosts, defaults []string, port string) []string {
+	if len(hosts) == 0 {
+		hosts = defaults
+	}
+	addrs := make([]string, len(hosts))
+	for i, host := range hosts {
+		addrs[i] = withPort(host, port)
 	}
 	return addrs
 }

@@ -2,12 +2,15 @@ package tdx
 
 import (
 	"context"
+	"errors"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/injoyai/ios"
+	"github.com/injoyai/ios/client"
 )
 
 func localDialListener(t *testing.T) net.Listener {
@@ -20,34 +23,81 @@ func localDialListener(t *testing.T) net.Listener {
 	return l
 }
 
-func TestDialExplicitPortAndDefaults(t *testing.T) {
+func TestDialExplicitPort(t *testing.T) {
 	l := localDialListener(t)
 	addr := l.Addr().String()
-	previous := Hosts
-	Hosts = []string{addr}
-	t.Cleanup(func() { Hosts = previous })
-	for _, factory := range []struct {
-		name string
-		new  func([]string) ios.DialFunc
-	}{{"host", NewHostDial}, {"random", NewRandomDial}, {"range", NewRangeDial}} {
-		for _, defaults := range []bool{false, true} {
-			hosts := Addrs{addr}
-			name := factory.name + "/explicit"
-			if defaults {
-				hosts, name = nil, factory.name+"/default"
+	for name, dial := range map[string]ios.DialFunc{
+		"tcp":    NewTCPDial(addr),
+		"host":   NewHostDial(Addrs{addr}),
+		"random": NewRandomDial(Addrs{addr}),
+		"range":  NewRangeDial(Addrs{addr}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			c, key, err := dial(ctx)
+			if err != nil {
+				t.Fatal(err)
 			}
-			t.Run(name, func(t *testing.T) {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-				defer cancel()
-				c, key, err := factory.new(hosts)(ctx)
+			defer c.Close()
+			if key != addr {
+				t.Fatalf("dial address = %q, want %q", key, addr)
+			}
+		})
+	}
+}
+
+func TestDialRequiresPort(t *testing.T) {
+	addr := "127.0.0.1"
+	for name, dial := range map[string]ios.DialFunc{
+		"tcp":    NewTCPDial(addr),
+		"host":   NewHostDial(Addrs{addr}),
+		"random": NewRandomDial(Addrs{addr}),
+		"range":  NewRangeDial(Addrs{addr}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			c, _, err := dial(ctx)
+			if c != nil {
+				c.Close()
+				t.Fatal("bare IP established a connection")
+			}
+			var addressError *net.AddrError
+			if !errors.As(err, &addressError) || addressError.Addr != addr {
+				t.Fatalf("bare IP must fail address validation, got %v", err)
+			}
+		})
+	}
+}
+
+func TestStandardDialHostsDefaults(t *testing.T) {
+	previous := Hosts
+	Hosts = Addrs{localDialListener(t).Addr().String()}
+	t.Cleanup(func() { Hosts = previous })
+	for name, dial := range map[string]func([]string, ...client.Option) (*StConn, error){
+		"host": DialHosts, "random": DialHostsRandom, "range": DialHostsRange,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, hosts := range [][]string{nil, {}} {
+				c, err := dial(hosts, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
 				if err != nil {
+					t.Fatal("standard defaults were not selected:", err)
+				}
+				if err := c.Close(); err != nil {
 					t.Fatal(err)
 				}
-				defer c.Close()
-				if key != addr {
-					t.Fatalf("dial address = %q, want %q", key, addr)
-				}
-			})
+			}
+		})
+	}
+	Hosts = nil
+	for _, dial := range []func([]string, ...client.Option) (*StConn, error){DialHosts, DialHostsRandom, DialHostsRange} {
+		c, err := dial(nil, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
+		if c != nil || err == nil {
+			if c != nil {
+				c.Close()
+			}
+			t.Fatal("empty standard defaults must return an error", c, err)
 		}
 	}
 }
@@ -71,15 +121,45 @@ func TestHostDialRotation(t *testing.T) {
 }
 
 func TestHostAddrsPreservesPortsAndInput(t *testing.T) {
-	hosts := []string{"127.0.0.1", "127.0.0.1:12345", "[::1]:12345"}
-	for _, port := range []string{"7709", ExPort} {
-		want := []string{"127.0.0.1:" + port, hosts[1], hosts[2]}
-		if got := hostAddrs(hosts, port); !reflect.DeepEqual(got, want) {
+	hosts := []string{"127.0.0.1", "127.0.0.1:12345", "[::1]:12345", "::1", "[::1]", "fe80::1%lo0", "[::1", "::1]"}
+	for _, port := range []string{stPort, ExPort} {
+		want := []string{"127.0.0.1:" + port, hosts[1], hosts[2], "[::1]:" + port, "[::1]:" + port, "[fe80::1%lo0]:" + port, hosts[6], hosts[7]}
+		if got := hostAddrs(hosts, nil, port); !reflect.DeepEqual(got, want) {
 			t.Fatalf("addresses = %v, want %v", got, want)
+		}
+		if got := hostAddrs(nil, hosts, port); !reflect.DeepEqual(got, want) {
+			t.Fatalf("default addresses = %v, want %v", got, want)
 		}
 	}
 	if hosts[0] != "127.0.0.1" {
 		t.Fatal("normalization modified caller's hosts")
+	}
+}
+
+func TestSharedDialFunctions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	hosts := []string{"127.0.0.1:1", "127.0.0.1:2"}
+	for name, dial := range map[string]ios.DialFunc{"host": NewHostDial(hosts), "random": NewRandomDial(hosts), "tcp": NewTCPDial(hosts[0])} {
+		t.Run(name, func(t *testing.T) {
+			var wg sync.WaitGroup
+			for i := 0; i < 4; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for j := 0; j < 100; j++ {
+						c, key, err := dial(ctx)
+						if c != nil {
+							c.Close()
+						}
+						if !errors.Is(err, context.Canceled) || (key != hosts[0] && key != hosts[1]) {
+							t.Error("canceled dial", key, err)
+						}
+					}
+				}()
+			}
+			wg.Wait()
+		})
 	}
 }
 
@@ -101,7 +181,7 @@ func TestDialExHqHostsUsesExtendedDefaults(t *testing.T) {
 
 func TestDialEmptyHosts(t *testing.T) {
 	previous, previousEx := Hosts, ExHosts
-	Hosts, ExHosts = nil, nil
+	Hosts, ExHosts = Addrs{localDialListener(t).Addr().String()}, nil
 	t.Cleanup(func() { Hosts, ExHosts = previous, previousEx })
 	for _, factory := range []func([]string) ios.DialFunc{NewHostDial, NewRandomDial, NewRangeDial} {
 		c, _, err := factory(nil)(context.Background())
@@ -110,7 +190,6 @@ func TestDialEmptyHosts(t *testing.T) {
 		}
 	}
 	// 扩展默认列表为空时，即使标准地址可用也不能回退到标准协议。
-	Hosts = []string{localDialListener(t).Addr().String()}
 	if c, err := DialExHqHosts(nil, WithRedial(false), WithLevel(LevelNone), WithDebug(false)); c != nil || err == nil {
 		if c != nil {
 			c.Close()

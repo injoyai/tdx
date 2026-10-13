@@ -180,6 +180,23 @@ func TestWriteMinutePlaceholderDedup(t *testing.T) {
 	}
 }
 
+func TestWriteMinutePartialDay(t *testing.T) {
+	day := time.Date(2026, 10, 12, 0, 0, 0, 0, time.Local)
+	ks := protocol.Klines{
+		&protocol.Kline{Time: day.Add(9*time.Hour + 31*time.Minute), Close: 10000, Volume: 1, Amount: 10000},
+		&protocol.Kline{Time: day.Add(9*time.Hour + 32*time.Minute), Close: 10000, Volume: 1, Amount: 10000},
+	}
+	bs, err := WriteMinute1("sz000001", ks)
+	if err != nil || len(bs) != 64 {
+		t.Fatal("partial day gained a tail placeholder", len(bs), err)
+	}
+	for i, want := range []uint16{571, 572} {
+		if got := binary.LittleEndian.Uint16(bs[i*32+2 : i*32+4]); got != want {
+			t.Fatal("minute order", got, want)
+		}
+	}
+}
+
 // TestWriteDayVolume 验证日线成交量单位: 股票写 手×100=股,指数原样写手
 func TestWriteDayVolume(t *testing.T) {
 	k := &protocol.Kline{

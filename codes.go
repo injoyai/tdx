@@ -84,7 +84,7 @@ func NewCodesSqlite(op ...CodesOption) (*Codes, error) {
 	return NewCodes(op...)
 }
 
-func NewCodes(op ...CodesOption) (*Codes, error) {
+func NewCodes(op ...CodesOption) (result *Codes, err error) {
 	cs := &Codes{
 		spec:      DefaultCodesSpec,
 		retry:     DefaultRetry,
@@ -94,7 +94,18 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 
 	WithCodesOption(op...)(cs)
 
-	var err error
+	ownedClient, ownedDB := cs.c == nil, cs.db == nil
+	ready := false
+	defer func() {
+		if !ready {
+			if ownedClient && clientOrNil(cs.c) != nil {
+				err = errors.Join(err, cs.c.Close())
+			}
+			if ownedDB && cs.db != nil {
+				err = errors.Join(err, cs.db.Close())
+			}
+		}
+	}()
 
 	// 初始化连接
 	if cs.c == nil {
@@ -131,8 +142,11 @@ func NewCodes(op ...CodesOption) (*Codes, error) {
 
 	// 立即/定时更新
 	err = NewTimer(cs.spec, cs.retry, cs)
-
-	return cs, err
+	if err != nil {
+		return nil, err
+	}
+	ready = true
+	return cs, nil
 }
 
 var _ ICodes = &Codes{}

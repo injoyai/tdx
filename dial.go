@@ -5,72 +5,53 @@ import (
 	"errors"
 	"math/rand"
 	"net"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/injoyai/ios"
-	"github.com/injoyai/ios/module/tcp"
 	"github.com/injoyai/logs"
 )
 
+// NewTCPDial 连接指定的完整 TCP 地址，不补端口。
 func NewTCPDial(addr string) ios.DialFunc {
-	return tcp.NewDial(withPort(addr, "7709"))
-}
-
-func withPort(addr, port string) string {
-	if !strings.Contains(addr, ":") {
-		return net.JoinHostPort(addr, port)
+	return func(ctx context.Context) (ios.ReadWriteCloser, string, error) {
+		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
+		return c, addr, err
 	}
-	return addr
 }
 
-func hostAddrs(hosts []string, port string) []string {
-	addrs := make([]string, len(hosts))
-	for i, host := range hosts {
-		addrs[i] = withPort(host, port)
-	}
-	return addrs
-}
-
+// NewHostDial 每次连接下一个完整地址；空列表返回错误。
 func NewHostDial(hosts []string) ios.DialFunc {
-	if len(hosts) == 0 {
-		hosts = Hosts
-	}
 	index := 0
+	var mu sync.Mutex
 
 	return func(ctx context.Context) (ios.ReadWriteCloser, string, error) {
 		if len(hosts) == 0 {
 			return nil, "", errors.New("服务器列表为空")
 		}
-		defer func() { index++ }()
-		if index >= len(hosts) {
-			index = 0
-		}
-		addr := withPort(hosts[index], "7709")
+		mu.Lock()
+		addr := hosts[index]
+		index = (index + 1) % len(hosts)
+		mu.Unlock()
 		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 		return c, addr, err
 	}
 }
 
+// NewRandomDial 随机连接列表中的完整地址；空列表返回错误。
 func NewRandomDial(hosts []string) ios.DialFunc {
-	if len(hosts) == 0 {
-		hosts = Hosts
-	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return func(ctx context.Context) (ios.ReadWriteCloser, string, error) {
 		if len(hosts) == 0 {
 			return nil, "", errors.New("服务器列表为空")
 		}
-		addr := withPort(hosts[r.Intn(len(hosts))], "7709")
+		addr := hosts[rand.Intn(len(hosts))]
 		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 		return c, addr, err
 	}
 }
 
+// NewRangeDial 遍历完整地址，首次连接成功即返回；空列表返回错误。
 func NewRangeDial(hosts []string) ios.DialFunc {
-	if len(hosts) == 0 {
-		hosts = Hosts
-	}
 	return func(ctx context.Context) (c ios.ReadWriteCloser, _ string, err error) {
 		if len(hosts) == 0 {
 			return nil, "", errors.New("服务器列表为空")
@@ -81,7 +62,6 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 				return nil, "", ctx.Err()
 			default:
 			}
-			addr = withPort(addr, "7709")
 			c, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
 			if err == nil {
 				return c, addr, nil

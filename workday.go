@@ -67,7 +67,7 @@ func NewWorkdaySqlite(op ...WorkdayOption) (*Workday, error) {
 	return NewWorkday(op...)
 }
 
-func NewWorkday(op ...WorkdayOption) (*Workday, error) {
+func NewWorkday(op ...WorkdayOption) (result *Workday, err error) {
 
 	w := &Workday{
 		spec:       DefaultWorkdaySpec,
@@ -84,7 +84,18 @@ func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 		v(w)
 	}
 
-	var err error
+	ownedClient, ownedDB := w.c == nil, w.db == nil
+	ready := false
+	defer func() {
+		if !ready {
+			if ownedClient && clientOrNil(w.c) != nil {
+				err = errors.Join(err, w.c.Close())
+			}
+			if ownedDB && w.db != nil {
+				err = errors.Join(err, w.db.Close())
+			}
+		}
+	}()
 	if w.db == nil {
 		if w.dialDB == nil {
 			w.dialDB = func() (*xorms.Engine, error) {
@@ -116,8 +127,11 @@ func NewWorkday(op ...WorkdayOption) (*Workday, error) {
 
 	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
 	err = NewTimer(w.spec, w.retry, w)
-
-	return w, err
+	if err != nil {
+		return nil, err
+	}
+	ready = true
+	return w, nil
 }
 
 type Workday struct {
