@@ -5,7 +5,6 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/examples/common"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -22,26 +21,27 @@ func main() {
 	if *stocks && *all {
 		logs.Panic("-stocks 与 -all 不能同时使用")
 	}
-	common.Run(func(c tdx.Client) {
-		if *stocks {
-			codes, err := c.GetStockCodeAll()
-			logs.PanicErr(err)
-			for _, code := range codes {
-				logs.Debug(code)
-			}
-			logs.Debug("股票总数:", len(codes))
-			return
-		}
-		market := protocol.Exchange(*exchange)
-		total, err := c.GetCount(market)
+	c := tdx.NewClient(tdx.WithRedial(false))
+	defer c.Close()
+
+	if *stocks {
+		codes, err := c.GetStockCodeAll()
 		logs.PanicErr(err)
-		resp, err := query(c, market, uint32(*start), uint16(*count), *all)
-		logs.PanicErr(err)
-		for _, code := range resp.List {
-			logs.Debug(code.Instrument, code.Name)
+		for _, code := range codes {
+			logs.Debug(code)
 		}
-		logs.Debug("市场总数:", total, "本次返回:", resp.Count)
-	})
+		logs.Debug("股票总数:", len(codes))
+		return
+	}
+	market := protocol.Exchange(*exchange)
+	total, err := c.GetCount(market)
+	logs.PanicErr(err)
+	resp, err := query(c, market, uint32(*start), uint16(*count), *all)
+	logs.PanicErr(err)
+	for _, code := range resp.List {
+		logs.Debug(code.Instrument, code.Name)
+	}
+	logs.Debug("市场总数:", total, "本次返回:", resp.Count)
 }
 
 func query(c tdx.Client, exchange protocol.Exchange, start uint32, count uint16, all bool) (*tdx.CodeResp, error) {

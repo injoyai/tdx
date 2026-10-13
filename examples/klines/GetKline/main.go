@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/examples/common"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -30,14 +29,15 @@ func main() {
 		before, err = time.ParseInLocation("20060102", *until, time.Local)
 		logs.PanicErr(err)
 	}
-	common.Run(func(c tdx.Client) {
-		resp, err := query(c, uint8(*category), *code, uint16(*start), uint16(*count), *all, before)
-		logs.PanicErr(err)
-		logs.Infof("%s: %d 根，成交量单位 %s", resp.Instrument, resp.Count, resp.VolumeUnit)
-		for _, k := range resp.List {
-			logs.Debug(k)
-		}
-	})
+	c := tdx.NewClient(tdx.WithRedial(false))
+	defer c.Close()
+
+	resp, err := query(c, uint8(*category), *code, uint16(*start), uint16(*count), *all, before)
+	logs.PanicErr(err)
+	logs.Infof("%s: %d 根，成交量单位 %s", resp.Instrument, resp.Count, resp.VolumeUnit)
+	for _, k := range resp.List {
+		logs.Debug(k)
+	}
 }
 
 func query(c tdx.Client, category uint8, code string, start, count uint16, all bool, before time.Time) (*tdx.KlineResp, error) {

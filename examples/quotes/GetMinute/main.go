@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/examples/common"
 )
 
 func main() {
@@ -17,14 +16,15 @@ func main() {
 		_, err := time.ParseInLocation("20060102", *date, time.Local)
 		logs.PanicErr(err)
 	}
-	common.Run(func(c tdx.Client) {
-		resp, err := query(c, *code, *date)
-		logs.PanicErr(err)
-		for _, minute := range resp.List {
-			logs.Debug(minute)
-		}
-		logs.Debug("总数:", resp.Count, "成交量单位:", resp.VolumeUnit)
-	})
+	c := tdx.NewClient(tdx.WithRedial(false))
+	defer c.Close()
+
+	resp, err := query(c, *code, *date)
+	logs.PanicErr(err)
+	for _, minute := range resp.List {
+		logs.Debug(minute)
+	}
+	logs.Debug("总数:", resp.Count, "成交量单位:", resp.VolumeUnit)
 }
 
 func query(c tdx.Client, code, date string) (*tdx.MinuteResp, error) {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/examples/common"
 )
 
 func main() {
@@ -25,14 +24,15 @@ func main() {
 	if *start > 65535 || *count == 0 || *count > limit {
 		logs.Panic("分页参数超出范围")
 	}
-	common.Run(func(c tdx.Client) {
-		resp, err := query(c, *code, *date, uint16(*start), uint16(*count), *all)
-		logs.PanicErr(err)
-		for _, trade := range resp.List {
-			logs.Debug(trade)
-		}
-		logs.Debug("总数:", resp.Count, "成交量单位:", resp.VolumeUnit)
-	})
+	c := tdx.NewClient(tdx.WithRedial(false))
+	defer c.Close()
+
+	resp, err := query(c, *code, *date, uint16(*start), uint16(*count), *all)
+	logs.PanicErr(err)
+	for _, trade := range resp.List {
+		logs.Debug(trade)
+	}
+	logs.Debug("总数:", resp.Count, "成交量单位:", resp.VolumeUnit)
 }
 
 func query(c tdx.Client, code, date string, start, count uint16, all bool) (*tdx.TradeResp, error) {
