@@ -178,9 +178,20 @@ tdx.ExHosts = tdx.ExHosts.Sort()
 
 超时是整轮测速的时间上限（默认一秒），按 TCP 连接耗时排序；全不可用或输入为空时返回空列表，不使用默认地址，也不无限等待第一个可用地址。测速仅检查 TCP 建连，不代表行情握手或查询成功。
 
-`NewManage` 初始化失败会关闭内部创建的、支持 `Close()` 的连接池；`WithPool` 传入的外部池仍由调用方关闭。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化失败会返回错误。
+`Manage.Close()` 先停止工作日任务调度，按创建顺序的逆序释放内部缓存和连接池，再等待正在执行的任务退出，避免任务等待空连接池时互相阻塞；初始化失败也执行相同清理。关闭没有强制截止时间，任务自身须有界退出；外部共享连接池的阻塞由调用方解除。`WithPool` / `WithCodes` / `WithWorkday` / `WithGbbq` 直接注入的资源仍由调用方关闭；相应 `WithDial*` 工厂返回的资源归管理器所有。pull 懒加载的股本缓存也由管理器释放。旧 `extend.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化或监听失败会返回错误并关闭自建缓存；两者共用按 URL 路径匹配的路由，支持查询参数，保持原始 JSON 列表/映射返回。
 
-`NewCodes`、`NewGbbq`、`NewWorkday` 初始化失败返回 nil 和错误，并释放本次通过工厂创建的客户端及数据库；`With*Client` / `With*DB` 直接注入的共享资源仍由调用方管理。相应 `With*DialClient` / `With*DialDB` 工厂应返回本次构造独占的资源。HTTP 股本查询和本地查询统一按记录日期的零点生效，协议记录中的 15:00 不作为生效时刻。
+`Codes`、`Gbbq`、`Workday` 使用完成后须调用 `Close()`，停止定时更新并释放自建客户端和数据库。关闭可重复或并发调用，会等待在途更新；关闭后 `Update()` 返回 `net.ErrClosed`，已有内存快照仍可查询。`NewCodes`、`NewGbbq`、`NewWorkday` 初始化失败返回 nil 和错误，并释放本次通过工厂创建的客户端及数据库；`With*Client` / `With*DB` 直接注入的共享资源仍由调用方管理。相应 `With*DialClient` / `With*DialDB` 工厂应返回本次构造独占的资源。HTTP 股本查询和本地查询统一按记录日期的零点生效，协议记录中的 15:00 不作为生效时刻。
+
+独立调度使用 `stop, err := tdx.StartTimer(spec, retry, updater)`，成功后 `defer stop()`。它先验证 cron 表达式并立即更新一次，然后启动定时任务；同一任务不会重叠，停止会取消重试等待并等待正在执行的更新返回。更新函数本身须有有限超时。原 `NewTimer` 签名保留，用于持续到进程退出的任务。
+
+`extend.DialCodesHTTP` / `DialGbbqHTTP` 返回的缓存客户端也须 `Close()`，关闭会取消在途 HTTP 请求并停止更新。外部 HTTP 数据请求（代码/股本缓存、同花顺、新浪和股本文件下载）默认总超时 30 秒；非成功状态、畸形同花顺响应，以及新浪复权因子中的空记录、非法数字、NaN 或无限值均返回错误。
+
+`lib/zip.Encode` 拒绝源文件与目标文件相同的路径、硬链接或符号链接，检查失败不会截断源文件；压缩写入及关闭错误会返回调用方。
+
+内置 pull 代码复用协议层校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字，完整市场键须匹配品种。过去被接受的非法配置现在提前返回错误；合法代码沿用原文件名，自定义市场保留自己的代码规则。`Instrument.Market()` 将沪市 880/881 板块归为 `cn/block`，不再误归 `cn/index`。
+
+边界行为修正：`Merge241(n<=0)` 原样返回；`DoIncomes` 忽略负偏移，起始日期晚于全部数据时返回空。pull 的 `DayToPeriod` / `MinuteToPeriod` / `DayToCalendar` 直接合并原始浮点量价，保留超过三位小数及负价格；不再往返整数厘。裸美股代码统一转大写参与去重和文件定位。旧的小写美股库不会自动重命名，使用前应在停机备份后合并到大写文件名，包含相应 WAL/SHM；不要直接覆盖已有大写库。
+
 
 `extend.WriteMinute1` 仅在当日包含 15:00 收盘记录时补尾盘占位，盘中或部分日的数据原样编码；已有占位不会重复补入。
 

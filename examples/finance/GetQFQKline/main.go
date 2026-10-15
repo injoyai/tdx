@@ -18,6 +18,7 @@ func main() {
 	defer c.Close()
 	gb, err := tdx.NewGbbq(tdx.WithGbbqClient(c))
 	logs.PanicErr(err)
+	defer gb.Close()
 	result, err := c.GetKlineDayAll(*code)
 	logs.PanicErr(err)
 	resp, err := result.StandardResponse()

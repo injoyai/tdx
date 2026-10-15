@@ -37,3 +37,26 @@ func TestParseInstrument(t *testing.T) {
 		}
 	}
 }
+
+func TestInstrumentBlockMarket(t *testing.T) {
+	for _, code := range []string{"sh880001", "sh881001", "880001"} {
+		i, err := ParseInstrument(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		market, err := i.Market()
+		if err != nil || market != MarketBlock {
+			t.Fatal(code, market, err)
+		}
+	}
+	for _, code := range []string{"sz880001", "bj881001", "sh000001"} {
+		i, err := ParseInstrument(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		market, err := i.Market()
+		if err != nil || market == MarketBlock {
+			t.Fatal(code, market, err)
+		}
+	}
+}

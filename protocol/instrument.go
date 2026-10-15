@@ -26,7 +26,7 @@ func (i Instrument) Market() (Market, error) {
 		switch {
 		case IsETF(code):
 			return MarketEtfLof, nil
-		case isBlock(code):
+		case i.Exchange == ExchangeSH && isBlock(i.Code):
 			return MarketBlock, nil
 		case IsIndex(code):
 			return MarketIndex, nil

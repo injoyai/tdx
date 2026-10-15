@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -115,18 +116,26 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.54")
 	req.Header.Set("Referer", "http://stockpage.10jqka.com.cn/")
 	req.Header.Set("DNT", "1")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := dataHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("同花顺 HTTP 状态: %d", resp.StatusCode)
+	}
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
+	bs = bytes.TrimSpace(bs)
+	bs = bytes.TrimSuffix(bs, []byte(";"))
 	n := bytes.IndexByte(bs, '(')
+	if n < 0 || len(bs) <= n+1 || bs[len(bs)-1] != ')' {
+		return nil, fmt.Errorf("同花顺响应格式错误")
+	}
 	bs = bs[n+1 : len(bs)-1]
 
 	m := map[string]any{}
@@ -138,6 +147,9 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 	total := conv.Int(m["total"])
 	sortYears := conv.Interfaces(m["sortYear"])
 	priceFactor := conv.Float64(m["priceFactor"])
+	if priceFactor <= 0 || math.IsNaN(priceFactor) || math.IsInf(priceFactor, 0) {
+		return nil, fmt.Errorf("同花顺 priceFactor 无效")
+	}
 	prices := strings.Split(conv.String(m["price"]), ",")
 	dates := strings.Split(conv.String(m["dates"]), ",")
 	volumes := strings.Split(conv.String(m["volumn"]), ",")
@@ -147,7 +159,7 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 		total -= 1
 	}
 	//判断数量是否对应
-	if total*4 != len(prices) || total != len(dates) || total != len(volumes) {
+	if total <= 0 || total != len(dates) || total != len(volumes) || len(prices)%4 != 0 || total != len(prices)/4 {
 		return nil, fmt.Errorf("total=%d prices=%d dates=%d volumns=%d", total, len(prices), len(dates), len(volumes))
 	}
 
@@ -157,12 +169,17 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 		if ls := conv.Ints(v); len(ls) == 2 {
 			year := conv.Int(ls[0])
 			length := conv.Int(ls[1])
+			if length < 0 || index > len(dates) || (i != len(sortYears)-1 && length > len(dates)-index) {
+				return nil, fmt.Errorf("同花顺 sortYear 长度无效")
+			}
 			if i == len(sortYears)-1 {
 				mYear[year] = dates[index:]
 				break
 			}
 			mYear[year] = dates[index : index+length]
 			index += length
+		} else {
+			return nil, fmt.Errorf("同花顺 sortYear 格式错误")
 		}
 	}
 
@@ -187,6 +204,9 @@ func GetTHSDayKline(code string, _type uint8) (protocol.Klines, error) {
 			})
 			i++
 		}
+	}
+	if i != total {
+		return nil, fmt.Errorf("同花顺年份记录数量不符: %d != %d", i, total)
 	}
 
 	return ls, nil

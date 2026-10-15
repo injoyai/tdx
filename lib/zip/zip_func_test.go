@@ -92,3 +92,60 @@ func TestDecodeRejectsSymlinkEscapes(t *testing.T) {
 		t.Fatal("archive symlink accepted")
 	}
 }
+
+func TestEncodeProtectsSource(t *testing.T) {
+	for _, kind := range []string{"same", "relative", "hardlink", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			source := filepath.Join(dir, "source.txt")
+			const contents = "preserve source contents"
+			if err := os.WriteFile(source, []byte(contents), 0600); err != nil {
+				t.Fatal(err)
+			}
+			target := source
+			switch kind {
+			case "relative":
+				t.Chdir(dir)
+				target = "./source.txt"
+			case "hardlink", "symlink":
+				target = filepath.Join(dir, "alias.zip")
+				link := os.Link
+				if kind == "symlink" {
+					link = os.Symlink
+				}
+				if err := link(source, target); err != nil {
+					t.Skip(err)
+				}
+			}
+			if err := Encode(source, target); err == nil {
+				t.Fatal("same source accepted")
+			}
+			if got, err := os.ReadFile(source); err != nil || string(got) != contents {
+				t.Fatal("source changed", string(got), err)
+			}
+		})
+	}
+}
+
+func TestEncodeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.txt")
+	want := bytes.Repeat([]byte("fixed sample\n"), 100)
+	if err := os.WriteFile(source, want, 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "nested", "archive.zip")
+	if err := Encode(source, target); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out")
+	if err := Decode(target, out); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(out, "source.txt")); err != nil || !bytes.Equal(got, want) {
+		t.Fatal("round trip mismatch", err)
+	}
+	if got, err := os.ReadFile(source); err != nil || !bytes.Equal(got, want) {
+		t.Fatal("source changed", err)
+	}
+}

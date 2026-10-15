@@ -10,17 +10,19 @@ import (
 func DoIncomes(ks protocol.Klines, startAt time.Time, days ...int) Incomes {
 	year, month, day := startAt.Date()
 	start := time.Date(year, month, day, 15, 0, 0, 0, startAt.Location()).Unix()
+	index := len(ks)
 	for i, v := range ks {
 		if v.Time.Unix() >= start {
-			ks = ks[i:]
+			index = i
 			break
 		}
 	}
+	ks = ks[index:]
 
 	ls := Incomes{}
 
 	for _, v := range days {
-		if v < len(ks) {
+		if v >= 0 && v < len(ks) {
 			x := ks[v]
 			ls = append(ls, &Income{
 				Offset: v,

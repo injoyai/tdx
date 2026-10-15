@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -111,5 +112,43 @@ func TestMarketPrefixDoesNotStripBareSymbols(t *testing.T) {
 		if _, err := ParseCode(input); err == nil {
 			t.Fatal("非法显式市场代码被接受", input)
 		}
+	}
+}
+
+func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
+	for _, input := range []string{
+		"us.12345", "us.ABCDEFGHIJ", "ABCDEFGHIJ", "us.AAPL-", "hk.ABCDEFGHIJ", "cff.12345", "cff.ABCDEFGHI1",
+		"cn/stock.hk00700", "cn/index.sh600000", "cn/stock.sh110001", "hk/stock.HSI", "hk/index.00700",
+		"us/stock.12345", "us/stock.ABCDEFGHIJ", "cn/future.us.AAPL", "cn/future.cff/12345", "unknown/IF2609",
+	} {
+		t.Run(input, func(t *testing.T) {
+			if got, err := ParseCode(input); err == nil {
+				t.Fatal("invalid builtin accepted", got)
+			}
+		})
+	}
+	got, err := ParseCode("CN/STOCK.600000")
+	if err != nil || got.Market != MarketAStock || got.FileName() != "600000" {
+		t.Fatal("legacy filename changed", got, err)
+	}
+	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
+	got, err = ParseCode("test.arbitrary-opaque-code")
+	if err != nil || got.Code != "arbitrary-opaque-code" {
+		t.Fatal("custom market validation changed", got, err)
+	}
+}
+
+func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
+	dir := t.TempDir()
+	for _, input := range []string{"us.12345", "us.ABCDEFGHIJ", "cn/stock.hk00700"} {
+		s, err := NewService(&Config{Dir: dir, Codes: []string{input}})
+		if err == nil {
+			s.Close()
+			t.Fatal("invalid input initialized service", input)
+		}
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 0 {
+		t.Fatal("invalid codes created files", files, err)
 	}
 }

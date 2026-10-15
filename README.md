@@ -150,6 +150,7 @@ c, _ := tdx.DialDefault()
 defer c.Close()
 
 gb, _ := tdx.NewGbbq(tdx.WithGbbqClient(c)) // 首次会拉取并缓存 gbbq
+defer gb.Close()
 
 // 方式一: 一步到位拉取全量历史 + 复权
 qfq, _ := gb.QFQKlineDay("sh600519") // 前复权日线

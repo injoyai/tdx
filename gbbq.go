@@ -83,15 +83,20 @@ func NewGbbq(op ...GbbqOption) (result *Gbbq, err error) {
 	WithGbbqOption(op...)(s)
 
 	ownedClient, ownedDB := s.c == nil, s.db == nil
+	s.updates.cleanup = func() error {
+		var err error
+		if ownedClient && clientOrNil(s.c) != nil {
+			err = errors.Join(err, s.c.Close())
+		}
+		if ownedDB && s.db != nil {
+			err = errors.Join(err, s.db.Close())
+		}
+		return err
+	}
 	ready := false
 	defer func() {
 		if !ready {
-			if ownedClient && clientOrNil(s.c) != nil {
-				err = errors.Join(err, s.c.Close())
-			}
-			if ownedDB && s.db != nil {
-				err = errors.Join(err, s.db.Close())
-			}
+			err = errors.Join(err, s.Close())
 		}
 	}()
 
@@ -131,7 +136,7 @@ func NewGbbq(op ...GbbqOption) (result *Gbbq, err error) {
 	}
 
 	// 定时/立即更新
-	err = NewTimer(s.spec, s.retry, s)
+	s.updates.stop, err = StartTimer(s.spec, s.retry, s)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +145,7 @@ func NewGbbq(op ...GbbqOption) (result *Gbbq, err error) {
 }
 
 type Gbbq struct {
+	updates
 	spec       string
 	retry      int
 	updateKey  string
@@ -265,6 +271,10 @@ func (this *Gbbq) GetTurnover(code string, t time.Time, volume int64) float64 {
 }
 
 func (this *Gbbq) Update() error {
+	return this.updates.run(this.refresh)
+}
+
+func (this *Gbbq) refresh() error {
 	old, err := this.loading()
 	if err != nil {
 		return err

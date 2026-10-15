@@ -11,9 +11,7 @@ import (
 func main() {
 	m, err := tdx.NewManage()
 	logs.PanicErr(err)
-	if closer, ok := m.IPool.(interface{ Close() error }); ok {
-		defer closer.Close()
-	}
+	defer m.Close()
 	logs.Debug("今天是否为交易日:", m.Workday.TodayIs())
 	logs.Debug("股票数量:", len(m.Codes.GetStocks()))
 	for _, code := range m.Codes.GetIndexCodes() {

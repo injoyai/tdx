@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/hex"
 	"testing"
+	"time"
 )
 
 func Test_stockKline_Frame(t *testing.T) {
@@ -51,5 +52,25 @@ func TestNormalizeKlineVolume(t *testing.T) {
 				t.Fatalf("normalizeKlineVolume() = %d, want %d", got, test.want)
 			}
 		})
+	}
+}
+
+func TestMerge241Periods(t *testing.T) {
+	day := time.Date(2026, 1, 5, 9, 30, 0, 0, time.Local)
+	ks := Klines{{Time: day, Open: 1000, High: 1000, Low: 1000, Close: 1000, Volume: 10}}
+	for i := 1; i <= 5; i++ {
+		ks = append(ks, &Kline{Time: day.Add(time.Duration(i) * time.Minute), Open: 1000, High: 1100, Low: 900, Close: 1050, Volume: 1})
+	}
+	for _, n := range []int{-1, 0} {
+		if got := ks.Merge241(n); len(got) != len(ks) || got[0] != ks[0] {
+			t.Fatal("invalid period changed input", n)
+		}
+	}
+	got := ks.Merge241(5)
+	if len(got) != 49 || got[0].Volume != 10 || got[1].Volume != 5 || got[1].Time != day.Add(5*time.Minute) || got[1].High != 1100 || got[1].Low != 900 {
+		t.Fatal("normal aggregation changed", got)
+	}
+	if len(ks) != 6 || ks[1].Volume != 1 {
+		t.Fatal("mutated input")
 	}
 }

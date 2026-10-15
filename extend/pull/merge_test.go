@@ -87,3 +87,27 @@ func TestMinuteToPeriod(t *testing.T) {
 		t.Errorf("第二根错误: %+v", out[1])
 	}
 }
+
+func TestPeriodMergePreservesPrecisionAndInput(t *testing.T) {
+	for _, price := range []float64{0.1234, -1.2345} {
+		days := []*KlineDay{
+			{Unix: 1, Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Turnover: 1, FloatStock: 100, TotalStock: 200},
+			{Unix: 2, Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3, Turnover: 2, FloatStock: 110, TotalStock: 220},
+		}
+		got := DayToPeriod(days, 2)
+		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Turnover != 3 || got[0].FloatStock != 110 || got[0].TotalStock != 220 || got[0].Unix != 2 {
+			t.Fatal("day precision/metadata lost", got)
+		}
+		minutes := []*KlineMinute{
+			{Unix: 1, Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: MinuteSourceTrade},
+			{Unix: 2, Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
+		}
+		min := MinuteToPeriod(minutes, 2)
+		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || min[0].Amount != got[0].Amount || min[0].Volume != 5 || min[0].Source != MinuteSourceTrade {
+			t.Fatal("minute precision/source lost", min)
+		}
+		if days[0].Volume != 2 || minutes[0].Volume != 2 {
+			t.Fatal("mutated input")
+		}
+	}
+}

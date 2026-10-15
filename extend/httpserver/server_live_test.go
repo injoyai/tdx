@@ -20,10 +20,6 @@ func TestServerLive(t *testing.T) {
 	if host == "" {
 		host = tdx.Hosts[0]
 	}
-	// 本测试只验证数量路由，避免自动初始化共享代码缓存而触发全市场拉取。
-	previous := tdx.DefaultCodes
-	tdx.DefaultCodes = tdx.NewCodesBase()
-	t.Cleanup(func() { tdx.DefaultCodes = previous })
 	var mu sync.Mutex
 	var next time.Time
 	closed := make(chan struct{})

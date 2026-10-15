@@ -125,52 +125,55 @@ func parseMarketPrefix(s string) (Code, bool, error) {
 }
 
 func codeInMarket(prefix, body string) (Code, error) {
-	if body == "" {
-		return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
-	}
 	lower := strings.ToLower(prefix)
-	switch lower {
-	case "sh", "sz", "bj":
-		if len(body) == 6 && isAllDigit(body) {
-			if market, ok := classifyStd(lower + body); ok {
-				return Code{Market: market, Code: lower + body}, nil
-			}
-		}
-	case "hk":
-		body = strings.ToUpper(body)
-		if len(body) == 5 && isAllDigit(body) {
-			return Code{Market: MarketHK, Code: body}, nil
-		}
-		if isAlphanumeric(body) && !isAllDigit(body) {
-			return Code{Market: MarketHKIndex, Code: body}, nil
-		}
-	case "us":
-		for _, part := range strings.Split(strings.ReplaceAll(body, "-", "."), ".") {
-			if !isAlphanumeric(part) {
-				return Code{}, fmt.Errorf("pull: 非法美股代码 %q", body)
-			}
-		}
-		return Code{Market: MarketUS, Code: strings.ToUpper(body)}, nil
-	case "cff", "czc", "dce", "shf", "gfe", "qhz":
-		if isAlphanumeric(body) && !isAllLetter(body) {
-			return Code{Market: MarketFuture, Code: lower + "/" + body}, nil
-		}
+	query := lower + "." + body
+	explicit := Market(lower)
+	switch explicit {
+	case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock, MarketFuture:
+		query = body
+	case MarketHK:
+		query = "hk." + body
+	case MarketHKIndex:
+		query = "hi." + body
+	case MarketUS:
+		query = "us." + body
 	default:
-		market := Market(prefix)
-		switch Market(lower) {
-		case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
-			market, body = Market(lower), strings.ToLower(body)
-		case MarketHK, MarketHKIndex, MarketUS:
-			market, body = Market(lower), strings.ToUpper(body)
-		case MarketFuture:
-			market = MarketFuture
-			if exchange, code, ok := strings.Cut(body, "/"); ok {
-				body = strings.ToLower(exchange) + "/" + code
+		switch lower {
+		case "sh", "sz", "bj", "hk", "us", "cff", "czc", "dce", "shf", "gfe", "qhz":
+			explicit = ""
+		default:
+			if body == "" {
+				return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
 			}
+			return Code{Market: Market(prefix), Code: body}, nil
 		}
-		return Code{Market: market, Code: body}, nil
 	}
-	return Code{}, fmt.Errorf("pull: 市场 %s 的代码 %q 无效", prefix, body)
+	i, err := protocol.ParseInstrument(query)
+	if err != nil {
+		return Code{}, err
+	}
+	market, err := i.Market()
+	if err != nil {
+		return Code{}, err
+	}
+	code := i.Code
+	switch market {
+	case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
+		code = i.Exchange.String() + i.Code
+		if market == MarketAStock && !protocol.IsStock(code) {
+			return Code{}, fmt.Errorf("pull: 不支持的标准行情品种 %q", body)
+		}
+		if explicit != "" {
+			// 完整市场键沿用已有文件名，避免裸数字旧库被另建一份。
+			code = strings.ToLower(body)
+		}
+	case MarketFuture:
+		code = i.Exchange.String() + "/" + i.Code
+	}
+	if explicit != "" && explicit != market {
+		return Code{}, fmt.Errorf("pull: 代码 %q 不属于市场 %s", body, prefix)
+	}
+	return Code{Market: market, Code: code}, nil
 }
 
 // hkIndexCodes 知名港股指数白名单（扩展行情市场27实测品种）。
@@ -207,61 +210,22 @@ func ParseCode(s string) (Code, error) {
 	if i := strings.IndexByte(s, '.'); i > 0 {
 		return SplitKey(s), nil
 	}
-	// 期货：交易所前缀 "cff/IF2609"
-	if i := strings.IndexByte(s, '/'); i > 0 {
-		return Code{Market: MarketFuture, Code: s}, nil
-	}
-	// 6 位裸数字：补交易所前缀后分类（AddPrefix 已覆盖股票/ETF/指数/板块/债券）
 	if len(s) == 6 && isAllDigit(s) {
 		p := protocol.AddPrefix(s)
 		if p != s {
-			if m, ok := classifyStd(p); ok {
-				return Code{Market: m, Code: p}, nil
-			}
+			return codeInMarket(p[:2], p[2:])
 		}
-		// 6 位数字但补不上前缀（如北交所指数 899xxx）：按北交所处理
 		if strings.HasPrefix(s, "89") {
-			return Code{Market: MarketIndex, Code: "bj" + s}, nil
+			return codeInMarket("bj", s)
 		}
 	}
-	// 裸港股代码：5 位数字。
 	if len(s) == 5 && isAllDigit(s) {
-		return Code{Market: MarketHK, Code: s}, nil
+		return codeInMarket("hk", s)
 	}
-	// 美股：纯字母
 	if isAllLetter(s) {
-		return Code{Market: MarketUS, Code: s}, nil
+		return codeInMarket("us", s)
 	}
 	return Code{}, fmt.Errorf("pull: 无法识别代码 %q 的所属市场", s)
-}
-
-// classifyStd 将带交易所前缀的标准行情代码（sh/sz/bj + 6 位）分类到 Market。
-// 优先级：ETF > 股票 > 板块 > 指数（协议谓词区间互斥，实际不会重叠）。
-func classifyStd(code string) (Market, bool) {
-	switch {
-	case protocol.IsETF(code):
-		return MarketEtfLof, true
-	case protocol.IsStock(code):
-		return MarketAStock, true
-	case isBlockCode(code):
-		return MarketBlock, true
-	case protocol.IsIndex(code):
-		return MarketIndex, true
-	}
-	return "", false
-}
-
-// isBlockCode 板块指数 880xxx/881xxx（与 protocol.isBlock 同规则，该函数未导出）。
-func isBlockCode(code string) bool {
-	if len(code) != 8 {
-		return false
-	}
-	code = strings.ToLower(code)
-	if code[:2] != "sh" {
-		return false
-	}
-	n := code[2:]
-	return n[:3] == "880" || n[:3] == "881"
 }
 
 func isAllDigit(s string) bool {
@@ -280,13 +244,4 @@ func isAllLetter(s string) bool {
 		}
 	}
 	return len(s) > 0
-}
-
-func isAlphanumeric(s string) bool {
-	for _, c := range s {
-		if !(c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') {
-			return false
-		}
-	}
-	return s != ""
 }

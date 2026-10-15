@@ -31,7 +31,7 @@ type ICodes interface {
 	GetIndexCodes(limit ...int) []string
 }
 
-// DefaultCodes 增加单例,部分数据需要通过Codes里面的信息计算
+// DefaultCodes 保留旧调用方的共享缓存入口；行情查询不再依赖它。
 var DefaultCodes ICodes
 
 func WithCodesDB(db *xorms.Engine) CodesOption {
@@ -95,15 +95,20 @@ func NewCodes(op ...CodesOption) (result *Codes, err error) {
 	WithCodesOption(op...)(cs)
 
 	ownedClient, ownedDB := cs.c == nil, cs.db == nil
+	cs.updates.cleanup = func() error {
+		var err error
+		if ownedClient && clientOrNil(cs.c) != nil {
+			err = errors.Join(err, cs.c.Close())
+		}
+		if ownedDB && cs.db != nil {
+			err = errors.Join(err, cs.db.Close())
+		}
+		return err
+	}
 	ready := false
 	defer func() {
 		if !ready {
-			if ownedClient && clientOrNil(cs.c) != nil {
-				err = errors.Join(err, cs.c.Close())
-			}
-			if ownedDB && cs.db != nil {
-				err = errors.Join(err, cs.db.Close())
-			}
+			err = errors.Join(err, cs.Close())
 		}
 	}()
 
@@ -131,9 +136,9 @@ func NewCodes(op ...CodesOption) (result *Codes, err error) {
 		if err != nil {
 			return nil, err
 		}
-		if err = cs.db.Sync2(new(CodeModel)); err != nil {
-			return nil, err
-		}
+	}
+	if err = cs.db.Sync2(new(CodeModel)); err != nil {
+		return nil, err
 	}
 	cs.updated, err = NewUpdated(cs.db, 9, 0)
 	if err != nil {
@@ -141,7 +146,7 @@ func NewCodes(op ...CodesOption) (result *Codes, err error) {
 	}
 
 	// 立即/定时更新
-	err = NewTimer(cs.spec, cs.retry, cs)
+	cs.updates.stop, err = StartTimer(cs.spec, cs.retry, cs)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +157,7 @@ func NewCodes(op ...CodesOption) (result *Codes, err error) {
 var _ ICodes = &Codes{}
 
 type Codes struct {
+	updates
 	spec  string //定时规则
 	retry int    //重试次数
 
@@ -171,12 +177,14 @@ type Codes struct {
 }
 
 func (this *Codes) Update() error {
-	codes, err := this.update()
-	if err != nil {
-		return err
-	}
-	this.CodesBase.Update(codes)
-	return nil
+	return this.updates.run(func() error {
+		codes, err := this.update()
+		if err != nil {
+			return err
+		}
+		this.CodesBase.Update(codes)
+		return nil
+	})
 }
 
 // GetCodes 更新股票并返回结果

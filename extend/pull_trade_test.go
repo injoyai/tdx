@@ -107,6 +107,7 @@ func TestPullTradePeriods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { w.Close() })
 	dir := t.TempDir()
 	m := &tdx.Manage{IPool: tradeTestPool{c: c}, Workday: w, Codes: tradeTestCodes{}}
 	if err := NewPullTrade(dir).PullYear(context.Background(), m, 2025, "sz000001"); err != nil {

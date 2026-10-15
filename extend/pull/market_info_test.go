@@ -34,7 +34,7 @@ func TestMarketInfoRouting(t *testing.T) {
 			}
 			info, ok := code.Market.Info()
 			if !ok || info.Protocol != tc.protocol || info.Kind != tc.kind ||
-				info.Day != (KlineInfo{tc.day, tc.dayUnit}) || info.Minute != (KlineInfo{tc.min, tc.minUnit}) {
+				info.Day != (KlineInfo{Category: tc.day, VolumeUnit: tc.dayUnit}) || info.Minute != (KlineInfo{Category: tc.min, VolumeUnit: tc.minUnit}) {
 				t.Fatal("unexpected market configuration", info, ok)
 			}
 		})

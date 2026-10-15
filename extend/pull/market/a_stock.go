@@ -4,7 +4,6 @@ package market
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/injoyai/tdx/v2"
@@ -25,9 +24,6 @@ func (u *stdUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 	return nil, fmt.Errorf("market: %s 未实现 Codes", u.name)
 }
 
-// gbbqMu 保护下述懒加载（多个 stdUnit / goroutine 并发触发时只初始化一次）。
-var gbbqMu sync.Mutex
-
 // Manage 只获取标准行情连接源；不因查询代码、指数或分钟线触发股本初始化。
 func (u *stdUnit) Manage(s *pull.Service) (*tdx.Manage, error) {
 	m := s.Manage()
@@ -35,20 +31,6 @@ func (u *stdUnit) Manage(s *pull.Service) (*tdx.Manage, error) {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Manage（标准行情7709连接源）", u.name)
 	}
 	return m, nil
-}
-
-// stockEquity 仅股票日线使用；在同一锁内读取与替换默认空实现。
-func stockEquity(m *tdx.Manage) (tdx.IGbbq, error) {
-	gbbqMu.Lock()
-	defer gbbqMu.Unlock()
-	if g, ok := m.Gbbq.(*tdx.Gbbq); ok && g.IsEmpty() {
-		g, err := tdx.NewGbbq()
-		if err != nil {
-			return nil, fmt.Errorf("pull: 初始化股本变迁数据失败: %w", err)
-		}
-		m.Gbbq = g
-	}
-	return m.Gbbq, nil
 }
 
 // fetchDayAll 一次性拉取全部日线（从 Start 起，直到没有更早数据）。
@@ -201,7 +183,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	}
 	var equity tdx.IGbbq
 	if u.name == pull.MarketAStock {
-		equity, err = stockEquity(m)
+		equity, err = m.InitGbbq()
 		if err != nil {
 			return err
 		}

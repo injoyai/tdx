@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
-
-	"github.com/injoyai/conv"
 )
 
 const (
@@ -46,11 +46,14 @@ func GetSinaFactor(code string, _type string) (Factors, error) {
 	if _type == Sina_QFQ {
 		url = fmt.Sprintf(UrlSinaFactorQfq, code)
 	}
-	resp, err := http.Get(url)
+	resp, err := dataHTTPClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("新浪 HTTP 状态: %d", resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -67,6 +70,13 @@ func GetSinaFactor(code string, _type string) (Factors, error) {
 
 	res := make([]*Factor, len(data.Data))
 	for i, v := range data.Data {
+		if v == nil {
+			return nil, fmt.Errorf("新浪复权因子第 %d 条为空", i)
+		}
+		factor, err := strconv.ParseFloat(v.Factor, 64)
+		if err != nil || math.IsNaN(factor) || math.IsInf(factor, 0) {
+			return nil, fmt.Errorf("新浪复权因子第 %d 条数值无效: %q", i, v.Factor)
+		}
 		date, err := time.Parse(time.DateOnly, v.Date)
 		if err != nil {
 			return nil, err
@@ -74,9 +84,9 @@ func GetSinaFactor(code string, _type string) (Factors, error) {
 		f := &Factor{Date: date.Unix()}
 		switch _type {
 		case Sina_QFQ:
-			f.QFactor = conv.Float64(v.Factor)
+			f.QFactor = factor
 		case Sina_HFQ:
-			f.HFactor = conv.Float64(v.Factor)
+			f.HFactor = factor
 		}
 		res[i] = f
 	}

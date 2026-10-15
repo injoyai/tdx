@@ -58,3 +58,17 @@ func TestDiscoveredCodesDeduplicateByMarketAndCode(t *testing.T) {
 		t.Fatal("修改了 Unit 返回的列表")
 	}
 }
+
+func TestUSCodeCaseDedup(t *testing.T) {
+	var codes []Code
+	for _, input := range []string{"aapl", "AAPL", "usaapl", "us.AAPL", "us/stock.aapl"} {
+		code, err := ParseCode(input)
+		if err != nil || code.Code != "AAPL" || code.Market != MarketUS {
+			t.Fatal(input, code, err)
+		}
+		codes = append(codes, code)
+	}
+	if got := uniqueCodes(codes); len(got) != 1 {
+		t.Fatal("same security scheduled more than once", got)
+	}
+}

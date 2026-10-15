@@ -35,6 +35,8 @@ var HexKeys = "38 A7 C2 1D E0 6A 17 E2 D1 39 A2 40 9C BA 46 AF 42 C6 FF 05 74 EA
 
 const ZipURL = "http://www.tdx.com.cn/products/data/data/dbf/gbbq.zip"
 
+var downloadClient = &http.Client{Timeout: 30 * time.Second}
+
 func DownloadAndDecode(dir string) (GBBQs, error) {
 	filename, err := Download(dir)
 	if err != nil {
@@ -49,7 +51,7 @@ func DownloadAndDecode(dir string) (GBBQs, error) {
 
 func Download(dir string) (string, error) {
 	os.MkdirAll(dir, 0777)
-	resp, err := http.Get(ZipURL)
+	resp, err := downloadClient.Get(ZipURL)
 	if err != nil {
 		return "", err
 	}

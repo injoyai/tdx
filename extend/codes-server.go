@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,6 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/protocol"
-	"github.com/robfig/cron/v3"
 )
 
 func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOption []tdx.GbbqOption) error {
@@ -20,34 +20,14 @@ func ListenCodesAndGbbqHTTP(port int, codesOption []tdx.CodesOption, equityOptio
 	if err != nil {
 		return err
 	}
+	defer code.Close()
 	gbbq, err := tdx.NewGbbq(equityOption...)
 	if err != nil {
 		return err
 	}
-	succ := func(w http.ResponseWriter, data any) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(conv.Bytes(data))
-	}
+	defer gbbq.Close()
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
-	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.RequestURI {
-		case "/codes", "/all":
-			ls := code.GetStocks()
-			ls = append(ls, code.GetETFs()...)
-			ls = append(ls, code.GetIndexes()...)
-			succ(w, ls)
-		case "/stocks":
-			succ(w, code.GetStocks())
-		case "/etfs":
-			succ(w, code.GetETFs())
-		case "/indexes":
-			succ(w, code.GetIndexes())
-		case "/gbbqs":
-			succ(w, gbbq.All())
-		default:
-			http.NotFound(w, r)
-		}
-	}))
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), codesHandler(code, gbbq))
 }
 
 func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
@@ -55,47 +35,90 @@ func ListenCodesHTTP(port int, op ...tdx.CodesOption) error {
 	if err != nil {
 		return err
 	}
-	succ := func(w http.ResponseWriter, data any) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(conv.Bytes(data))
-	}
+	defer code.Close()
 	logs.Infof("[:%d] 开启HTTP服务...\n", port)
-	return http.ListenAndServe(fmt.Sprintf(":%d", port), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.RequestURI {
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), codesHandler(code, nil))
+}
+
+func codesHandler(code tdx.ICodes, gbbq *tdx.Gbbq) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var data any
+		switch r.URL.Path {
 		case "/codes", "/all":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
-			ls = append(ls, code.GetIndexes()...)
-			succ(w, ls)
+			data = append(ls, code.GetIndexes()...)
 		case "/stocks":
-			succ(w, code.GetStocks())
+			data = code.GetStocks()
 		case "/etfs":
-			succ(w, code.GetETFs())
+			data = code.GetETFs()
 		case "/indexes":
-			succ(w, code.GetIndexes())
+			data = code.GetIndexes()
+		case "/gbbqs":
+			if gbbq == nil {
+				http.NotFound(w, r)
+				return
+			}
+			data = gbbq.All()
 		default:
 			http.NotFound(w, r)
+			return
 		}
-	}))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(conv.Bytes(data))
+	})
 }
 
-func DialCodesHTTP(address string, spec ...string) (c *CodesHTTP, err error) {
-	c = &CodesHTTP{address: address, CodesBase: tdx.NewCodesBase()}
-	cr := cron.New(cron.WithSeconds())
-	_spec := conv.Default("0 20 9 * * *", spec...)
-	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(c.Update()) })
+func DialCodesHTTP(address string, spec ...string) (*CodesHTTP, error) {
+	c := &CodesHTTP{address: address, CodesBase: tdx.NewCodesBase(), httpUpdates: newHTTPUpdates()}
+	stop, err := tdx.StartTimer(conv.Default("0 20 9 * * *", spec...), 1, c)
 	if err != nil {
-		return
+		c.Close()
+		return nil, err
 	}
-	err = c.Update()
-	if err != nil {
-		return
-	}
-	cr.Start()
+	c.stop = stop
 	return c, nil
 }
 
+// httpUpdates 绑定每个缓存客户端的请求与定时任务，关闭时取消在途请求。
+type httpUpdates struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	stop   func()
+	once   sync.Once
+}
+
+func newHTTPUpdates() httpUpdates {
+	ctx, cancel := context.WithCancel(context.Background())
+	return httpUpdates{ctx: ctx, cancel: cancel}
+}
+
+func (h *httpUpdates) Close() error {
+	h.once.Do(func() {
+		if h.cancel != nil {
+			h.cancel()
+		}
+		if h.stop != nil {
+			h.stop()
+		}
+	})
+	return nil
+}
+
+func (h *httpUpdates) request(url string) (*http.Response, error) {
+	ctx := h.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return dataHTTPClient.Do(req)
+}
+
 type CodesHTTP struct {
+	httpUpdates
 	address string
 	*tdx.CodesBase
 }
@@ -110,7 +133,7 @@ func (this *CodesHTTP) Update() error {
 }
 
 func (this *CodesHTTP) getList(path string) (tdx.CodeModels, error) {
-	resp, err := http.DefaultClient.Get(this.address + path)
+	resp, err := this.request(this.address + path)
 	if err != nil {
 		return nil, err
 	}
@@ -127,25 +150,21 @@ func (this *CodesHTTP) getList(path string) (tdx.CodeModels, error) {
 	return ls, err
 }
 
-func DialGbbqHTTP(address string, spec ...string) (e *GbbqHTTP, err error) {
-	e = &GbbqHTTP{address: address, m: make(map[string][]*protocol.Gbbq)}
-	cr := cron.New(cron.WithSeconds())
-	_spec := conv.Default("0 20 9 * * *", spec...)
-	_, err = cr.AddFunc(_spec, func() { logs.PrintErr(e.Update()) })
+func DialGbbqHTTP(address string, spec ...string) (*GbbqHTTP, error) {
+	e := &GbbqHTTP{address: address, m: make(map[string][]*protocol.Gbbq), httpUpdates: newHTTPUpdates()}
+	stop, err := tdx.StartTimer(conv.Default("0 20 9 * * *", spec...), 1, e)
 	if err != nil {
-		return
+		e.Close()
+		return nil, err
 	}
-	err = e.Update()
-	if err != nil {
-		return
-	}
-	cr.Start()
+	e.stop = stop
 	return e, nil
 }
 
 var _ tdx.IGbbq = &GbbqHTTP{}
 
 type GbbqHTTP struct {
+	httpUpdates
 	address string
 	m       map[string][]*protocol.Gbbq
 	mu      sync.RWMutex
@@ -203,7 +222,7 @@ func (this *GbbqHTTP) GetFactors(code string, ks protocol.Klines) []*protocol.Fa
 }
 
 func (this *GbbqHTTP) get(path string) (map[string][]*protocol.Gbbq, error) {
-	resp, err := http.DefaultClient.Get(this.address + path)
+	resp, err := this.request(this.address + path)
 	if err != nil {
 		return nil, err
 	}

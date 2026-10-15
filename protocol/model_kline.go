@@ -469,8 +469,11 @@ func (ks Klines) Merge(n int) Klines {
 	return res
 }
 
-// Merge241 合并成其他类型的K线
+// Merge241 合并成其他类型的K线；n<=0 原样返回。
 func (ks Klines) Merge241(n int) Klines {
+	if n <= 0 {
+		return ks
+	}
 	mDay := make(map[string]Klines)
 	for _, v := range ks {
 		day := v.Time.Format(time.DateOnly)

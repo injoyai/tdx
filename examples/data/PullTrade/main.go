@@ -22,9 +22,7 @@ func main() {
 
 	m, err := tdx.NewManage()
 	logs.PanicErr(err)
-	if closer, ok := m.IPool.(interface{ Close() error }); ok {
-		defer closer.Close()
-	}
+	defer m.Close()
 
 	err = pt.PullYear(context.Background(), m, *year, *code)
 	logs.Err(err)

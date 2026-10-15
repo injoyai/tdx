@@ -13,6 +13,7 @@ func main() {
 	<-time.After(time.Second * 3)
 	c, err := extend.DialCodesHTTP("http://localhost:10033")
 	logs.PanicErr(err)
+	defer c.Close()
 
 	for _, v := range c.GetStocks() {
 		println(v)

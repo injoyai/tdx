@@ -14,26 +14,38 @@ import (
 // Encode 压缩文件
 // @filePath,文件路径
 // @zipName,压缩名称
-func Encode(filePath, zipName string) error {
-
+func Encode(filePath, zipName string) (err error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
-	os.MkdirAll(filepath.Dir(zipName), os.ModePerm)
-
-	zipFile, err := os.Create(zipName)
+	source, err := file.Stat()
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
+	if err := os.MkdirAll(filepath.Dir(zipName), os.ModePerm); err != nil {
+		return err
+	}
+	// 检查已打开的目标，避免别名或链接指向源文件时被截断。
+	zipFile, err := os.OpenFile(zipName, os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, zipFile.Close()) }()
+	target, err := zipFile.Stat()
+	if err != nil {
+		return err
+	}
+	if os.SameFile(source, target) {
+		return fmt.Errorf("zip: source and destination are the same file")
+	}
+	if err := zipFile.Truncate(0); err != nil {
+		return err
+	}
 	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
+	defer func() { err = errors.Join(err, zipWriter.Close()) }()
 	return compareZip(file, zipWriter, "", !strings.HasSuffix(filePath, "/"))
-
 }
 
 // 压缩文件

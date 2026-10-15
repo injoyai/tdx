@@ -25,53 +25,77 @@ type closeTestClient struct {
 func (c *closeTestClient) Close() error { return c.closeFn() }
 
 func TestNewFailureClosesPool(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.Copy(io.Discard, conn)
+	}()
+	failure := errors.New("extended initialization failure")
+	var created atomic.Int32
+	s, err := New(WithHosts(listener.Addr().String()), WithExHqHosts(listener.Addr().String()),
+		WithOptions(tdx.WithRedial(false), tdx.WithDebug(false), func(c *client.Client) {
+			if created.Add(1) == 2 {
+				c.SetDial(func(context.Context) (ios.ReadWriteCloser, string, error) {
+					return nil, "", failure
+				})
+			}
+		}))
+	if s != nil || !errors.Is(err, failure) {
+		t.Fatal("expected initialization failure", s, err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initialization failure leaked pool connection")
+	}
+}
+
+func TestNewOnlyCreatesConfiguredConnections(t *testing.T) {
 	previous := tdx.DefaultCodes
+	tdx.DefaultCodes = nil
 	t.Cleanup(func() { tdx.DefaultCodes = previous })
-	for _, stage := range []string{"codes", "extended"} {
-		t.Run(stage, func(t *testing.T) {
-			tdx.DefaultCodes = nil
-			if stage == "extended" {
-				tdx.DefaultCodes = tdx.NewCodesBase()
-			}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { listener.Close() })
-			closed := make(chan struct{})
-			go func() {
-				defer close(closed)
-				conn, err := listener.Accept()
-				if err != nil {
-					return
-				}
-				defer conn.Close()
-				io.Copy(io.Discard, conn)
-			}()
-			failure := errors.New("initialization failure")
-			var created atomic.Int32
-			op := []Option{
-				WithHosts(listener.Addr().String()),
-				WithOptions(tdx.WithDebug(false), func(c *client.Client) {
-					if created.Add(1) == 2 {
-						c.SetDial(func(context.Context) (ios.ReadWriteCloser, string, error) {
-							return nil, "", failure
-						})
-					}
-				}),
-			}
-			if stage == "extended" {
-				op = append(op, WithExHqHosts(listener.Addr().String()))
-			}
-			if s, err := New(op...); s != nil || !errors.Is(err, failure) {
-				t.Fatal("expected initialization failure", s, err)
-			}
-			select {
-			case <-closed:
-			case <-time.After(2 * time.Second):
-				t.Fatal("initialization failure leaked pool connection")
-			}
-		})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		io.Copy(io.Discard, conn)
+	}()
+	var created atomic.Int32
+	s, err := New(WithHosts(listener.Addr().String()), WithOptions(tdx.WithRedial(false), tdx.WithDebug(false),
+		func(*client.Client) { created.Add(1) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if created.Load() != 1 || tdx.DefaultCodes != nil {
+		t.Fatal("created an unsolicited metadata client", created.Load(), tdx.DefaultCodes)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("pool connection leaked")
 	}
 }
 

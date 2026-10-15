@@ -42,9 +42,7 @@ func main() {
 	}
 	m, err := tdx.NewManage()
 	logs.PanicErr(err)
-	if closer, ok := m.IPool.(interface{ Close() error }); ok {
-		defer closer.Close()
-	}
+	defer m.Close()
 	cfg := &pull.Config{
 		Dir: *dir, Codes: codes, Day: *day, Minute: *minute, StartAt: *since,
 		Goroutines: 1, Manage: m, Workday: m.Workday,

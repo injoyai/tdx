@@ -1,108 +1,57 @@
 package pull
 
-import (
-	"time"
+// 周期合并只计算原始浮点字段，避免经过整数厘损失港美股等市场的价格精度。
 
-	"github.com/injoyai/tdx/v2/protocol"
-)
-
-// 周期合并：只存日线 + 1分钟线，其余周期（5/15/30/60分钟、周/月/季/年）由二者派生，
-// 纯内存计算、不落盘。
-
-// yuan 四舍五入的元→厘转换（protocol.Yuan 为直接截断，往返会差 ±1 厘）。
-func yuan(f float64) protocol.Price {
-	return protocol.Price(f*1000 + 0.5)
-}
-
-// toProtocol 将日线转成 protocol.Klines 便于复用合并逻辑（元→厘）。
-func toProtocol(ks []*KlineDay) protocol.Klines {
-	out := make(protocol.Klines, 0, len(ks))
-	for _, k := range ks {
-		out = append(out, &protocol.Kline{
-			Open:   yuan(k.Open),
-			High:   yuan(k.High),
-			Low:    yuan(k.Low),
-			Close:  yuan(k.Close),
-			Volume: k.Volume,
-			Amount: yuan(k.Amount),
-			Time:   time.Unix(k.Unix, 0),
-		})
-	}
-	return out
-}
-
-func fromProtocol(ks protocol.Klines) []*KlineDay {
-	out := make([]*KlineDay, 0, len(ks))
-	for _, k := range ks {
-		out = append(out, &KlineDay{
-			Unix:   k.Time.Unix(),
-			Open:   k.Open.Float64(),
-			High:   k.High.Float64(),
-			Low:    k.Low.Float64(),
-			Close:  k.Close.Float64(),
-			Volume: k.Volume,
-			Amount: k.Amount.Float64(),
-		})
-	}
-	return out
-}
-
-// DayToPeriod 将日线按固定 N 根分块合并（近似 N 日周期，如 5≈周、20≈月、60≈季、250≈年，
-// 非日历对齐；首块从传入序列开头起算）。
-// n<=1 时原样返回。
+// DayToPeriod 将日线按固定 N 根分块合并（非日历对齐）；n<=1 原样返回。
 func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
 	if n <= 1 {
 		return ks
 	}
-	out := fromProtocol(toProtocol(ks).Merge(n))
-	for i, k := range out {
-		end := min((i+1)*n, len(ks))
-		k.FloatStock, k.TotalStock = ks[end-1].FloatStock, ks[end-1].TotalStock
-		for _, day := range ks[i*n : end] {
-			k.Turnover += day.Turnover
+	var out []*KlineDay
+	for start := 0; start < len(ks); {
+		end := start + min(n, len(ks)-start)
+		k := *ks[start]
+		for _, v := range ks[start+1 : end] {
+			if k.Open == 0 {
+				k.Open = v.Open
+			}
+			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
+			k.Unix, k.Close = v.Unix, v.Close
+			k.Volume += v.Volume
+			k.Amount += v.Amount
+			k.Turnover += v.Turnover
+			k.FloatStock, k.TotalStock = v.FloatStock, v.TotalStock
 		}
+		out = append(out, &k)
+		start = end
 	}
 	return out
 }
 
-// MinuteToPeriod 按固定 N 根合并；不对齐交易日或时段。时段对齐请用 MinuteToSessions。
-// n<=1 时原样返回。
+// MinuteToPeriod 按固定 N 根合并，不对齐交易日或时段；n<=1 原样返回。
+// 时段对齐请用 MinuteToSessions。
 func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
 	if n <= 1 {
 		return ks
 	}
-	// 先将分钟线转为统一 protocol.Klines（元→厘）
-	in := make(protocol.Klines, 0, len(ks))
-	for _, k := range ks {
-		in = append(in, &protocol.Kline{
-			Open:   yuan(k.Open),
-			High:   yuan(k.High),
-			Low:    yuan(k.Low),
-			Close:  yuan(k.Close),
-			Volume: k.Volume,
-			Amount: yuan(k.Amount),
-			Time:   time.Unix(k.Unix, 0),
-		})
-	}
-	merged := in.Merge(n)
-	out := make([]*KlineMinute, 0, len(merged))
-	for i, k := range merged {
-		source := ""
-		for _, input := range ks[i*n : min((i+1)*n, len(ks))] {
-			if input.Source != "" {
-				source = input.Source
+	var out []*KlineMinute
+	for start := 0; start < len(ks); {
+		end := start + min(n, len(ks)-start)
+		k := *ks[start]
+		for _, v := range ks[start+1 : end] {
+			if k.Open == 0 {
+				k.Open = v.Open
+			}
+			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
+			k.Unix, k.Close = v.Unix, v.Close
+			k.Volume += v.Volume
+			k.Amount += v.Amount
+			if v.Source != "" {
+				k.Source = v.Source
 			}
 		}
-		out = append(out, &KlineMinute{
-			Unix:   k.Time.Unix(),
-			Open:   k.Open.Float64(),
-			High:   k.High.Float64(),
-			Low:    k.Low.Float64(),
-			Close:  k.Close.Float64(),
-			Volume: k.Volume,
-			Amount: k.Amount.Float64(),
-			Source: source,
-		})
+		out = append(out, &k)
+		start = end
 	}
 	return out
 }

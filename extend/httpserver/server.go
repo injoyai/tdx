@@ -6,6 +6,7 @@ import (
 
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Option HTTP 服务配置选项
@@ -83,20 +84,6 @@ func New(opts ...Option) (*Server, error) {
 			_ = pool.Close()
 		}
 	}()
-
-	// 初始化 DefaultCodes(ETF/可转债等非股票行情需要查 Decimal 修正价格, 见 Client.GetQuote)
-	if tdx.DefaultCodes == nil {
-		codesClient, err := tdx.DialHostsRange(cfg.hosts, cfg.options...)
-		if err != nil {
-			return nil, err
-		}
-		codes, err := tdx.NewCodesSqlite(tdx.WithCodesClient(codesClient))
-		if err != nil {
-			_ = codesClient.Close()
-			return nil, err
-		}
-		tdx.DefaultCodes = codes
-	}
 
 	s := &Server{pool: pool}
 
@@ -179,41 +166,41 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// K线(股票)
 	mux.HandleFunc("GET /kline", s.handleKline)
 	mux.HandleFunc("GET /kline/all", s.handleKlineAll)
-	mux.HandleFunc("GET /kline/minute", s.handleKlineMinute)
-	mux.HandleFunc("GET /kline/minute/all", s.handleKlineMinuteAll)
-	mux.HandleFunc("GET /kline/5minute", s.handleKline5Minute)
-	mux.HandleFunc("GET /kline/5minute/all", s.handleKline5MinuteAll)
-	mux.HandleFunc("GET /kline/15minute", s.handleKline15Minute)
-	mux.HandleFunc("GET /kline/15minute/all", s.handleKline15MinuteAll)
-	mux.HandleFunc("GET /kline/30minute", s.handleKline30Minute)
-	mux.HandleFunc("GET /kline/30minute/all", s.handleKline30MinuteAll)
-	mux.HandleFunc("GET /kline/60minute", s.handleKline60Minute)
-	mux.HandleFunc("GET /kline/60minute/all", s.handleKline60MinuteAll)
-	mux.HandleFunc("GET /kline/day", s.handleKlineDay)
-	mux.HandleFunc("GET /kline/day/all", s.handleKlineDayAll)
-	mux.HandleFunc("GET /kline/week", s.handleKlineWeek)
-	mux.HandleFunc("GET /kline/week/all", s.handleKlineWeekAll)
-	mux.HandleFunc("GET /kline/month", s.handleKlineMonth)
-	mux.HandleFunc("GET /kline/month/all", s.handleKlineMonthAll)
-	mux.HandleFunc("GET /kline/quarter", s.handleKlineQuarter)
-	mux.HandleFunc("GET /kline/quarter/all", s.handleKlineQuarterAll)
-	mux.HandleFunc("GET /kline/year", s.handleKlineYear)
-	mux.HandleFunc("GET /kline/year/all", s.handleKlineYearAll)
+	mux.HandleFunc("GET /kline/minute", s.klineHandler(protocol.TypeKlineMinute, false))
+	mux.HandleFunc("GET /kline/minute/all", s.klineHandler(protocol.TypeKlineMinute, true))
+	mux.HandleFunc("GET /kline/5minute", s.klineHandler(protocol.TypeKline5Minute, false))
+	mux.HandleFunc("GET /kline/5minute/all", s.klineHandler(protocol.TypeKline5Minute, true))
+	mux.HandleFunc("GET /kline/15minute", s.klineHandler(protocol.TypeKline15Minute, false))
+	mux.HandleFunc("GET /kline/15minute/all", s.klineHandler(protocol.TypeKline15Minute, true))
+	mux.HandleFunc("GET /kline/30minute", s.klineHandler(protocol.TypeKline30Minute, false))
+	mux.HandleFunc("GET /kline/30minute/all", s.klineHandler(protocol.TypeKline30Minute, true))
+	mux.HandleFunc("GET /kline/60minute", s.klineHandler(protocol.TypeKline60Minute, false))
+	mux.HandleFunc("GET /kline/60minute/all", s.klineHandler(protocol.TypeKline60Minute, true))
+	mux.HandleFunc("GET /kline/day", s.klineHandler(protocol.TypeKlineDay, false))
+	mux.HandleFunc("GET /kline/day/all", s.klineHandler(protocol.TypeKlineDay, true))
+	mux.HandleFunc("GET /kline/week", s.klineHandler(protocol.TypeKlineWeek, false))
+	mux.HandleFunc("GET /kline/week/all", s.klineHandler(protocol.TypeKlineWeek, true))
+	mux.HandleFunc("GET /kline/month", s.klineHandler(protocol.TypeKlineMonth, false))
+	mux.HandleFunc("GET /kline/month/all", s.klineHandler(protocol.TypeKlineMonth, true))
+	mux.HandleFunc("GET /kline/quarter", s.klineHandler(protocol.TypeKlineQuarter, false))
+	mux.HandleFunc("GET /kline/quarter/all", s.klineHandler(protocol.TypeKlineQuarter, true))
+	mux.HandleFunc("GET /kline/year", s.klineHandler(protocol.TypeKlineYear, false))
+	mux.HandleFunc("GET /kline/year/all", s.klineHandler(protocol.TypeKlineYear, true))
 
 	// 指数K线
-	mux.HandleFunc("GET /index", s.handleIndex)
-	mux.HandleFunc("GET /index/all", s.handleIndexAll)
-	mux.HandleFunc("GET /index/minute", s.handleIndexMinute)
-	mux.HandleFunc("GET /index/5minute", s.handleIndex5Minute)
-	mux.HandleFunc("GET /index/15minute", s.handleIndex15Minute)
-	mux.HandleFunc("GET /index/30minute", s.handleIndex30Minute)
-	mux.HandleFunc("GET /index/60minute", s.handleIndex60Minute)
-	mux.HandleFunc("GET /index/day", s.handleIndexDay)
-	mux.HandleFunc("GET /index/day/all", s.handleIndexDayAll)
-	mux.HandleFunc("GET /index/week/all", s.handleIndexWeekAll)
-	mux.HandleFunc("GET /index/month/all", s.handleIndexMonthAll)
-	mux.HandleFunc("GET /index/quarter/all", s.handleIndexQuarterAll)
-	mux.HandleFunc("GET /index/year/all", s.handleIndexYearAll)
+	mux.HandleFunc("GET /index", s.handleKline)
+	mux.HandleFunc("GET /index/all", s.handleKlineAll)
+	mux.HandleFunc("GET /index/minute", s.klineHandler(protocol.TypeKlineMinute, false))
+	mux.HandleFunc("GET /index/5minute", s.klineHandler(protocol.TypeKline5Minute, false))
+	mux.HandleFunc("GET /index/15minute", s.klineHandler(protocol.TypeKline15Minute, false))
+	mux.HandleFunc("GET /index/30minute", s.klineHandler(protocol.TypeKline30Minute, false))
+	mux.HandleFunc("GET /index/60minute", s.klineHandler(protocol.TypeKline60Minute, false))
+	mux.HandleFunc("GET /index/day", s.klineHandler(protocol.TypeKlineDay, false))
+	mux.HandleFunc("GET /index/day/all", s.klineHandler(protocol.TypeKlineDay, true))
+	mux.HandleFunc("GET /index/week/all", s.klineHandler(protocol.TypeKlineWeek, true))
+	mux.HandleFunc("GET /index/month/all", s.klineHandler(protocol.TypeKlineMonth, true))
+	mux.HandleFunc("GET /index/quarter/all", s.klineHandler(protocol.TypeKlineQuarter, true))
+	mux.HandleFunc("GET /index/year/all", s.klineHandler(protocol.TypeKlineYear, true))
 
 	// 板块/报表
 	mux.HandleFunc("GET /block/data", s.handleBlockData)

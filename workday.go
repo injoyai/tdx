@@ -85,17 +85,23 @@ func NewWorkday(op ...WorkdayOption) (result *Workday, err error) {
 	}
 
 	ownedClient, ownedDB := w.c == nil, w.db == nil
+	w.updates.cleanup = func() error {
+		var err error
+		if ownedClient && clientOrNil(w.c) != nil {
+			err = errors.Join(err, w.c.Close())
+		}
+		if ownedDB && w.db != nil {
+			err = errors.Join(err, w.db.Close())
+		}
+		return err
+	}
 	ready := false
 	defer func() {
 		if !ready {
-			if ownedClient && clientOrNil(w.c) != nil {
-				err = errors.Join(err, w.c.Close())
-			}
-			if ownedDB && w.db != nil {
-				err = errors.Join(err, w.db.Close())
-			}
+			err = errors.Join(err, w.Close())
 		}
 	}()
+
 	if w.db == nil {
 		if w.dialDB == nil {
 			w.dialDB = func() (*xorms.Engine, error) {
@@ -126,7 +132,7 @@ func NewWorkday(op ...WorkdayOption) (result *Workday, err error) {
 	}
 
 	//设置定时器,每天早上9点更新数据,8点多获取不到今天的数据
-	err = NewTimer(w.spec, w.retry, w)
+	w.updates.stop, err = StartTimer(w.spec, w.retry, w)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +141,7 @@ func NewWorkday(op ...WorkdayOption) (result *Workday, err error) {
 }
 
 type Workday struct {
+	updates
 	spec       string
 	retry      int
 	dialDB     DialDBFunc
@@ -147,6 +154,10 @@ type Workday struct {
 
 // Update 更新
 func (this *Workday) Update() error {
+	return this.updates.run(this.refresh)
+}
+
+func (this *Workday) refresh() error {
 
 	if this.c == nil {
 		return errors.New("client is nil")
@@ -157,7 +168,7 @@ func (this *Workday) Update() error {
 
 	//获取全部工作日
 	all := []*WorkdayModel(nil)
-	if err := this.db.Find(&all); err != nil {
+	if err := this.db.Asc("Unix").Find(&all); err != nil {
 		return err
 	}
 	var lastWorkday = &WorkdayModel{}
@@ -184,7 +195,6 @@ func (this *Workday) Update() error {
 		for _, v := range raw.List {
 			if unix := v.Time.Unix(); unix > lastWorkday.Unix {
 				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: v.Time.Format("20060102")})
-				this.cache.Set(uint64(unix), true)
 			}
 		}
 
@@ -193,7 +203,12 @@ func (this *Workday) Update() error {
 		}
 
 		_, err = this.db.Insert(inserts)
-		return err
+		if err != nil {
+			return err
+		}
+		for _, row := range inserts {
+			this.cache.Set(uint64(row.(*WorkdayModel).Unix), true)
+		}
 
 	}
 
