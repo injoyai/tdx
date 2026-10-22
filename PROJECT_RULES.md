@@ -4,7 +4,7 @@
 - **技术栈**：Go 1.25+，依赖 `github.com/injoyai/conv`（类型转换）、`github.com/injoyai/logs`（日志）。
 - **目录**：
   - `protocol/`：协议帧编解码与数据结构（`model_*.go`、`unit.go`、`frame.go`、`types.go`）。
-  - `client_interface.go`：统一业务接口；`conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：标准/扩展业务连接；`query.go`：共享业务算法；`gbbq.go`、`manage.go` 等根级扩展。
+  - `client_interface.go`：统一业务接口；`conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：标准/扩展业务连接；`query.go`：共享业务算法；股本缓存和复权查询位于 `extend/gbbq`，内部纯计算由 `internal/gbbq` 共享；组合管理器位于独立子包 `extend/manage`；代码查询接口和缓存位于 `extend/codes`，纯内存实现由 `internal/codecache` 共享；中国市场历史日历位于 `extend/workday`，通用更新标记和定时工具位于 `lib/update`，数据库工厂类型为 `xorms.DialFunc`，各缓存的默认定时规则由各自子包提供。
   - `extend/`：离线数据读写（`local.go` 读写）、行情拉取、爬虫、HTTP server、指标计算统一在 `protocol.Klines`。
   - `lib/`：gbbq、xorms、zip 工具；北交所代码统一由 `Client.GetCodeAll(ExchangeBJ)` 获取。
   - `examples/`：按主题分类的独立可运行示例，每个示例一个目录；从项目根目录运行 `go run ./examples/<分类>/<示例>`，索引见 `examples/README.md`。
@@ -61,6 +61,8 @@
 
 ### 8.8 命名从简
 
+- Go 文件使用小写下划线；URL、CSV、SQLite 等缩写采用统一写法。扩展连接入口统一 `DialEx*`，拉取分钟接口统一使用 `Minute`，组合本包选项使用 `WithOptions`，底层连接配置使用 `WithClientOptions`。
+- Go 方法接收者采用与类型相关的简短名称，同一类型保持一致（如 `Gbbq` 用 `g`、`Workday` 用 `w`）；避免 `this` / `self`。未使用接收者时可省略名称；保持原有指针或值接收者类型。
 - 类型、函数和变量使用简短且职责明确的名称，避免重复表达包名、市场或客户端上下文；沿用已有常用缩写，不为缩短名称引入难懂缩写。
 - 统一业务接口使用 `Client`，标准/扩展协议连接实现分别使用 `StConn` / `ExConn`，对应 `Dial*` 直接返回具体连接；共享传输使用内部 `conn`，不对外暴露，也不实现业务接口。`St` 表示标准协议，`Ex` 表示扩展协议。
 - 统一返回对象使用 `Quote`、`Kline`、`Trade`、`CodeResp` 等业务名称，避免额外 `Market` / `Ex` 前缀；协议特有的原始结构仍保留能区分协议的命名。

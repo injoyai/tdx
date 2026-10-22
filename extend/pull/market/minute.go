@@ -21,6 +21,7 @@ type minuteTarget struct {
 func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 	fetch func(time.Time) ([]*pull.KlineMinute, error), supplement *minuteFallback) error {
 	start := s.Start()
+	now = now.In(start.Location())
 	if start.After(now) {
 		return nil
 	}
@@ -36,7 +37,7 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		if !historical {
 			through = now.Unix()
 		}
-		coverage, err := s.QueryMinCoverage(code, year)
+		coverage, err := s.QueryMinuteCoverage(code, year)
 		if err != nil {
 			return err
 		}
@@ -47,7 +48,7 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				continue
 			}
 			if supplement == nil {
-				empty, err := s.MinYearRecentlyEmpty(code, year, from.Unix(), now)
+				empty, err := s.MinuteYearRecentlyEmpty(code, year, from.Unix(), now)
 				if err != nil {
 					return err
 				}
@@ -56,7 +57,7 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				}
 			}
 		} else {
-			last, err := s.LastMinUnix(code, year)
+			last, err := s.LastMinuteUnix(code, year)
 			if err != nil {
 				return err
 			}
@@ -69,7 +70,7 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				}
 			}
 			if last > from.Unix() {
-				from = time.Unix(last, 0)
+				from = time.Unix(last, 0).In(start.Location())
 			}
 		}
 		targets = append(targets, minuteTarget{year: year, from: from.Unix(), historical: historical, through: through})
@@ -111,8 +112,8 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 					yearNative = append(yearNative, k)
 				}
 			}
-			out, err := supplement.fill(s, code, time.Unix(target.from, 0),
-				time.Unix(target.through, 0), boundary, yearNative)
+			out, err := supplement.fill(s, code, time.Unix(target.from, 0).In(start.Location()),
+				time.Unix(target.through, 0).In(start.Location()), boundary, yearNative)
 			if err != nil {
 				fallbackErrs = append(fallbackErrs, err)
 				fallbackFailed[target.year] = true
@@ -136,23 +137,23 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		}
 		if len(out) == 0 {
 			if target.historical && supplement == nil && len(ks) > 0 {
-				if err := s.SaveMinEmptyScan(code, target.year, target.from, now); err != nil {
+				if err := s.SaveMinuteEmptyScan(code, target.year, target.from, now); err != nil {
 					return err
 				}
 			}
 			continue
 		}
 		if supplement != nil && !fallbackFailed[target.year] {
-			err = s.SaveMinFallbackComplete(code, target.year, target.from, target.through, out)
+			err = s.SaveMinuteFallbackComplete(code, target.year, target.from, target.through, out)
 		} else if target.historical && supplement == nil {
-			err = s.SaveMinComplete(code, target.year, target.from, out)
+			err = s.SaveMinuteComplete(code, target.year, target.from, out)
 		} else {
 			// 保留服务器滚动历史窗口之前的本地记录。
 			writeFrom := out[0].Unix
 			for _, k := range out[1:] {
 				writeFrom = min(writeFrom, k.Unix)
 			}
-			err = s.SaveMin(code, target.year, writeFrom, out)
+			err = s.SaveMinute(code, target.year, writeFrom, out)
 		}
 		if err != nil {
 			if supplement == nil {

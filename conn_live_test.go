@@ -122,6 +122,8 @@ func TestStandardLive(t *testing.T) {
 	}
 	date := day.List[len(day.List)-1].Standard.Time.Format("20060102")
 	t.Logf("day count=%d latest=%s close=%.3f", day.Count, date, day.List[len(day.List)-1].Close)
+	// 最新交易日的历史分笔可能尚未归档，使用本次日线样本中较早的交易日。
+	historyDate := day.List[0].Standard.Time.Format("20060102")
 	hour, err := c.GetKline60Minute("sz000001", 0, 5)
 	if err != nil || len(hour.List) == 0 {
 		t.Fatal("GetKline60Minute", hour, err)
@@ -130,7 +132,7 @@ func TestStandardLive(t *testing.T) {
 	for _, historical := range []bool{false, true} {
 		var trades *TradeResp
 		if historical {
-			trades, err = c.GetHistoryTrade(date, "sz000001", 0, 5)
+			trades, err = c.GetHistoryTrade(historyDate, "sz000001", 0, 5)
 		} else {
 			trades, err = c.GetTrade("sz000001", 0, 5)
 		}
@@ -189,10 +191,10 @@ func TestStandardLive(t *testing.T) {
 	liveLimit.Unlock()
 }
 
-// TestExHqLive 实连扩展行情验证。需联网,默认跳过;设 TDX_EXHQ_LIVE=1 启用。
+// TestExLive 实连扩展行情验证。需联网,默认跳过;设 TDX_EXHQ_LIVE=1 启用。
 //
-//	TDX_EXHQ_LIVE=1 go test . -run TestExHqLive -v
-func TestExHqLive(t *testing.T) {
+//	TDX_EXHQ_LIVE=1 go test . -run TestExLive -v
+func TestExLive(t *testing.T) {
 	if os.Getenv("TDX_EXHQ_LIVE") != "1" {
 		t.Skip("set TDX_EXHQ_LIVE=1 to run live extended-market test")
 	}

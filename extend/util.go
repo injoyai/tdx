@@ -14,7 +14,7 @@ import (
 
 var dataHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
-func toCsv(data [][]interface{}) (*bytes.Buffer, error) {
+func toCSV(data [][]interface{}) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("\xEF\xBB\xBF")
 	w := csv.NewWriter(buf)
@@ -27,8 +27,8 @@ func toCsv(data [][]interface{}) (*bytes.Buffer, error) {
 	return buf, nil
 }
 
-// newFile 新建文件,会覆盖
-func newFile(filename string, v ...interface{}) error {
+// writeFile 新建文件,会覆盖
+func writeFile(filename string, v ...interface{}) error {
 	if len(v) == 0 {
 		return os.MkdirAll(filename, 0777)
 	}

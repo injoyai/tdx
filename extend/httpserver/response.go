@@ -75,29 +75,11 @@ func queryUint32(r *http.Request, key string) (uint32, error) {
 	return uint32(n), nil
 }
 
-// queryUint16Default 解析 uint16,为空时返回默认值
-func queryUint16Default(r *http.Request, key string, def uint16) uint16 {
-	s := r.URL.Query().Get(key)
-	if s == "" {
-		return def
-	}
-	n, err := strconv.ParseUint(s, 10, 16)
-	if err != nil {
-		return def
-	}
-	return uint16(n)
-}
-
 // parseExchange 将字符串转换为 protocol.Exchange
 func parseExchange(s string) (protocol.Exchange, error) {
-	switch s {
-	case "sh", "SH":
-		return protocol.ExchangeSH, nil
-	case "sz", "SZ":
-		return protocol.ExchangeSZ, nil
-	case "bj", "BJ":
-		return protocol.ExchangeBJ, nil
-	default:
-		return 0, fmt.Errorf("不支持的交易所: %s (可选: sh, sz, bj)", s)
+	ex, err := protocol.ParseExchange(s)
+	if err == nil && ex <= protocol.ExchangeBJ {
+		return ex, nil
 	}
+	return 0, fmt.Errorf("不支持的交易所: %s (可选: sh, sz, bj)", s)
 }

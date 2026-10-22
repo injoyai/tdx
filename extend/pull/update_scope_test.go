@@ -15,7 +15,7 @@ func (u *scopeTestUnit) FetchDay(_ *Service, c Code) error {
 	return nil
 }
 
-func (u *scopeTestUnit) FetchMin(_ *Service, c Code) error {
+func (u *scopeTestUnit) FetchMinute(_ *Service, c Code) error {
 	u.minutes = append(u.minutes, c.Code)
 	return nil
 }
@@ -35,7 +35,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/must=%t", tt.name, must), func(t *testing.T) {
 				cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one"}, Day: true, StartAt: "20260101", Goroutines: 1}
 				u := &scopeTestUnit{mockUnit: mockUnit{name: "test"}}
-				s, err := NewService(&cfg)
+				s, err := New(&cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -47,7 +47,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 					t.Fatal(err)
 				}
 				tt.change(&cfg)
-				s, err = NewService(&cfg)
+				s, err = New(&cfg)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -78,14 +78,14 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 func TestUpdateScopeIgnoresCodeOrder(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one", "test.two"}, StartAt: "20260101"}
-	s1, err := NewService(&cfg)
+	s1, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s1.Close()
 	cfg.Codes = []string{" test.two ", "test.one"}
 	cfg.Day, cfg.Minute = true, true
-	s2, err := NewService(&cfg)
+	s2, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,10 +100,10 @@ func TestUpdateIgnoresLegacyUnscopedMarkers(t *testing.T) {
 	u := &scopeTestUnit{mockUnit: mockUnit{name: "test"}}
 	s.units = []Unit{u}
 	for _, key := range []string{"pull", "pull:test"} {
-		if _, err := s.updated.Updated(key); err != nil {
+		if _, err := s.updated.IsUpdated(key); err != nil {
 			t.Fatal(err)
 		}
-		if err := s.updated.Update(key); err != nil {
+		if err := s.updated.Mark(key); err != nil {
 			t.Fatal(err)
 		}
 	}

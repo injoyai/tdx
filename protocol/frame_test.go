@@ -35,7 +35,7 @@ func TestDecodeLimitsInflatedResponse(t *testing.T) {
 	}
 }
 
-func TestFrame_Bytes(t *testing.T) {
+func TestFrameBytes(t *testing.T) {
 	f := Frame{
 		MsgID:   1,
 		Control: 1,
@@ -73,9 +73,9 @@ func TestDecode(t *testing.T) {
 
 	t.Log(string(resp.Data))
 
-	t.Log(string(UTF8ToGBK(resp.Data)))
+	t.Log(string(GBKToUTF8(resp.Data)))
 
-	t.Log(string(UTF8ToGBK(resp.Data[68:])))
+	t.Log(string(GBKToUTF8(resp.Data[68:])))
 
 	t.Log(MConnect.Decode(resp.Data))
 

@@ -13,8 +13,8 @@ v2 的 K 线拉取统一使用本服务。原 `extend.PullKline` 已移除，调
 ```
 pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服务器
      │                    │
-     │                    └── a_stock / index / etf_lof / block (7709, 走 tdx.Manage)
-     │                    └── future / hk / us          (7727, 走 tdx.IPool)
+     │                    └── a_stock / index / etf_lof / block (7709, 走 manage.Manage)
+     │                    └── future / hk / us          (7727, 走 tdx.ClientPool)
      │
      └──存储──> sqlite（一代码一库，见下方存储布局）
 ```
@@ -32,13 +32,14 @@ package main
 import (
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market" // 注册全部内置市场 Unit
 )
 
 func main() {
 	// 标准行情(7709)连接源：股票/指数/ETF/板块需要
-	m, err := tdx.NewManage()
+	m, err := manage.New()
 	if err != nil {
 		panic(err)
 	}
@@ -46,14 +47,14 @@ func main() {
 
 	// 扩展行情(7727)连接池：期货/港股/美股需要
 	ex, err := tdx.NewPool(func() (tdx.Client, error) {
-		return tdx.DialExHqDefault()
+		return tdx.DialExDefault()
 	}, 4)
 	if err != nil {
 		panic(err)
 	}
 	defer ex.Close()
 
-	s, err := pull.NewService(&pull.Config{
+	s, err := pull.New(&pull.Config{
 		Dir:     "./output/pullv2", // 数据根目录
 		StartAt: "20260101",        // 首次全量的最早日期；空 = 只拉最近两年
 		Manage:  m,
@@ -143,20 +144,24 @@ fmt.Println(info.Protocol, info.Day.Category, info.Day.ToStorageVolume(204225))
 | `MaxCachedEngines` | 行情数据库引擎缓存上限；使用中的引擎不淘汰，并发借用可暂时超限，释放后回落 | `32` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
 | `Retry` | 单条失败重试次数 | `tdx.DefaultRetry` |
-| `Updated` | 增量去重库 | 自动创建于 `Dir/updated.db` |
+| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 自动创建于 `Dir/updated.db` |
 | `Manage` | 标准行情(7709)连接源 | 无（std 市场需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
-| `Workday` | 交易日历 | 无（不判断交易日） |
+| `Workday` | `*workday.Workday` 历史交易日历（`extend/workday`） | 无（不判断交易日） |
 
-配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`NewService` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
+配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
-`StartAt` 为空时使用默认日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
+新库使用固定东八区（`UTC+08:00`），`StartAt`、默认起始日期和按年定位均不随主机 `TZ` 改变。扩展行情保留服务器钟面值，按同一东八区存储口径编码；这不代表已经确认美股当地时区、夏令时或夜盘自然日。
 
-> **股本数据自动启用**：`tdx.NewManage()` 默认塞入空 Gbbq（股本变迁数据未初始化），
+数据根目录自动创建 `.storage-timezone` 标记。没有此标记且包含 `.db` 的旧目录会被拒绝，防止时区混写；请使用新目录，旧库另行迁移，不能只手工补标记。迁移要求见 [v2 迁移指南](../../docs/v2-migration.md#固定东八区与旧库隔离)。
+
+`StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
+
+> **股本数据自动启用**：`manage.New()` 默认塞入空 Gbbq（股本变迁数据未初始化），
 > 拉取股票日线时 pull 会检测到并**自动初始化**（首跑全量拉取一次，约几分钟，落库
 > `./output/data/database/gbbq.db`；之后每日 09:05 定时增量更新）。之后流通股/总股本/换手率
 > 自动回填到日线。只在股票日线任务中触发，查询代码、指数/ETF 和纯分钟任务均不初始化股本。
-> 自定义 `IGbbq` 实现会原样使用；辅助库位置不随 `Config.Dir` 改变。
+> 通过 `manage.WithGbbq` 或 `manage.WithDialGbbq` 提供的对象（包括空实现）会原样使用；辅助库位置不随 `Config.Dir` 改变。
 
 ### 代码自动路由
 
@@ -187,6 +192,7 @@ Codes: []string{
 
 ```
 {Dir}/
+├── .storage-timezone           # UTC+08:00 存储口径
 ├── updated.db                  # 增量去重标记
 ├── cn/                          # 中国大陆
 │   ├── stock/day/{code}.db      # 沪深股票
@@ -223,21 +229,21 @@ Codes: []string{
 
 分钟线对所有待补年份共用一次从新到旧的分页，股票/ETF 的集合竞价逐笔查询也不再按年份重复。
 历史年份的 `minuteCoverage` 表与 K 线在同一事务中提交。开启 `TradeFallback` 时，股票/ETF 的兜底检查完成后，当年再按最后时间戳增量；未完成时仍补查早期历史。
-旧库没有完成标记，会重新扫描认证；补拉只覆盖本次实际返回的时间段，保留服务器已不提供的本地历史前缀。
-空结果、拉取失败以及扩展行情偏移超限均不会写成功标记。`LastDayUnix/LastMinUnix` 不再为不存在的文件建库。
+已按东八区口径迁移的库若没有完成标记，会重新扫描认证；补拉只覆盖本次实际返回的时间段，保留服务器已不提供的本地历史前缀。
+空结果、拉取失败以及扩展行情偏移超限均不会写成功标记。`LastDayUnix/LastMinuteUnix` 不再为不存在的文件建库。
 完成标记表示成功处理了服务器当前可提供的数据，不保证其保留了所请求区间的全部历史；空年份会在后续执行中重新检查。
 
 ### 历史分笔兜底（股票、ETF/LOF）
 
 通过 `pull.Config{TradeFallback: true}` 显式开启，默认关闭；仅支持股票及 ETF/LOF，指数、板块指数、港美股和期货不启用。关闭时只拉原生分钟线；开启后先拉原生分钟线，仅对其最早日期之前的缺失历史交易日进行补拉；原生返回空时，尝试起始日期至昨天的交易日。网络错误直接返回，不视为历史耗尽。
 
-交易日来自同一品种可获取的日线，成交量为零的日期不请求分笔，因此不依赖调用方一定开启日线落库或配置交易日历。通过现有 `GetHistoryTradeDay` 获取分笔，复用 `Trades.Klines()` 合成 241 根：集合竞价标为 09:30，09:30 的成交归入 09:31，13:00 归入 13:01；空分钟沿用前收价、量额为零。分笔钟面时间会还原至拉取使用的本地时区，同分钟按返回顺序处理。
+交易日来自同一品种可获取的日线，成交量为零的日期不请求分笔，因此不依赖调用方一定开启日线落库或配置交易日历。通过现有 `GetHistoryTradeDay` 获取分笔，复用 `Trades.Klines()` 合成 241 根：集合竞价标为 09:30，09:30 的成交归入 09:31，13:00 归入 13:01；空分钟沿用前收价、量额为零。分笔钟面时间会还原至固定东八区，同分钟按返回顺序处理。
 
 这些是近似分钟线，不能保证高低价、成交额与原生分钟线一致，也无法从数据本身证明服务器未漏分笔。数据写入 `KlineMinute.Source="trade"`，原生来源为空字符串。先合并已有本地数据，只补缺少的时间戳；本次返回的原生数据可覆盖合成值。继续使用原有删尾重插事务，不改变通用 Save 的写入规则。
 
 分笔为空、无有效成交或请求失败时，返回带代码与日期的错误，保留缺口；已获取的原生分钟及其他日期合成结果仍按年落库，失败不会阻止其他年份提交覆盖范围。完整 241 根的已存日期重跑时跳过分笔请求。失败日期所在年份不提交本次兜底覆盖标记，市场也不会记为完成。
 
-`MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；旧标记不能跳过首次兜底检查。可用 `QueryMinCoverage` 查询、`SaveMinFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。已有表通过 Sync2 增加字段，旧数据保留；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
+`MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；旧标记不能跳过首次兜底检查。可用 `QueryMinuteCoverage` 查询、`SaveMinuteFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。已有表通过 Sync2 增加字段，旧数据保留；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
 
 `must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以本地时间 15:01 分界。
 
@@ -247,14 +253,14 @@ Codes: []string{
 
 `Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
 失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
-标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，再通过 `StandardResponse()` 提取原始字段；连接池直接使用 `IPool.Do`。
+标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，再通过 `StandardResponse()` 提取原始字段；连接池直接使用 `ClientPool.Do`。
 正在进行的拉取等待底层响应或超时，不提供取消接口。
 
 迁移调用方式：`s.Update(ctx)` → `s.Update()`，`s.Update(ctx, true)` → `s.Update(true)`。
-自定义 `Unit` 的 `Codes/FetchDay/FetchMin` 方法也需移除首个 `context.Context` 参数，见下方接口示例。
+自定义 `Unit` 的 `Codes/FetchDay/FetchMinute` 方法也需移除首个 `context.Context` 参数，见下方接口示例。
 
 调用方应在更新结束后 `defer s.Close()`；内部行情引擎按最近使用顺序淘汰，使用中的查询/事务由引用计数保护。
-外部传入的连接池与 `Updated` 仍由调用方管理。
+外部传入的连接池与 `Tracker` 仍由调用方管理。
 
 ---
 
@@ -265,7 +271,7 @@ Codes: []string{
 ks, _ := s.QueryDay(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
 
 // 1分钟线：自动按年定位文件并拼接，不存在的年份跳过
-ms, _ := s.QueryMin(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
+ms, _ := s.QueryMinute(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
 
 // 库内最后一条时间戳（空库返回 0）
 last, _ := s.LastDayUnix(pull.Code{Market: pull.MarketAStock, Code: "sh600000"})
@@ -296,7 +302,7 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, loc, []pull.TradingSession{
 `DayToPeriod` 与 `MinuteToPeriod` 保留固定根数语义；`n<=1` 原样返回。
 日线合并的股本取最后一根、换手率累加。新增日历/时段接口不修改输入，按时间排序，不填造缺失记录。
 `MinuteToSessions` 使用收盘时刻 `(start,end]` 分桶，时段开始时刻的独立记录单独保留；时段外数据或重叠时段报错。
-港美股请传对应时区与时段；期货可配置跨午夜时段，例如 `{StartMinute: 21*60, EndMinute: 2*60+30}`，避免套用 A 股时段。
+聚合函数的 `loc` 须与输入 Unix 的编码口径一致。内置拉取结果统一为东八区钟面编码，不能直接传入 `America/New_York` 再解释一次；需要真实美股当地时间时，须先确认源时间含义并单独转换。自有、已确认真实时区的数据可传对应时区与时段；期货可配置跨午夜时段，例如 `{StartMinute: 21*60, EndMinute: 2*60+30}`，避免套用 A 股时段。
 
 ---
 
@@ -308,13 +314,13 @@ type MyUnit struct{}
 func (u *MyUnit) Name() string { return "my" }
 func (u *MyUnit) Codes(s *pull.Service) ([]pull.Code, error) { /* ... */ }
 func (u *MyUnit) FetchDay(s *pull.Service, code pull.Code) error { /* ... */ }
-func (u *MyUnit) FetchMin(s *pull.Service, code pull.Code) error { /* ... */ }
+func (u *MyUnit) FetchMinute(s *pull.Service, code pull.Code) error { /* ... */ }
 
 func init() { pull.Register(&MyUnit{}) }
 ```
 
 `Service` 提供调度、去重、查询和存储能力；Unit 负责调用协议、确定增量边界并调用 Save。
-自定义历史分钟补全可使用 `MinYearComplete`/`SaveMinComplete`，只能在完整扫描成功后写完成标记。
+自定义历史分钟补全可使用 `MinuteYearComplete`/`SaveMinuteComplete`，只能在完整扫描成功后写完成标记。
 参考实现：[`market/hk.go`](market/hk.go)（扩展行情）、[`market/a_stock.go`](market/a_stock.go)（标准行情）。
 
 ---
@@ -326,3 +332,5 @@ go test ./extend/pull/... -count=1
 ```
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/data/PullV2`。
+
+内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键继续沿用原有文件命名。

@@ -41,7 +41,7 @@ func TestTHSResponseValidation(t *testing.T) {
 			dataHTTPClient = &http.Client{Timeout: time.Second, Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
 			})}
-			got, err := GetTHSDayKline("sz000001", THS_BFQ)
+			got, err := GetTHSDayKline("sz000001", THSBFQ)
 			if (err == nil) != tc.ok {
 				t.Fatal(got, err)
 			}
@@ -63,8 +63,8 @@ func TestDataRequestsHaveTimeout(t *testing.T) {
 		return nil, r.Context().Err()
 	})}
 	for _, call := range []func() error{
-		func() error { _, err := GetTHSDayKline("sz000001", THS_BFQ); return err },
-		func() error { _, err := GetSinaFactor("sz000001", Sina_QFQ); return err },
+		func() error { _, err := GetTHSDayKline("sz000001", THSBFQ); return err },
+		func() error { _, err := GetSinaFactor("sz000001", SinaQFQ); return err },
 		func() error { _, err := DialCodesHTTP("http://offline.invalid"); return err },
 		func() error { _, err := DialGbbqHTTP("http://offline.invalid"); return err },
 	} {
@@ -174,7 +174,7 @@ func TestSinaFactorValidation(t *testing.T) {
 			dataHTTPClient = &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
 			})}
-			got, err := GetSinaFactor("sz000001", Sina_QFQ)
+			got, err := GetSinaFactor("sz000001", SinaQFQ)
 			if (err == nil) != tc.ok {
 				t.Fatal(got, err)
 			}
@@ -186,7 +186,7 @@ func TestSinaFactorValidation(t *testing.T) {
 	dataHTTPClient = &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"d":"2026-01-05","f":"2.5"}]}`))}, nil
 	})}
-	got, err := GetSinaFactor("sz000001", Sina_HFQ)
+	got, err := GetSinaFactor("sz000001", SinaHFQ)
 	if err != nil || len(got) != 1 || got[0].HFactor != 2.5 || got[0].QFactor != 0 {
 		t.Fatal(got, err)
 	}

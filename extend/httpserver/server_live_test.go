@@ -23,7 +23,7 @@ func TestServerLive(t *testing.T) {
 	var mu sync.Mutex
 	var next time.Time
 	closed := make(chan struct{})
-	s, err := New(WithHosts(host), WithPoolSize(1), WithOptions(
+	s, err := New(WithHosts(host), WithPoolSize(1), WithClientOptions(
 		tdx.WithRedial(false), tdx.WithDebug(false),
 		client.WithWriteWith(func(bs []byte) ([]byte, error) {
 			mu.Lock()

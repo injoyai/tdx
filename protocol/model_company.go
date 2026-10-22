@@ -72,7 +72,7 @@ func decodeGBKName(b []byte) string {
 	if i := indexByte(b, 0); i >= 0 {
 		b = b[:i]
 	}
-	return string(UTF8ToGBK(b))
+	return string(GBKToUTF8(b))
 }
 
 func indexByte(b []byte, c byte) int {
@@ -107,5 +107,5 @@ func (companyContent) Decode(bs []byte) (string, error) {
 	if end > len(bs) {
 		return "", io.ErrUnexpectedEOF
 	}
-	return string(UTF8ToGBK(bs[12:end])), nil
+	return string(GBKToUTF8(bs[12:end])), nil
 }

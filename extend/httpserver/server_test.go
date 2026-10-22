@@ -15,6 +15,7 @@ import (
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/codes"
 )
 
 type closeTestClient struct {
@@ -42,8 +43,8 @@ func TestNewFailureClosesPool(t *testing.T) {
 	}()
 	failure := errors.New("extended initialization failure")
 	var created atomic.Int32
-	s, err := New(WithHosts(listener.Addr().String()), WithExHqHosts(listener.Addr().String()),
-		WithOptions(tdx.WithRedial(false), tdx.WithDebug(false), func(c *client.Client) {
+	s, err := New(WithHosts(listener.Addr().String()), WithExHosts(listener.Addr().String()),
+		WithClientOptions(tdx.WithRedial(false), tdx.WithDebug(false), func(c *client.Client) {
 			if created.Add(1) == 2 {
 				c.SetDial(func(context.Context) (ios.ReadWriteCloser, string, error) {
 					return nil, "", failure
@@ -61,9 +62,9 @@ func TestNewFailureClosesPool(t *testing.T) {
 }
 
 func TestNewOnlyCreatesConfiguredConnections(t *testing.T) {
-	previous := tdx.DefaultCodes
-	tdx.DefaultCodes = nil
-	t.Cleanup(func() { tdx.DefaultCodes = previous })
+	previous := codes.DefaultCodes
+	codes.DefaultCodes = nil
+	t.Cleanup(func() { codes.DefaultCodes = previous })
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -80,14 +81,14 @@ func TestNewOnlyCreatesConfiguredConnections(t *testing.T) {
 		io.Copy(io.Discard, conn)
 	}()
 	var created atomic.Int32
-	s, err := New(WithHosts(listener.Addr().String()), WithOptions(tdx.WithRedial(false), tdx.WithDebug(false),
+	s, err := New(WithHosts(listener.Addr().String()), WithClientOptions(tdx.WithRedial(false), tdx.WithDebug(false),
 		func(*client.Client) { created.Add(1) }))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if created.Load() != 1 || tdx.DefaultCodes != nil {
-		t.Fatal("created an unsolicited metadata client", created.Load(), tdx.DefaultCodes)
+	if created.Load() != 1 || codes.DefaultCodes != nil {
+		t.Fatal("created an unsolicited metadata client", created.Load(), codes.DefaultCodes)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -169,6 +170,9 @@ func TestParseExchange(t *testing.T) {
 		{"sz", 0, false},
 		{"bj", 2, false},
 		{"SH", 1, false},
+		{"Sh", 1, false},
+		{"sZ", 0, false},
+		{"hk", 0, true},
 		{"xx", 0, true},
 	}
 	for _, c := range cases {
@@ -185,16 +189,5 @@ func TestParseExchange(t *testing.T) {
 		if ex.Uint8() != c.want {
 			t.Errorf("parseExchange(%q) = %d, want %d", c.in, ex.Uint8(), c.want)
 		}
-	}
-}
-
-func TestQueryUint16Default(t *testing.T) {
-	req := httptest.NewRequest("GET", "/?count=100", nil)
-	if got := queryUint16Default(req, "count", 50); got != 100 {
-		t.Errorf("expected 100, got %d", got)
-	}
-	req2 := httptest.NewRequest("GET", "/", nil)
-	if got := queryUint16Default(req2, "count", 50); got != 50 {
-		t.Errorf("expected default 50, got %d", got)
 	}
 }

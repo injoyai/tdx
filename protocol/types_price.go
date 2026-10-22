@@ -8,23 +8,23 @@ import (
 // Price 价格，单位厘
 type Price int64
 
-func (this Price) Float64() float64 {
-	return float64(this) / 1000
+func (p Price) Float64() float64 {
+	return float64(p) / 1000
 }
 
-func (this Price) Int64() int64 {
-	return int64(this)
+func (p Price) Int64() int64 {
+	return int64(p)
 }
 
-func (this Price) String() string {
-	return fmt.Sprintf("%s元", FloatUnitString(this.Float64()))
+func (p Price) String() string {
+	return fmt.Sprintf("%s元", FloatUnitString(p.Float64()))
 }
 
-func (this Price) Abs() Price {
-	if this < 0 {
-		return -this
+func (p Price) Abs() Price {
+	if p < 0 {
+		return -p
 	}
-	return this
+	return p
 }
 
 func Yuan(f float64) Price {
@@ -39,22 +39,25 @@ type PriceLevel struct {
 
 type PriceLevels [5]PriceLevel
 
-func (this PriceLevels) String() string {
+func (ps PriceLevels) String() string {
 	s := ""
-	if this[0].Buy {
-		for i, v := range this {
+	if ps[0].Buy {
+		for i, v := range ps {
 			s += fmt.Sprintf("买%d  %s  %s\n", i+1, v.Price, IntUnitString(v.Number))
 		}
 
 	} else {
 		for i := 4; i >= 0; i-- {
-			s += fmt.Sprintf("卖%d  %s  %s\n", i+1, this[i].Price, IntUnitString(this[i].Number))
+			s += fmt.Sprintf("卖%d  %s  %s\n", i+1, ps[i].Price, IntUnitString(ps[i].Number))
 		}
 	}
 	return s
 }
 
-// DecodeKline 一般是占用6字节
+// DecodeKline 解码旧格式的五个变长价格字段（收盘及相对收盘的昨收/开/高/低），
+// 将分乘 10 转为厘；时间取调用时刻，不包含日期、成交量或金额，也不报告截断错误。
+//
+// Deprecated: 标准 K 线响应请使用 MKline.Decode；两者字段布局不同，不能互换。
 func DecodeKline(bs []byte) ([]byte, *Kline) {
 	k := &Kline{
 		Time: time.Now(),
@@ -90,21 +93,13 @@ func DecodeKline(bs []byte) ([]byte, *Kline) {
 }
 
 func GetPrice(bs []byte) ([]byte, Price) {
-	for i := range bs {
-		if bs[i]&0x80 == 0 {
-			return bs[i+1:], Price(getData(bs[:i+1]))
-		}
-	}
-	return bs, 0
+	bs, v := CutInt64(bs)
+	return bs, Price(v)
 }
 
 func CutInt(bs []byte) ([]byte, int) {
-	for i := range bs {
-		if bs[i]&0x80 == 0 {
-			return bs[i+1:], int(getData(bs[:i+1]))
-		}
-	}
-	return bs, 0
+	bs, v := CutInt64(bs)
+	return bs, int(v)
 }
 
 func CutInt64(bs []byte) ([]byte, int64) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestUTF8ToGBK(t *testing.T) {
+func TestGBKToUTF8(t *testing.T) {
 	s := "789c6378c1cec7a5cbcbc061c5b4898987b9050ed1f90c65b74c1825bd18c1b42890fecff09c81819191f13fc3c9f3bb169f5e7dfefeb5ef57f7199a305009308208e5b32bb6bcbf7014871200176e1df3"
 	//s := "b1cb74001c00000000000d005100bd00789c6378c1cecb252ace6066c5b4898987b9050ed1f90cc5b74c18a5bc18c1b43490fecff09c81819191f13fc3c9f3bb169f5e7dfefeb5ef57f7199a305009308208e5b32bb6bcbf70148712002d7f1e13"
 	bs, err := hex.DecodeString(s)
@@ -15,18 +15,15 @@ func TestUTF8ToGBK(t *testing.T) {
 		return
 	}
 	t.Log(string(bs[68:]))
-	bs = UTF8ToGBK(bs)
+	bs = GBKToUTF8(bs)
 	t.Log(string(bs))
 }
 
-func TestGetVolume(t *testing.T) {
+func TestFloat32Value(t *testing.T) {
 	for _, want := range []float32{0, 0.5, 1, 10, 436, 587760.1875} {
 		bits := math.Float32bits(want)
-		if got := getVolume(bits); got != float64(want) {
-			t.Errorf("getVolume(%08x) = %v, want %v", bits, got, want)
-		}
-		if got := getVolume2(bits); got != float64(want) {
-			t.Errorf("getVolume2(%08x) = %v, want %v", bits, got, want)
+		if got := float32Value(bits); got != float64(want) {
+			t.Errorf("float32Value(%08x) = %v, want %v", bits, got, want)
 		}
 	}
 }
@@ -159,6 +156,8 @@ func TestDecodeCode(t *testing.T) {
 		{"920000", ExchangeBJ, "920000"},
 		{"399001", ExchangeSZ, "399001"}, //深成指
 		{"nq400001", ExchangeNQ, "400001"},
+		{"cffo123456", ExchangeCFFO, "123456"},
+		{"gfeo123456", ExchangeGFEO, "123456"},
 		{"sh000001", ExchangeSH, "000001"}, //上证指数
 		{"880741", ExchangeSH, "880741"},   //板块指数(代糖概念),自动补 sh 前缀
 		{"881101", ExchangeSH, "881101"},   //行业板块指数,自动补 sh 前缀
@@ -168,10 +167,10 @@ func TestDecodeCode(t *testing.T) {
 		// 带点后缀
 		{"000001.SZ", ExchangeSZ, "000001"},
 		{"600000.SH", ExchangeSH, "600000"},
-		{"600000.sh", ExchangeSH, "600000"}, //小写后缀
-		{"399001.SZ", ExchangeSZ, "399001"}, //深成指
-		{"00700.HK", ExchangeHK, "00700"},   //港股
-		{"AAPL.US", ExchangeUS, "AAPL"},     //美股
+		{"600000.sh", ExchangeSH, "600000"},   //小写后缀
+		{"399001.SZ", ExchangeSZ, "399001"},   //深成指
+		{"00700.HK", ExchangeHK, "00700"},     //港股
+		{"AAPL.US", ExchangeUS, "AAPL"},       //美股
 		{"IF2609.CFF", ExchangeCFF, "IF2609"}, //期货
 
 		// 港股

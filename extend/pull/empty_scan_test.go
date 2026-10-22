@@ -10,7 +10,7 @@ func TestEmptyMinuteScanExpiryScopeAndRange(t *testing.T) {
 	code := Code{Market: MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	from := time.Date(2024, 3, 1, 0, 0, 0, 0, time.Local).Unix()
-	if err := s.SaveMinEmptyScan(code, 2024, from, now); err != nil {
+	if err := s.SaveMinuteEmptyScan(code, 2024, from, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -31,16 +31,16 @@ func TestEmptyMinuteScanExpiryScopeAndRange(t *testing.T) {
 		{"other market", Code{Market: MarketIndex, Code: code.Code}, 2024, from, now, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := s.MinYearRecentlyEmpty(tt.code, tt.year, tt.from, tt.now)
+			got, err := s.MinuteYearRecentlyEmpty(tt.code, tt.year, tt.from, tt.now)
 			if err != nil || got != tt.want {
 				t.Fatal(got, err)
 			}
 		})
 	}
-	if s.MinExists(code, 2024) {
+	if s.MinuteExists(code, 2024) {
 		t.Fatal("空历史扫描创建了行情库")
 	}
-	if done, err := s.MinYearComplete(code, 2024, from); err != nil || done {
+	if done, err := s.MinuteYearComplete(code, 2024, from); err != nil || done {
 		t.Fatal("空历史缓存被当成完成标记", done, err)
 	}
 }

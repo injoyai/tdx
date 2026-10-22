@@ -15,7 +15,7 @@ func main() {
 	code := "sz000001"
 
 	// 先运行 examples/data/PullV2，使用同一目录中的日线数据。
-	s, err := pull.NewService(&pull.Config{
+	s, err := pull.New(&pull.Config{
 		Dir:   "./output/pullv2",
 		Codes: []string{code},
 		Day:   true,

@@ -8,7 +8,7 @@ import (
 )
 
 func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20200101", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20200101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
 }
 
 func TestSaveDaysFiltersStartAndEmptyResult(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20260101", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20260101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}

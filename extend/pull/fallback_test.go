@@ -11,7 +11,7 @@ func TestMinuteFallbackSchemaAndSource(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: MarketAStock, Code: "sz000001"}
 	day := time.Date(2025, 1, 6, 0, 0, 0, 0, time.Local)
-	db, err := xorms.NewSqlite(s.MinFile(c, 2025))
+	db, err := xorms.NewSQLite(s.MinuteFile(c, 2025))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,28 +30,28 @@ func TestMinuteFallbackSchemaAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryMin(c, day, day.AddDate(0, 0, 1))
+	rows, err := s.QueryMinute(c, day, day.AddDate(0, 0, 1))
 	if err != nil || len(rows) != 1 || rows[0].Source != "" {
 		t.Fatal("旧库原生来源迁移失败", rows, err)
 	}
-	coverage, err := s.QueryMinCoverage(c, 2025)
+	coverage, err := s.QueryMinuteCoverage(c, 2025)
 	if err != nil || coverage == nil || coverage.TradeFallback || coverage.Through != 0 {
 		t.Fatal("旧标记误判兜底完成", coverage, err)
 	}
 	through := day.AddDate(0, 0, 1).Unix()
 	ks := []*KlineMinute{{Unix: day.Unix(), Source: MinuteSourceTrade}}
-	if err := s.SaveMinFallbackComplete(c, 2025, day.Unix(), through, ks); err != nil {
+	if err := s.SaveMinuteFallbackComplete(c, 2025, day.Unix(), through, ks); err != nil {
 		t.Fatal(err)
 	}
 	// 事务失败必须同时回滚数据和新覆盖范围。
-	if err := s.SaveMinFallbackComplete(c, 2025, day.AddDate(0, 0, -1).Unix(), through, append(ks, ks[0])); err == nil {
+	if err := s.SaveMinuteFallbackComplete(c, 2025, day.AddDate(0, 0, -1).Unix(), through, append(ks, ks[0])); err == nil {
 		t.Fatal("重复主键应失败")
 	}
-	coverage, err = s.QueryMinCoverage(c, 2025)
+	coverage, err = s.QueryMinuteCoverage(c, 2025)
 	if err != nil || coverage.From != day.Unix() || coverage.Through != through || !coverage.TradeFallback {
 		t.Fatal("覆盖标记未回滚", coverage, err)
 	}
-	rows, err = s.QueryMin(c, day, day.AddDate(0, 0, 1))
+	rows, err = s.QueryMinute(c, day, day.AddDate(0, 0, 1))
 	if err != nil || len(rows) != 1 || rows[0].Source != MinuteSourceTrade {
 		t.Fatal("合成来源未持久化", rows, err)
 	}

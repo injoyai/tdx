@@ -52,10 +52,10 @@ func (c Code) DayFile(dir string) string {
 	return filepath.Join(dir, c.DirName(), "day", c.FileName()+".db")
 }
 
-// MinFile 该代码指定年份的1分钟线 sqlite 文件路径。
+// MinuteFile 该代码指定年份的1分钟线 sqlite 文件路径。
 // 布局：{dir}/{地区}/{资产}/min/{code}/{code}-{year}.db（子目录与文件名均用原始代码，
 // 便于按代码单独检索/拷贝；期货代码中的 "/" 替换为 "-"）。
-func (c Code) MinFile(dir string, year int) string {
+func (c Code) MinuteFile(dir string, year int) string {
 	y := yearToString(year)
 	name := c.FileName()
 	return filepath.Join(dir, c.DirName(), "min", name, name+"-"+y+".db")
@@ -74,13 +74,16 @@ func yearToString(year int) string {
 // 支持市场前缀的直接拼接和点分隔形式，以及原有的完整市场键。
 func SplitKey(key string) Code {
 	key = strings.TrimSpace(key)
-	if code, ok, err := parseMarketPrefix(key); ok {
-		if err == nil {
-			return code
-		}
-		return Code{Code: key}
+	if code, err := ParseCode(key); err == nil {
+		return code
 	}
 	if i := strings.IndexByte(key, '.'); i > 0 {
+		if _, err := protocol.ParseExchange(key[:i]); err == nil {
+			return Code{Code: key}
+		}
+		if _, matched, _ := parseMarketPrefix(key); matched {
+			return Code{Code: key}
+		}
 		return Code{Market: Market(strings.ToLower(key[:i])), Code: key[i+1:]}
 	}
 	return Code{Code: key}
@@ -89,15 +92,10 @@ func SplitKey(key string) Code {
 var marketPrefixes = []string{
 	MarketAStock.String(), MarketIndex.String(), MarketEtfLof.String(), MarketBlock.String(),
 	MarketFuture.String(), MarketHK.String(), MarketHKIndex.String(), MarketUS.String(),
-	"sh", "sz", "bj", "hk", "us", "cff", "czc", "dce", "shf", "gfe", "qhz",
 }
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
 func parseMarketPrefix(s string) (Code, bool, error) {
-	// 裸 HKL 是完整指数代码，不能拆成 hk + L。
-	if _, ok := hkIndexCodes[strings.ToUpper(s)]; ok {
-		return Code{Market: MarketHKIndex, Code: strings.ToUpper(s)}, true, nil
-	}
 	prefixes := append([]string(nil), marketPrefixes...)
 	for _, u := range Units() {
 		prefixes = append(prefixes, u.Name())
@@ -109,14 +107,11 @@ func parseMarketPrefix(s string) (Code, bool, error) {
 		}
 		body := s[len(prefix):]
 		dotted := strings.HasPrefix(body, ".")
-		lower := strings.ToLower(prefix)
-		future := lower == "cff" || lower == "czc" || lower == "dce" || lower == "shf" || lower == "gfe" || lower == "qhz"
-		slashed := future && strings.HasPrefix(body, "/")
-		if dotted || slashed {
+		if dotted {
 			body = body[1:]
 		}
 		code, err := codeInMarket(prefix, body)
-		if err == nil || dotted || slashed || strings.Contains(prefix, "/") {
+		if err == nil || dotted || strings.Contains(prefix, "/") {
 			return code, true, err
 		}
 		// 无分隔形式只有主体合法才拆分，保留 SHOP 等裸美股代码。
@@ -138,20 +133,19 @@ func codeInMarket(prefix, body string) (Code, error) {
 	case MarketUS:
 		query = "us." + body
 	default:
-		switch lower {
-		case "sh", "sz", "bj", "hk", "us", "cff", "czc", "dce", "shf", "gfe", "qhz":
-			explicit = ""
-		default:
-			if body == "" {
-				return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
-			}
-			return Code{Market: Market(prefix), Code: body}, nil
+		if body == "" {
+			return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
 		}
+		return Code{Market: Market(prefix), Code: body}, nil
 	}
 	i, err := protocol.ParseInstrument(query)
 	if err != nil {
 		return Code{}, err
 	}
+	return codeForInstrument(i, explicit, body)
+}
+
+func codeForInstrument(i protocol.Instrument, explicit Market, body string) (Code, error) {
 	market, err := i.Market()
 	if err != nil {
 		return Code{}, err
@@ -171,20 +165,9 @@ func codeInMarket(prefix, body string) (Code, error) {
 		code = i.Exchange.String() + "/" + i.Code
 	}
 	if explicit != "" && explicit != market {
-		return Code{}, fmt.Errorf("pull: 代码 %q 不属于市场 %s", body, prefix)
+		return Code{}, fmt.Errorf("pull: 代码 %q 不属于市场 %s", body, explicit)
 	}
 	return Code{Market: market, Code: code}, nil
-}
-
-// hkIndexCodes 知名港股指数白名单（扩展行情市场27实测品种）。
-// 纯字母/字母数字代码与美股形态相同，需白名单区分；其余 HZ50xx/CESxxx
-// 等可用 "hk.CES120" 指定。
-var hkIndexCodes = map[string]struct{}{
-	"HSI":    {}, // 恒生指数
-	"HKL":    {}, // 大型股指数
-	"VHSI":   {}, // 恒指波幅指数
-	"CES100": {}, // 港股通精选100
-	"GEM":    {}, // 创业板指数
 }
 
 // ParseCode 将用户输入的代码字符串自动路由为 Code（识别所属市场）。
@@ -206,42 +189,9 @@ func ParseCode(s string) (Code, error) {
 	if code, ok, err := parseMarketPrefix(s); ok {
 		return code, err
 	}
-	// 保留自定义市场的完整键形式。
-	if i := strings.IndexByte(s, '.'); i > 0 {
-		return SplitKey(s), nil
+	i, err := protocol.ParseInstrument(s)
+	if err != nil {
+		return Code{}, err
 	}
-	if len(s) == 6 && isAllDigit(s) {
-		p := protocol.AddPrefix(s)
-		if p != s {
-			return codeInMarket(p[:2], p[2:])
-		}
-		if strings.HasPrefix(s, "89") {
-			return codeInMarket("bj", s)
-		}
-	}
-	if len(s) == 5 && isAllDigit(s) {
-		return codeInMarket("hk", s)
-	}
-	if isAllLetter(s) {
-		return codeInMarket("us", s)
-	}
-	return Code{}, fmt.Errorf("pull: 无法识别代码 %q 的所属市场", s)
-}
-
-func isAllDigit(s string) bool {
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return len(s) > 0
-}
-
-func isAllLetter(s string) bool {
-	for _, c := range s {
-		if c < 'A' || c > 'z' || (c > 'Z' && c < 'a') {
-			return false
-		}
-	}
-	return len(s) > 0
+	return codeForInstrument(i, "", s)
 }

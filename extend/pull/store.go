@@ -41,7 +41,7 @@ const MinuteSourceTrade = "trade"
 
 // openDB 打开（必要时创建）指定 sqlite 文件并建表。
 func openDB(filename string, table any) (*xorms.Engine, error) {
-	db, err := xorms.NewSqlite(filename)
+	db, err := xorms.NewSQLite(filename)
 	if err != nil {
 		return nil, err
 	}

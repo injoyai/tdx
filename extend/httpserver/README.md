@@ -25,8 +25,8 @@ func main() {
 	s, err = httpserver.New(
 		httpserver.WithAddr(":8080"),
 		httpserver.WithPoolSize(2),
-		httpserver.WithExHqHosts(tdx.ExHosts...), // 可选,启用扩展行情 /ex/* 路由
-		httpserver.WithOptions(tdx.WithRedial()),
+		httpserver.WithExHosts(tdx.ExHosts...), // 可选,启用扩展行情 /ex/* 路由
+		httpserver.WithClientOptions(tdx.WithRedial()),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -48,13 +48,15 @@ func main() {
 | `WithAddr(addr)` | HTTP 监听地址 | `":8080"` |
 | `WithHosts(hosts...)` | 标准行情服务器列表 | `tdx.Hosts` |
 | `WithPoolSize(n)` | 标准连接池大小 | `1` |
-| `WithExHqHosts(hosts...)` | 扩展行情服务器列表,为空则不启用扩展行情 | 无 |
+| `WithExHosts(hosts...)` | 扩展行情服务器列表,为空则不启用扩展行情 | 无 |
 | `WithExPoolSize(n)` | 扩展连接池大小 | `1` |
-| `WithOptions(opts...)` | 通达信连接选项,如 `tdx.WithDebug()`、`tdx.WithRedial()` | 无 |
+| `WithClientOptions(opts...)` | 通达信连接选项,如 `tdx.WithDebug()`、`tdx.WithRedial()` | 无 |
 
 > `Default()` 会自动添加 `tdx.WithRedial()` 断线重连选项。
 
 使用完成后调用 `s.Close()`，同时关闭 HTTP 服务及其标准、扩展行情连接池。初始化失败会释放已创建的连接池。启动时只创建配置的连接池，不再初始化全局 `tdx.DefaultCodes`、元数据数据库或额外定时任务；报价所需的精度元数据由标准连接按需获取。
+
+客户端断开或取消请求后，会退出连接池等待，不会继续占用排队名额。已经开始的上游查询仍受通达信客户端请求超时约束。
 
 ## 响应格式
 
@@ -185,7 +187,7 @@ func main() {
 
 ### 扩展行情
 
-> 需要通过 `WithExHqHosts()` 选项启用,否则返回 404。
+> 需要通过 `WithExHosts()` 选项启用,否则返回 404。
 
 | 路径 | 参数 | 说明 |
 | --- | --- | --- |
@@ -267,3 +269,5 @@ curl "http://localhost:8080/ex/quote?market=47&code=600519"
 Go Client 业务接口的代码查询已统一为 `GetCount/GetCode/GetCodeAll/GetMarkets`。HTTP 仍保留原路由和响应结构；`/ex/count` 返回扩展全局总数，`/ex/instruments` 使用全局分页偏移，与新的按市场 Go 查询语义不同。
 
 Go 的独立指数 K线入口和 `ExBarsRange` 已移除；历史 `/index/*`、`/ex/bars/range` 路由仍保留原字段格式，内部改用统一 K线函数。`/ex/bars/range` 仍查询固定一分钟区间，统一路由仅支持已接入市场。
+
+标准 K 线、分时及分笔的响应统一经 `StandardResponse()` 转换，`Count` 等于实际 `List` 长度。后端缺少标准原始记录或结果超过 uint16 上限时返回业务错误（HTTP 200，`code=1`）。沪深北 `exchange` 参数共用协议解析器，支持 `Sh` 等混合大小写。

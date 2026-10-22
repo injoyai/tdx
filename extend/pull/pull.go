@@ -13,6 +13,9 @@ import (
 
 	"github.com/injoyai/bar"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/workday"
+	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -21,7 +24,7 @@ import (
 type Service struct {
 	cfg       *Config
 	units     []Unit
-	updated   *tdx.Updated
+	updated   *update.Tracker
 	updatedDB *xorms.Engine // 内部自建的去重库，Close 时释放
 	day       bool
 	minute    bool
@@ -44,8 +47,8 @@ type Service struct {
 	instruments []protocol.ExInstrument
 }
 
-// NewService 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
-func NewService(cfg *Config) (*Service, error) {
+// New 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
+func New(cfg *Config) (*Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
@@ -113,16 +116,19 @@ func NewService(cfg *Config) (*Service, error) {
 	if len(units) == 0 {
 		return nil, fmt.Errorf("pull: 未注册任何市场 Unit")
 	}
+	if err := checkTimezone(cfg.Dir); err != nil {
+		return nil, err
+	}
 
 	// 增量去重库：未指定则自动创建于 Dir/updated.db
-	updated := cfg.Updated
+	updated := cfg.Tracker
 	var updatedDB *xorms.Engine
 	if updated == nil {
-		db, err := xorms.NewSqlite(filepath.Join(cfg.Dir, "updated.db"))
+		db, err := xorms.NewSQLite(filepath.Join(cfg.Dir, "updated.db"))
 		if err != nil {
 			return nil, err
 		}
-		updated, err = tdx.NewUpdated(db, 15, 1)
+		updated, err = update.New(db, 15, 1)
 		if err != nil {
 			db.Close()
 			return nil, err
@@ -132,8 +138,8 @@ func NewService(cfg *Config) (*Service, error) {
 
 	// 起始日期：未设置时默认最近两年（首拉全量的最早日期）
 	if cfg.StartAt == "" {
-		now := time.Now()
-		start = time.Date(now.Year()-2, now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		now := time.Now().In(protocol.Location())
+		start = time.Date(now.Year()-2, now.Month(), now.Day(), 0, 0, 0, 0, protocol.Location())
 	}
 
 	return &Service{
@@ -152,7 +158,7 @@ func NewService(cfg *Config) (*Service, error) {
 	}, nil
 }
 
-// Close 关闭内部持有的增量去重库连接（外部传入的 Updated/连接池由调用方自行管理）。
+// Close 关闭内部持有的增量去重库连接（外部传入的 Tracker/连接池由调用方自行管理）。
 func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -188,10 +194,10 @@ func (s *Service) TradeFallbackEnabled() bool { return s.cfg.TradeFallback }
 func (s *Service) Start() time.Time { return s.start }
 
 // Manage 返回标准行情(7709)连接源；未配置返回 nil。
-func (s *Service) Manage() *tdx.Manage { return s.cfg.Manage }
+func (s *Service) Manage() *manage.Manage { return s.cfg.Manage }
 
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
-func (s *Service) ExPool() tdx.IPool { return s.cfg.ExPool }
+func (s *Service) ExPool() tdx.ClientPool { return s.cfg.ExPool }
 
 // GetInstruments Update 期间共用一次发现；Update 之外每次重新查询。
 func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
@@ -257,7 +263,7 @@ func (s *Service) Update(must ...bool) error {
 			}
 		}
 		// 当日已拉过则跳过（整体增量去重）
-		done, err := s.updated.Updated(key)
+		done, err := s.updated.IsUpdated(key)
 		if err != nil {
 			return err
 		}
@@ -269,7 +275,7 @@ func (s *Service) Update(must ...bool) error {
 	var firstErr error
 	for _, u := range s.units {
 		key := s.updateKey("pull:" + u.Name())
-		done, err := s.updated.Updated(key)
+		done, err := s.updated.IsUpdated(key)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -285,7 +291,7 @@ func (s *Service) Update(must ...bool) error {
 			}
 			continue
 		}
-		if err := s.updated.Update(key); err != nil {
+		if err := s.updated.Mark(key); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -296,7 +302,7 @@ func (s *Service) Update(must ...bool) error {
 	}
 
 	// 全部完成，标记当日已拉取
-	return s.updated.Update(key)
+	return s.updated.Mark(key)
 }
 
 // updateKey 将去重标记限定到实际配置；代码和市场顺序不影响任务身份。
@@ -322,7 +328,7 @@ func (s *Service) updateKey(prefix string) string {
 }
 
 // workday 若调用方配置了交易日对象则返回，否则 ok=false。
-func (s *Service) workday() (*tdx.Workday, bool) {
+func (s *Service) workday() (*workday.Workday, bool) {
 	if s.cfg.Workday != nil {
 		return s.cfg.Workday, true
 	}
@@ -363,7 +369,7 @@ func (s *Service) updateUnit(u Unit) error {
 				err = fetchWithRetry(u.FetchDay)
 			}
 			if err == nil && s.minute {
-				err = fetchWithRetry(u.FetchMin)
+				err = fetchWithRetry(u.FetchMinute)
 			}
 			if err == nil {
 				atomic.AddInt64(&succCount, 1)
@@ -418,16 +424,16 @@ func (s *Service) openDay(code Code) (*xorms.Engine, func(), error) {
 	return s.engine(code.DayFile(s.cfg.Dir), new(KlineDay))
 }
 
-// openMin 打开某代码指定年份分钟线库并建表（带引擎缓存）。
-func (s *Service) openMin(code Code, year int) (*xorms.Engine, func(), error) {
-	return s.engine(code.MinFile(s.cfg.Dir, year), new(KlineMinute))
+// openMinute 打开某代码指定年份分钟线库并建表（带引擎缓存）。
+func (s *Service) openMinute(code Code, year int) (*xorms.Engine, func(), error) {
+	return s.engine(code.MinuteFile(s.cfg.Dir, year), new(KlineMinute))
 }
 
 // DayFile 返回某代码日线文件路径（供 Unit/查询用）。
 func (s *Service) DayFile(code Code) string { return code.DayFile(s.cfg.Dir) }
 
-// MinFile 返回某代码指定年份分钟线文件路径。
-func (s *Service) MinFile(code Code, year int) string { return code.MinFile(s.cfg.Dir, year) }
+// MinuteFile 返回某代码指定年份分钟线文件路径。
+func (s *Service) MinuteFile(code Code, year int) string { return code.MinuteFile(s.cfg.Dir, year) }
 
 // QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空。
 // start/end 为零值时表示不限制该端。
@@ -456,12 +462,12 @@ func (s *Service) LastDayUnix(code Code) (int64, error) {
 	return LastUnix(db, new(KlineDay))
 }
 
-// LastMinUnix 查询某代码指定年份分钟库内最后一条记录的时间戳；空库返回 0。
-func (s *Service) LastMinUnix(code Code, year int) (int64, error) {
-	if !s.MinExists(code, year) {
+// LastMinuteUnix 查询某代码指定年份分钟库内最后一条记录的时间戳；空库返回 0。
+func (s *Service) LastMinuteUnix(code Code, year int) (int64, error) {
+	if !s.MinuteExists(code, year) {
 		return 0, nil
 	}
-	db, release, err := s.openMin(code, year)
+	db, release, err := s.openMinute(code, year)
 	if err != nil {
 		return 0, err
 	}
@@ -483,13 +489,13 @@ func (s *Service) SaveDay(code Code, from int64, ks []*KlineDay) error {
 	return upsertDay(db, from, ks)
 }
 
-// SaveMin 打开某代码指定年份分钟库并增量写入（删除 Unix>=from 后插入，事务内幂等）。
+// SaveMinute 打开某代码指定年份分钟库并增量写入（删除 Unix>=from 后插入，事务内幂等）。
 // 空数据直接跳过（不打开库文件，避免创建空库）。
-func (s *Service) SaveMin(code Code, year int, from int64, ks []*KlineMinute) error {
+func (s *Service) SaveMinute(code Code, year int, from int64, ks []*KlineMinute) error {
 	if len(ks) == 0 {
 		return nil
 	}
-	db, release, err := s.openMin(code, year)
+	db, release, err := s.openMinute(code, year)
 	if err != nil {
 		return err
 	}
@@ -497,18 +503,18 @@ func (s *Service) SaveMin(code Code, year int, from int64, ks []*KlineMinute) er
 	return upsertMin(db, from, ks)
 }
 
-// MinExists 判断某代码指定年份的分钟线文件是否已存在。
-func (s *Service) MinExists(code Code, year int) bool {
-	return exists(code.MinFile(s.cfg.Dir, year))
+// MinuteExists 判断某代码指定年份的分钟线文件是否已存在。
+func (s *Service) MinuteExists(code Code, year int) bool {
+	return exists(code.MinuteFile(s.cfg.Dir, year))
 }
 
-// QueryMin 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
+// QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
 // start/end 为零值时表示不限制该端。
-func (s *Service) QueryMin(code Code, start, end time.Time) ([]*KlineMinute, error) {
+func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, error) {
 	out := []*KlineMinute{}
 	startYear, endYear := minMaxYear(start, end, s.Start().Location())
 	for y := startYear; y <= endYear; y++ {
-		file := code.MinFile(s.cfg.Dir, y)
+		file := code.MinuteFile(s.cfg.Dir, y)
 		if !exists(file) {
 			continue
 		}

@@ -163,13 +163,13 @@ func TestSharedDialFunctions(t *testing.T) {
 	}
 }
 
-func TestDialExHqHostsUsesExtendedDefaults(t *testing.T) {
+func TestDialExHostsUsesExtendedDefaults(t *testing.T) {
 	l := localDialListener(t)
 	previous, previousEx := Hosts, ExHosts
 	Hosts, ExHosts = []string{"127.0.0.1:0"}, []string{l.Addr().String()}
 	t.Cleanup(func() { Hosts, ExHosts = previous, previousEx })
 	for _, hosts := range [][]string{nil, {}, ExHosts} {
-		c, err := DialExHqHosts(hosts, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
+		c, err := DialExHosts(hosts, WithRedial(false), WithLevel(LevelNone), WithDebug(false))
 		if err != nil {
 			t.Fatal("extended dial used the wrong address or port:", err)
 		}
@@ -190,7 +190,7 @@ func TestDialEmptyHosts(t *testing.T) {
 		}
 	}
 	// 扩展默认列表为空时，即使标准地址可用也不能回退到标准协议。
-	if c, err := DialExHqHosts(nil, WithRedial(false), WithLevel(LevelNone), WithDebug(false)); c != nil || err == nil {
+	if c, err := DialExHosts(nil, WithRedial(false), WithLevel(LevelNone), WithDebug(false)); c != nil || err == nil {
 		if c != nil {
 			c.Close()
 		}

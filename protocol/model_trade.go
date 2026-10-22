@@ -23,18 +23,18 @@ type Trade struct {
 	Number int       //单数,历史数据该字段无效
 }
 
-func (this *Trade) String() string {
+func (t *Trade) String() string {
 	return fmt.Sprintf("%s \t%-6s \t%-6s \t%-6d(手) \t%-4d(单) \t%-4s",
-		this.Time, this.Price, this.Amount(), this.Volume, this.Number, this.StatusString())
+		t.Time, t.Price, t.Amount(), t.Volume, t.Number, t.StatusString())
 }
 
 // Amount 成交额
-func (this *Trade) Amount() Price {
-	return this.Price * Price(ToShares(int64(this.Volume)))
+func (t *Trade) Amount() Price {
+	return t.Price * Price(ToShares(int64(t.Volume)))
 }
 
-func (this *Trade) StatusString() string {
-	switch this.Status {
+func (t *Trade) StatusString() string {
+	switch t.Status {
 	case 0:
 		return "买入"
 	case 1:
@@ -45,23 +45,23 @@ func (this *Trade) StatusString() string {
 }
 
 // AvgVolume 平均每单成交量
-func (this *Trade) AvgVolume() float64 {
-	return float64(this.Volume) / float64(this.Number)
+func (t *Trade) AvgVolume() float64 {
+	return float64(t.Volume) / float64(t.Number)
 }
 
-// AvgPrice 平均每单成交金额
-func (this *Trade) AvgPrice() Price {
-	return Price(this.AvgVolume() * float64(this.Price) * SharesPerLot)
+// AvgAmount 返回平均每单成交额，单位为厘。
+func (t *Trade) AvgAmount() Price {
+	return Price(t.AvgVolume() * float64(t.Price) * SharesPerLot)
 }
 
 // IsBuy 是否是买单
-func (this *Trade) IsBuy() bool {
-	return this.Status == 0
+func (t *Trade) IsBuy() bool {
+	return t.Status == 0
 }
 
 // IsSell 是否是卖单
-func (this *Trade) IsSell() bool {
-	return this.Status == 1
+func (t *Trade) IsSell() bool {
+	return t.Status == 1
 }
 
 type trade struct{}
@@ -103,7 +103,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 			return nil, fmt.Errorf("成交记录 %d: 时间数据不足", i)
 		}
 		timeStr := GetHourMinute([2]byte(bs[:2]))
-		t, err := time.Parse("2006010215:04", c.Date+timeStr)
+		t, err := time.ParseInLocation("2006010215:04", c.Date+timeStr, Location())
 		if err != nil {
 			return nil, err
 		}
@@ -132,9 +132,9 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 
 type Trades []*Trade
 
-// Volume2 内(主动卖)外(主动买)盘成交量,不准确,能用
-func (this Trades) Volume2() (sell int64, buy int64) {
-	for _, v := range this {
+// SideVolumes 返回主动卖出和主动买入的股数，沿用原 Status 分类口径。
+func (ts Trades) SideVolumes() (sell int64, buy int64) {
+	for _, v := range ts {
 		switch v.Status {
 		case 0: //买
 			buy += ToShares(int64(v.Volume))
@@ -145,11 +145,11 @@ func (this Trades) Volume2() (sell int64, buy int64) {
 	return
 }
 
-// Klines 合并分时成交成k线
-func (this Trades) Klines() Klines {
+// Klines 按分笔自带的交易日期与时区合并为沪深 241 根分钟线，保留 09:30 竞价。
+func (ts Trades) Klines() Klines {
 	//按天分割
 	m := make(types.SortMap[int64, Trades])
-	for _, v := range this {
+	for _, v := range ts {
 		//获取当天零点的时间戳
 		unix := time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 0, 0, 0, 0, v.Time.Location()).Unix()
 		m[unix] = append(m[unix], v)
@@ -159,7 +159,7 @@ func (this Trades) Klines() Klines {
 	mKline := types.SortMap[int64, Klines]{}
 	for date, v := range m {
 		//生成一分钟k线
-		t := time.Unix(date, 0)
+		t := time.Unix(date, 0).In(v[0].Time.Location())
 		mKline[date] = v.klinesForDay(t)
 	}
 	//按时间排序
@@ -172,7 +172,7 @@ func (this Trades) Klines() Klines {
 }
 
 // Kline 合并分时成交成1个k线,注意分时成交时间保持一致
-func (this Trades) Kline(t time.Time, last Price) *Kline {
+func (ts Trades) Kline(t time.Time, last Price) *Kline {
 	k := &Kline{
 		Time:  t,
 		Last:  last,
@@ -182,7 +182,7 @@ func (this Trades) Kline(t time.Time, last Price) *Kline {
 		Close: last,
 	}
 	first := 0
-	for _, v := range this {
+	for _, v := range ts {
 		if v.Price <= 0 {
 			continue
 		}
@@ -206,34 +206,27 @@ func (this Trades) Kline(t time.Time, last Price) *Kline {
 }
 
 // kline1 生成一分钟k线,一天
-func (this Trades) klinesForDay(date time.Time) Klines {
-	_929 := 569  //9:25 的分钟
-	_930 := 570  //9:30 的分钟
+func (ts Trades) klinesForDay(date time.Time) Klines {
+	_929 := 569  //9:29 的分钟
 	_1130 := 690 //11:30 的分钟
 	_1300 := 780 //13:00 的分钟
 	_1500 := 900 //15:00 的分钟
-	keys := []int(nil)
-	//早上
+	keys := make([]int, 0, len(times241))
 	m := map[int]Trades{}
-	for i := 0; i <= 120; i++ {
-		keys = append(keys, _930+i)
-		m[_930+i] = []*Trade{}
-	}
-	//下午
-	for i := 1; i <= 120; i++ {
-		keys = append(keys, _1300+i)
-		m[_1300+i] = []*Trade{}
+	for _, clock := range times241 {
+		t, _ := time.Parse("15:04", clock)
+		keys = append(keys, minutes(t))
 	}
 	//获取开盘价,有可能前几分钟没有数据,先遍历一遍
 	var open Price
-	for _, v := range this {
+	for _, v := range ts {
 		if v.Price > 0 {
 			open = v.Price
 			break
 		}
 	}
 	//分组,按
-	for _, v := range this {
+	for _, v := range ts {
 		ms := minutes(v.Time)
 		t := conv.Select(ms < _929, _929, ms)
 		t++

@@ -38,7 +38,7 @@ func (connect) Decode(bs []byte) (*ConnectResp, error) {
 		return nil, errors.New("数据长度不足")
 	}
 	//前68字节暂时还不知道是什么
-	return &ConnectResp{Info: string(UTF8ToGBK(bs[68:]))}, nil
+	return &ConnectResp{Info: string(GBKToUTF8(bs[68:]))}, nil
 }
 
 /*
@@ -49,7 +49,7 @@ func (connect) Decode(bs []byte) (*ConnectResp, error) {
 
 type heart struct{}
 
-func (this *heart) Frame() *Frame {
+func (*heart) Frame() *Frame {
 	return &Frame{
 		Control: Control01,
 		Type:    TypeHeart,

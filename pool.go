@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -8,13 +9,13 @@ import (
 )
 
 type (
-	IPool interface {
+	ClientPool interface {
 		Get() (Client, error)
 		Put(c Client)
 		Do(fn func(c Client) error) error
 		Go(fn func(c Client)) error
 	}
-	DialPoolFunc = func() (IPool, error)
+	DialPoolFunc = func() (ClientPool, error)
 )
 
 // NewPool 简易版本的连接池
@@ -56,59 +57,81 @@ type Pool struct {
 	*safe.Closer
 }
 
-func (this *Pool) Get() (Client, error) {
+func (p *Pool) Get() (Client, error) {
+	return p.GetContext(context.Background())
+}
+
+// GetContext 等待空闲连接；取消后不再借用连接。
+func (p *Pool) GetContext(ctx context.Context) (Client, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	select {
-	case <-this.Done():
-		return nil, this.Err()
-	case c, ok := <-this.ch:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-p.Done():
+		return nil, p.Err()
+	case c, ok := <-p.ch:
 		if !ok {
-			return nil, this.Err()
+			return nil, p.Err()
+		}
+		if err := ctx.Err(); err != nil {
+			p.Put(c)
+			return nil, err
 		}
 		select {
-		case <-this.Done():
+		case <-p.Done():
 			_ = c.Close()
-			return nil, this.Err()
+			return nil, p.Err()
 		default:
 			return c, nil
 		}
 	}
 }
 
-func (this *Pool) Put(c Client) {
-	this.mu.Lock()
+func (p *Pool) Put(c Client) {
+	p.mu.Lock()
 	// 已关闭时不能进入发送分支，即使 select 同时发现两个就绪分支。
 	select {
-	case <-this.Done():
-		this.mu.Unlock()
+	case <-p.Done():
+		p.mu.Unlock()
 		_ = c.Close()
 		return
 	default:
 	}
 	select {
-	case <-this.Done():
-		this.mu.Unlock()
+	case <-p.Done():
+		p.mu.Unlock()
 		_ = c.Close()
-	case this.ch <- c:
-		this.mu.Unlock()
+	case p.ch <- c:
+		p.mu.Unlock()
 	}
 }
 
-func (this *Pool) Do(fn func(c Client) error) error {
-	c, err := this.Get()
+func (p *Pool) Do(fn func(c Client) error) error {
+	return p.DoContext(context.Background(), fn)
+}
+
+// DoContext 支持取消连接等待；已经开始的 fn 仍由其自身超时控制。
+func (p *Pool) DoContext(ctx context.Context, fn func(c Client) error) error {
+	c, err := p.GetContext(ctx)
 	if err != nil {
 		return err
 	}
-	defer this.Put(c)
+	defer p.Put(c)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return fn(c)
 }
 
-func (this *Pool) Go(fn func(c Client)) error {
-	c, err := this.Get()
+func (p *Pool) Go(fn func(c Client)) error {
+	c, err := p.Get()
 	if err != nil {
 		return err
 	}
 	go func(c Client) {
-		defer this.Put(c)
+		defer p.Put(c)
 		fn(c)
 	}(c)
 	return nil

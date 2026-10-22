@@ -56,17 +56,17 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 		return nil, errors.New("数据长度不足")
 	}
 
-	_count := Uint16(bs[9:11])
-	if len(bs)-11 < int(_count)*29 {
+	count := Uint16(bs[9:11])
+	if len(bs)-11 < int(count)*29 {
 		return nil, io.ErrUnexpectedEOF
 	}
 	resp := &GbbqResp{
-		Count: _count,
-		List:  make([]*Gbbq, 0, _count),
+		Count: count,
+		List:  make([]*Gbbq, 0, count),
 	}
 	bs = bs[11:]
 
-	for i := uint16(0); i < _count; i++ {
+	for i := uint16(0); i < count; i++ {
 		g := &Gbbq{
 			//Exchange: Exchange(bs[0]),
 			Code:     Exchange(bs[0]).String() + string(bs[1:7]),
@@ -97,10 +97,10 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 			//panhouliutong = _get_v(panhouliutong_raw)
 			//qianzongguben = _get_v(qianzongguben_raw)
 			//houzongguben = _get_v(houzongguben_raw)
-			g.C1 = getVolume(Uint32(bs[0:4])) * 1e4
-			g.C2 = getVolume(Uint32(bs[4:8])) * 1e4
-			g.C3 = getVolume(Uint32(bs[8:12])) * 1e4
-			g.C4 = getVolume(Uint32(bs[12:16])) * 1e4
+			g.C1 = float32Value(Uint32(bs[0:4])) * 1e4
+			g.C2 = float32Value(Uint32(bs[4:8])) * 1e4
+			g.C3 = float32Value(Uint32(bs[8:12])) * 1e4
+			g.C4 = float32Value(Uint32(bs[12:16])) * 1e4
 
 		}
 		bs = bs[16:]
@@ -125,45 +125,45 @@ type Gbbq struct {
 	C4       float64
 }
 
-func (this *Gbbq) TableName() string {
+func (*Gbbq) TableName() string {
 	return "gbbq"
 }
 
-func (this *Gbbq) IsEquity() bool {
-	switch this.Category {
+func (g *Gbbq) IsEquity() bool {
+	switch g.Category {
 	case 2, 3, 5, 7, 8, 9, 10:
 		return true
 	}
 	return false
 }
 
-func (this *Gbbq) IsXRXD() bool {
-	switch this.Category {
+func (g *Gbbq) IsXRXD() bool {
+	switch g.Category {
 	case 1:
 		return true
 	}
 	return false
 }
 
-func (this *Gbbq) Equity() *Equity {
+func (g *Gbbq) Equity() *Equity {
 	return &Equity{
-		Category: this.Category,
-		Code:     this.Code,
-		Time:     this.Time,
-		Float:    int64(this.C3),
-		Total:    int64(this.C4),
+		Category: g.Category,
+		Code:     g.Code,
+		Time:     g.Time,
+		Float:    int64(g.C3),
+		Total:    int64(g.C4),
 	}
 }
 
-func (this *Gbbq) XRXD() *XRXD {
+func (g *Gbbq) XRXD() *XRXD {
 	base := 100. //保留2位小数
 	return &XRXD{
-		Code:        this.Code,
-		Time:        this.Time,
-		Fenhong:     math.Round(this.C1*base) / base,
-		Peigujia:    math.Round(this.C2*base) / base,
-		Songzhuangu: math.Round(this.C3*base) / base,
-		Peigu:       math.Round(this.C4*base) / base,
+		Code:        g.Code,
+		Time:        g.Time,
+		Fenhong:     math.Round(g.C1*base) / base,
+		Peigujia:    math.Round(g.C2*base) / base,
+		Songzhuangu: math.Round(g.C3*base) / base,
+		Peigu:       math.Round(g.C4*base) / base,
 	}
 }
 
@@ -176,8 +176,8 @@ type Equity struct {
 }
 
 // Turnover 换手率,传入股,通达信获取的一般是手,注意
-func (this *Equity) Turnover(volume int64) float64 {
-	return (float64(volume) / float64(this.Float)) * 100
+func (e *Equity) Turnover(volume int64) float64 {
+	return (float64(volume) / float64(e.Float)) * 100
 }
 
 /*
@@ -195,12 +195,12 @@ type XRXD struct {
 }
 
 // Pre 计算除权除息之后的价格,10元,10股分5元->9.5元
-func (this *XRXD) Pre(p Price) Price {
-	if this == nil {
+func (x *XRXD) Pre(p Price) Price {
+	if x == nil {
 		return p
 	}
-	numerator := (p.Float64()*10 - this.Fenhong) + (this.Peigu * this.Peigujia)
-	denominator := 10 + this.Songzhuangu + this.Peigu
+	numerator := (p.Float64()*10 - x.Fenhong) + (x.Peigu * x.Peigujia)
+	denominator := 10 + x.Songzhuangu + x.Peigu
 	if denominator == 0 {
 		return p
 	}
@@ -213,9 +213,9 @@ func (this *XRXD) Pre(p Price) Price {
 //	c = (分红 − 配股*配股价) / 10  每股净现金流出(分红减配股注入)
 //
 // 标准除权参考价(减法口径)与 XRXD.Pre 等价: P_adj = (P − c) / m。
-func (this *XRXD) mc() (m, c float64) {
-	m = (10 + this.Songzhuangu + this.Peigu) / 10
-	c = (this.Fenhong - this.Peigu*this.Peigujia) / 10
+func (x *XRXD) mc() (m, c float64) {
+	m = (10 + x.Songzhuangu + x.Peigu) / 10
+	c = (x.Fenhong - x.Peigu*x.Peigujia) / 10
 	if m == 0 {
 		m = 1
 	}
@@ -236,14 +236,14 @@ type XRXDs []*XRXD
 // 旧实现会整体跳过该事件(或只施加一个), 污染该 ex-day 及之前所有历史的复权因子。
 // 正确做法: 自今向过去遍历交易日, 把所有 exday > 当前交易日 且尚未施加的事件【依次复合】,
 // 同一停牌缺口内的多个事件自动合成 m=m1*m2、加法项链式缩放。
-func (this XRXDs) Pre(ks []*Kline) PreKlines {
+func (xs XRXDs) Pre(ks []*Kline) PreKlines {
 	if len(ks) == 0 {
 		return PreKlines{}
 	}
 
 	//排序
-	sort.Slice(this, func(i, j int) bool {
-		return this[i].Time.Before(this[j].Time)
+	sort.Slice(xs, func(i, j int) bool {
+		return xs[i].Time.Before(xs[j].Time)
 	})
 	sort.Slice(ks, func(i, j int) bool {
 		return ks[i].Time.Before(ks[j].Time)
@@ -254,7 +254,7 @@ func (this XRXDs) Pre(ks []*Kline) PreKlines {
 		// 把全部 ex-day 事件挂到每个 PreKline 上(共享同一切片),
 		// 供 Factors() 按"日期位置"复合; 不依赖 ex-day 是否命中交易日, 故停牌缺口内的
 		// 多个事件都不会丢失。
-		ls[i] = &PreKline{Kline: k, events: this}
+		ls[i] = &PreKline{Kline: k, events: xs}
 	}
 
 	return ls
@@ -285,12 +285,12 @@ type PreKlines []*PreKline
 // 却会打坏已核对正确的 2006-04-25 收盘(-260.48 → -260.42)。
 // 故这是通达信桌面端对该股改停牌簇边界日的【孤立内部处理差异】, 统一规则无法复现,
 // 仅记录、不做硬编码补丁。其余样本(含 000651 股改、002626 多次送转)均逐分对齐。
-func (this PreKlines) Factors() []*Factor {
-	if len(this) == 0 {
+func (ks PreKlines) Factors() []*Factor {
+	if len(ks) == 0 {
 		return []*Factor(nil)
 	}
 
-	sort.Slice(this, func(i, j int) bool { return this[i].Time.Before(this[j].Time) })
+	sort.Slice(ks, func(i, j int) bool { return ks[i].Time.Before(ks[j].Time) })
 
 	// 收集全部 ex-day 事件。来源为挂在 PreKline 上的完整事件切片(各 PreKline 共享),
 	// 不依赖 ex-day 是否命中交易日 —— 这样停牌缺口内的多个事件都会被复合, 不丢失。
@@ -305,10 +305,10 @@ func (this PreKlines) Factors() []*Factor {
 		m, c float64
 	}
 	var src XRXDs
-	if len(this) > 0 {
-		src = this[0].events
+	if len(ks) > 0 {
+		src = ks[0].events
 	}
-	latest := this[len(this)-1].Time // 最新交易日
+	latest := ks[len(ks)-1].Time // 最新交易日
 	evs := make([]ev, 0, len(src))
 	for _, x := range src {
 		if x.Time.After(latest) {
@@ -319,13 +319,13 @@ func (this PreKlines) Factors() []*Factor {
 	}
 	sort.Slice(evs, func(i, j int) bool { return evs[i].t.Before(evs[j].t) }) //按 ex-day 升序
 
-	ls := make([]*Factor, len(this))
+	ls := make([]*Factor, len(ks))
 
 	// QFQ: 自今向过去, 写入每个交易日系数前, 复合所有 exday 严格晚于该交易日的未施加事件。
 	a, b := 1.0, 0.0
 	ei := len(evs) - 1
-	for i := len(this) - 1; i >= 0; i-- {
-		k := this[i]
+	for i := len(ks) - 1; i >= 0; i-- {
+		k := ks[i]
 		for ei >= 0 && evs[ei].t.After(k.Time) { // ex-day 严格晚于当前交易日
 			m, c := evs[ei].m, evs[ei].c
 			a = a / m
@@ -366,13 +366,13 @@ type Factor struct {
 }
 
 // QFQPrice 前复权价格(对不复权原始价 raw 做仿射 + 四舍五入到 2 位小数)。
-func (this *Factor) QFQPrice(raw Price) Price {
-	return roundHalfUpYuan(this.QFQMul*raw.Float64() + this.QFQAdd)
+func (f *Factor) QFQPrice(raw Price) Price {
+	return roundHalfUpYuan(f.QFQMul*raw.Float64() + f.QFQAdd)
 }
 
 // HFQPrice 后复权价格(对不复权原始价 raw 做仿射 + 四舍五入到 2 位小数)。
-func (this *Factor) HFQPrice(raw Price) Price {
-	return roundHalfUpYuan(this.HFQMul*raw.Float64() + this.HFQAdd)
+func (f *Factor) HFQPrice(raw Price) Price {
+	return roundHalfUpYuan(f.HFQMul*raw.Float64() + f.HFQAdd)
 }
 
 // roundHalfUpYuan 把"元"值四舍五入(逢五进一)到 2 位小数后转为 Price(厘)。

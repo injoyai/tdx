@@ -7,6 +7,9 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// DialClientFunc 创建行情客户端，创建方负责关闭其返回的资源。
+type DialClientFunc func() (Client, error)
+
 // Client 定义标准与扩展行情共用的业务接口。
 // NewClient 返回按市场按需建连的 MarketClient；Dial* 分别返回绑定单种协议的 StConn / ExConn，
 // 查询与该连接协议不匹配的品种会报错，不会自动建立另一类连接。

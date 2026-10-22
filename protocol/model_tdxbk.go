@@ -17,7 +17,7 @@ type TdxBk struct {
 // ParseTdxBk 解析 tdxbk.cfg(GBK 文本) → 简称↔全称列表。
 // 每行 `flag|简称|全称|flag2`，例: `1|锂电池|锂电池概念|0`。
 func ParseTdxBk(data []byte) []*TdxBk {
-	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	lines := strings.Split(string(GBKToUTF8(data)), "\n")
 	out := make([]*TdxBk, 0, len(lines))
 	for _, ln := range lines {
 		ln = strings.TrimRight(ln, "\r")

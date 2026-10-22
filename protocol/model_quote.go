@@ -8,57 +8,57 @@ import (
 
 type QuotesResp []*Quote
 
-func (this QuotesResp) String() string {
+func (qs QuotesResp) String() string {
 	ls := []string(nil)
-	for _, v := range this {
+	for _, v := range qs {
 		ls = append(ls, v.String())
 	}
 	return strings.Join(ls, "\n")
 }
 
 type Quote struct {
-	Exchange       Exchange // 市场
-	Code           string   // 股票代码 6个ascii字符串
-	Active1        uint16   // 活跃度
-	Kline          *Kline   //k线,这里的时间取得是当前时间,昨收盘好像不太对
-	ServerTime     string   // 时间
-	ReversedBytes0 int      // 保留(时间 ServerTime)
-	ReversedBytes1 int      // 保留 这个等于 负的收盘价格?
-	Intuition      int      // 现量（东财的盘口-现量）现在成交量
-	InsideDish     int      // 内盘（东财的盘口-内盘）（和东财对不上）
-	OuterDisc      int      // 外盘（东财的盘口-外盘）（和东财对不上）
+	Exchange   Exchange // 市场
+	Code       string   // 股票代码 6个ascii字符串
+	Active1    uint16   // 活跃度
+	Kline      *Kline   //k线,这里的时间取得是当前时间,昨收盘好像不太对
+	ServerTime string   // 时间
+	Reserved0  int      `json:"ReversedBytes0"` // 保留(时间 ServerTime)
+	Reserved1  int      `json:"ReversedBytes1"` // 保留 这个等于 负的收盘价格?
+	Intuition  int      // 现量（东财的盘口-现量）现在成交量
+	InsideDish int      // 内盘（东财的盘口-内盘）（和东财对不上）
+	OuterDisc  int      // 外盘（东财的盘口-外盘）（和东财对不上）
 
-	ReversedBytes2 int         // 保留，未知
-	ReversedBytes3 int         // 保留，未知,基金的昨收净值?
-	BuyLevel       PriceLevels // 5档买盘(买1-5)
-	SellLevel      PriceLevels // 5档卖盘(卖1-5)
+	Reserved2 int         `json:"ReversedBytes2"` // 保留，未知
+	Reserved3 int         `json:"ReversedBytes3"` // 保留，未知,基金的昨收净值?
+	BuyLevel  PriceLevels // 5档买盘(买1-5)
+	SellLevel PriceLevels // 5档卖盘(卖1-5)
 
-	ReversedBytes4 uint16  // 保留，未知
-	ReversedBytes5 int     // 保留，未知
-	ReversedBytes6 int     // 保留，未知
-	ReversedBytes7 int     // 保留，未知
-	ReversedBytes8 int     // 保留，未知
-	ReversedBytes9 uint16  // 保留，未知
-	Rate           float64 // 涨速，好像都是0
-	Active2        uint16  // 活跃度
+	Reserved4 uint16  `json:"ReversedBytes4"` // 保留，未知
+	Reserved5 int     `json:"ReversedBytes5"` // 保留，未知
+	Reserved6 int     `json:"ReversedBytes6"` // 保留，未知
+	Reserved7 int     `json:"ReversedBytes7"` // 保留，未知
+	Reserved8 int     `json:"ReversedBytes8"` // 保留，未知
+	Reserved9 uint16  `json:"ReversedBytes9"` // 保留，未知
+	Rate      float64 // 涨速，好像都是0
+	Active2   uint16  // 活跃度
 }
 
-func (this *Quote) String() string {
+func (q *Quote) String() string {
 	return fmt.Sprintf(`%s%s
 %s
 现量：%s,  内盘：%s, 外盘：%s
 %s%s
 `,
-		this.Exchange.String(), this.Code, this.Kline,
-		IntUnitString(this.Intuition),
-		IntUnitString(this.InsideDish), IntUnitString(this.OuterDisc),
-		this.SellLevel.String(), this.BuyLevel.String(),
+		q.Exchange.String(), q.Code, q.Kline,
+		IntUnitString(q.Intuition),
+		IntUnitString(q.InsideDish), IntUnitString(q.OuterDisc),
+		q.SellLevel.String(), q.BuyLevel.String(),
 	)
 }
 
 type quote struct{}
 
-func (this quote) Frame(codes ...string) (*Frame, error) {
+func (quote) Frame(codes ...string) (*Frame, error) {
 	f := &Frame{
 		Control: Control01,
 		Type:    TypeQuote,
@@ -106,12 +106,12 @@ b212 昨天收盘价1186
 c005bed2668e05be15804d8ba12cb3b13a0083c3034100badc029d014201bc990384f70443029da503b7af074403a6e501b9db044504a6e2028dd5048d050000000000005909
 */
 // Decode 保留原接口；畸形数据返回 nil。需要错误详情时使用 DecodeChecked。
-func (this quote) Decode(bs []byte) QuotesResp {
-	resp, _ := this.DecodeChecked(bs)
+func (q quote) Decode(bs []byte) QuotesResp {
+	resp, _ := q.DecodeChecked(bs)
 	return resp
 }
 
-func (this quote) DecodeChecked(bs []byte) (QuotesResp, error) {
+func (quote) DecodeChecked(bs []byte) (QuotesResp, error) {
 	d := wireDecoder{bs: bs}
 	d.take(2) // 响应前缀
 	number := d.uint16()
@@ -126,7 +126,7 @@ func (this quote) DecodeChecked(bs []byte) (QuotesResp, error) {
 		}
 		sec := &Quote{
 			Exchange: Exchange(prefix[0]),
-			Code:     string(UTF8ToGBK(prefix[1:7])),
+			Code:     string(GBKToUTF8(prefix[1:7])),
 			Active1:  Uint16(prefix[7:9]),
 		}
 		closePrice := Price(d.number()) * 10
@@ -137,29 +137,29 @@ func (this quote) DecodeChecked(bs []byte) (QuotesResp, error) {
 			High: closePrice + Price(d.number())*10,
 			Low:  closePrice + Price(d.number())*10,
 		}
-		sec.ReversedBytes0 = d.number()
-		sec.ServerTime = fmt.Sprintf("%d", sec.ReversedBytes0)
-		sec.ReversedBytes1 = d.number()
+		sec.Reserved0 = d.number()
+		sec.ServerTime = fmt.Sprintf("%d", sec.Reserved0)
+		sec.Reserved1 = d.number()
 		sec.Kline.Volume = int64(d.number())
 		sec.Intuition = d.number()
-		sec.Kline.Amount = Yuan(getVolume(d.uint32()))
+		sec.Kline.Amount = Yuan(float32Value(d.uint32()))
 		sec.InsideDish = d.number()
 		sec.OuterDisc = d.number()
-		sec.ReversedBytes2 = d.number()
-		sec.ReversedBytes3 = d.number()
+		sec.Reserved2 = d.number()
+		sec.Reserved3 = d.number()
 		for level := 0; level < 5; level++ {
 			buyPrice := closePrice + Price(d.number())*10
 			sellPrice := closePrice + Price(d.number())*10
 			sec.BuyLevel[level] = PriceLevel{Buy: true, Price: buyPrice, Number: d.number()}
 			sec.SellLevel[level] = PriceLevel{Price: sellPrice, Number: d.number()}
 		}
-		sec.ReversedBytes4 = d.uint16()
-		sec.ReversedBytes5 = d.number()
-		sec.ReversedBytes6 = d.number()
-		sec.ReversedBytes7 = d.number()
-		sec.ReversedBytes8 = d.number()
-		sec.ReversedBytes9 = d.uint16()
-		sec.Rate = float64(sec.ReversedBytes9) / 100
+		sec.Reserved4 = d.uint16()
+		sec.Reserved5 = d.number()
+		sec.Reserved6 = d.number()
+		sec.Reserved7 = d.number()
+		sec.Reserved8 = d.number()
+		sec.Reserved9 = d.uint16()
+		sec.Rate = float64(sec.Reserved9) / 100
 		sec.Active2 = d.uint16()
 		if d.err != nil {
 			return nil, fmt.Errorf("报价记录 %d: %w", i, d.err)

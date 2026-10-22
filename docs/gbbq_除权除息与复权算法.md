@@ -21,6 +21,9 @@
 > 解析见 `protocol/model_gbbq.go`。复权**只用 category=1(XRXD)**。
 > 股本快照仅用于换手率(`Equity.Turnover`)与交叉校验,不参与复权。
 
+本文业务模型指 `protocol.Gbbq` / `protocol.Equity`：股本按股计，`Equity.Turnover` 接收股数并返回百分数。`lib/gbbq` 只用于文件下载和解密，原始 C1..C4 随类别变化，文件的股本单位尚未独立核实。其旧 `GetStocks` / `Equity` / `Turnover` 已标注弃用并保留结果；不能按字段同名直接套用协议模型或猜测倍率。新业务优先使用 `Client.GetGbbq` / `protocol.Gbbq.Equity()`；必须使用文件时，应先核实来源单位再显式转换。
+
+
 ---
 
 ## 2. 复权是【仿射变换】,不是【比例缩放】
@@ -86,7 +89,7 @@ gbbq 文件常含**已公告但 ex-day 在未来**的除权记录。前复权锚
 2016 至今前复权**全程偏低 0.90 元**(=9/10)。通达信/同花顺都只在除权日当天才生效。
 
 **修复**:`PreKlines.Factors()` 收集事件时**丢弃 ex-day 严格晚于最新交易日的事件**。
-回归测试 `TestFactors_FutureExDayIgnored`。
+回归测试 `TestFactorsFutureExDayIgnored`。
 
 ---
 
@@ -117,6 +120,6 @@ gbbq 文件常含**已公告但 ex-day 在未来**的除权记录。前复权锚
   - `Factor.QFQPrice(raw)` / `Factor.HFQPrice(raw)` 仿射 + 四舍五入得复权价
   - `roundHalfUpYuan` 逢五进一到 2 位小数
 - v2 仅保留仿射复权入口；旧比例字段与方法已删除，精确复权使用 `QFQPrice/HFQPrice`。
-- 对外接口:`gbbq.go`(`IGbbq.GetFactors` → `GetXRXDs(code).Pre(ks).Factors()`),未改签名。
+- 对外接口:`extend/gbbq/gbbq.go`(`Interface.GetFactors` → `GetXRXDs(code).Pre(ks).Factors()`),计算及参数语义保持不变。
 - 测试:`protocol/model_gbbq_test.go`(600519 股改复合 / 000651 配股+大送转 / 舍入边界 /
   已知特例 / HFQ 一致性),全部用通达信实盘值断言。

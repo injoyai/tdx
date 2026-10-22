@@ -19,8 +19,8 @@ type Code struct {
 	LastPrice float64 //昨收价格,单位元,对个股无效,对指数有效,对其他未知
 }
 
-func (this *Code) String() string {
-	return fmt.Sprintf("%s(%s)", this.Code, this.Name)
+func (c *Code) String() string {
+	return fmt.Sprintf("%s(%s)", c.Code, c.Name)
 }
 
 type code struct{}
@@ -51,9 +51,9 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 		sec := &Code{
 			Code:      string(bs[:6]),
 			Multiple:  Uint16(bs[6:8]),
-			Name:      string(UTF8ToGBK(bs[8:16])),
+			Name:      string(GBKToUTF8(bs[8:16])),
 			Decimal:   int8(bs[20]),
-			LastPrice: getVolume2(Uint32(bs[21:25])),
+			LastPrice: float32Value(Uint32(bs[21:25])),
 		}
 		//logs.Debug(bs[25:29]) //26和28字节 好像是枚举(基本是44,45和34,35)
 		bs = bs[29:]

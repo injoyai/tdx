@@ -57,6 +57,12 @@ func ParseInstrument(s string) (Instrument, error) {
 	case "HSI", "HKL", "VHSI", "CES100", "GEM":
 		return Instrument{ExchangeHI, strings.ToUpper(s)}, nil
 	}
+	// 原始协议的长前缀（如 cffo）优先，避免误拆为 cff + 合约主体。
+	if ex, body, ok := splitPrefix(s); ok {
+		if _, err := (Instrument{ex, body}).Market(); err != nil {
+			return Instrument{}, err
+		}
+	}
 	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHK, ExchangeHI, ExchangeUS} {
 		prefix := ex.String()
 		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
@@ -80,7 +86,7 @@ func ParseInstrument(s string) (Instrument, error) {
 	if len(s) == 6 && isDigits(s) && strings.HasPrefix(s, "89") {
 		return checkedInstrument(ExchangeBJ, s)
 	}
-	ex, body, err := DecodeCode(s)
+	ex, body, err := decodeCode(s)
 	if err != nil {
 		return Instrument{}, err
 	}

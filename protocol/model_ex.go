@@ -743,5 +743,5 @@ func exGBK(b []byte) string {
 	if i := indexByte(b, 0); i >= 0 {
 		b = b[:i]
 	}
-	return string(UTF8ToGBK(b))
+	return string(GBKToUTF8(b))
 }

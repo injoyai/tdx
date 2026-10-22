@@ -28,7 +28,7 @@ type SpBlock struct {
 //
 // 段头行以 '#' 开头; 成分行为 7 位纯数字; 其余(空行等)忽略。
 func ParseSpBlock(data []byte) []*SpBlock {
-	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	lines := strings.Split(string(GBKToUTF8(data)), "\n")
 	out := make([]*SpBlock, 0, 32)
 	var cur *SpBlock
 	for _, ln := range lines {

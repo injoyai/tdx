@@ -11,28 +11,28 @@ import (
 func TestMinuteCoverageRollback(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: MarketAStock, Code: "sz000001"}
-	if last, err := s.LastMinUnix(c, 2025); err != nil || last != 0 || s.MinExists(c, 2025) {
+	if last, err := s.LastMinuteUnix(c, 2025); err != nil || last != 0 || s.MinuteExists(c, 2025) {
 		t.Fatalf("读取空库创建了文件或返回异常: %d %v", last, err)
 	}
 	if last, err := s.LastDayUnix(c); err != nil || last != 0 || exists(s.DayFile(c)) {
 		t.Fatal("读取空日线库创建了文件", err)
 	}
 	ks := []*KlineMinute{{Unix: 10, Close: 2}}
-	if err := s.SaveMin(c, 2025, 0, ks); err != nil {
+	if err := s.SaveMinute(c, 2025, 0, ks); err != nil {
 		t.Fatal(err)
 	}
-	if done, err := s.MinYearComplete(c, 2025, 1); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, 1); done || err != nil {
 		t.Fatal("旧库不应算完成", done, err)
 	}
 	bad := []*KlineMinute{{Unix: 10, Close: 5}, {Unix: 10, Close: 6}}
-	if err := s.SaveMinComplete(c, 2025, 1, bad); err == nil {
+	if err := s.SaveMinuteComplete(c, 2025, 1, bad); err == nil {
 		t.Fatal("重复主键应回滚")
 	}
-	if done, err := s.MinYearComplete(c, 2025, 1); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, 1); done || err != nil {
 		t.Fatal("失败后标记完成", done, err)
 	}
 	// 测试记录使用合成时间戳；直接检查表中原值验证删除也被回滚。
-	db, release, err := s.openMin(c, 2025)
+	db, release, err := s.openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,20 +41,20 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Close != 2 {
 		t.Fatalf("事务未回滚: %+v %v", rows, err)
 	}
-	if err := s.SaveMinComplete(c, 2025, 1, ks); err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, 1, ks); err != nil {
 		t.Fatal(err)
 	}
-	if done, err := s.MinYearComplete(c, 2025, 1); !done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, 1); !done || err != nil {
 		t.Fatal("提交后未完成", done, err)
 	}
-	if done, err := s.MinYearComplete(c, 2025, 0); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, 0); done || err != nil {
 		t.Fatal("更早区间应补拉", done, err)
 	}
 	// 服务器仅保留较新的数据时，重新认证历史区间不能删除旧本地前缀。
-	if err := s.SaveMinComplete(c, 2025, 0, []*KlineMinute{{Unix: 20, Close: 3}}); err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, 0, []*KlineMinute{{Unix: 20, Close: 3}}); err != nil {
 		t.Fatal(err)
 	}
-	db, release, err = s.openMin(c, 2025)
+	db, release, err = s.openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[0].Unix != 10 {
 		t.Fatal("本地历史前缀丢失", rows, err)
 	}
-	if err := s.SaveMinComplete(c, 2024, 0, nil); err != nil || s.MinExists(c, 2024) {
+	if err := s.SaveMinuteComplete(c, 2024, 0, nil); err != nil || s.MinuteExists(c, 2024) {
 		t.Fatal("空年份不应建库", err)
 	}
 }
@@ -151,7 +151,7 @@ func (u *updateTestUnit) FetchDay(*Service, Code) error {
 	}
 	return nil
 }
-func (u *updateTestUnit) FetchMin(*Service, Code) error {
+func (u *updateTestUnit) FetchMinute(*Service, Code) error {
 	u.minCalls++
 	if u.minCalls <= u.minFailures {
 		return u.err
@@ -172,7 +172,7 @@ func TestUpdateFailureAndMustSemantics(t *testing.T) {
 		t.Fatal("重试次数或执行顺序错误", u.dayCalls, u.minCalls)
 	}
 	for _, key := range []string{s.updateKey("pull:update-test"), s.updateKey("pull")} {
-		if done, err := s.updated.Updated(key); done || err != nil {
+		if done, err := s.updated.IsUpdated(key); done || err != nil {
 			t.Fatal("失败后标记完成", key, done, err)
 		}
 	}
@@ -184,7 +184,7 @@ func TestUpdateFailureAndMustSemantics(t *testing.T) {
 		t.Fatal("失败市场未恢复", u.dayCalls, u.minCalls)
 	}
 	for _, key := range []string{s.updateKey("pull:update-test"), s.updateKey("pull")} {
-		if done, err := s.updated.Updated(key); !done || err != nil {
+		if done, err := s.updated.IsUpdated(key); !done || err != nil {
 			t.Fatal("成功后未标记", key, done, err)
 		}
 	}

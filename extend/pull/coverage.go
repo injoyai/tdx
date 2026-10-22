@@ -19,12 +19,12 @@ type MinuteCoverage struct {
 // TableName 保持已有历史库的表名。
 func (MinuteCoverage) TableName() string { return "minuteCoverage" }
 
-// QueryMinCoverage 查询分钟覆盖记录；旧库会补齐字段，缺少记录时返回 nil。
-func (s *Service) QueryMinCoverage(code Code, year int) (*MinuteCoverage, error) {
-	if !s.MinExists(code, year) {
+// QueryMinuteCoverage 查询分钟覆盖记录；旧库会补齐字段，缺少记录时返回 nil。
+func (s *Service) QueryMinuteCoverage(code Code, year int) (*MinuteCoverage, error) {
+	if !s.MinuteExists(code, year) {
 		return nil, nil
 	}
-	db, release, err := s.openMin(code, year)
+	db, release, err := s.openMinute(code, year)
 	if err != nil {
 		return nil, err
 	}
@@ -40,33 +40,33 @@ func (s *Service) QueryMinCoverage(code Code, year int) (*MinuteCoverage, error)
 	return &c, nil
 }
 
-// MinYearComplete 保留原生分钟扫描语义；分笔兜底还需检查 TradeFallback 与 Through。
-func (s *Service) MinYearComplete(code Code, year int, from int64) (bool, error) {
-	c, err := s.QueryMinCoverage(code, year)
+// MinuteYearComplete 保留原生分钟扫描语义；分笔兜底还需检查 TradeFallback 与 Through。
+func (s *Service) MinuteYearComplete(code Code, year int, from int64) (bool, error) {
+	c, err := s.QueryMinuteCoverage(code, year)
 	through := time.Date(year+1, 1, 1, 0, 0, 0, 0, s.Start().Location()).Unix()
 	return c != nil && c.From <= from && (!c.TradeFallback || c.Through >= through), err
 }
 
-// SaveMinComplete 将原生历史扫描数据及完成标记原子提交，空数据不写标记。
-func (s *Service) SaveMinComplete(code Code, year int, from int64, ks []*KlineMinute) error {
-	return s.saveMinCoverage(code, year, ks, MinuteCoverage{ID: 1, From: from})
+// SaveMinuteComplete 将原生历史扫描数据及完成标记原子提交，空数据不写标记。
+func (s *Service) SaveMinuteComplete(code Code, year int, from int64, ks []*KlineMinute) error {
+	return s.saveMinuteCoverage(code, year, ks, MinuteCoverage{ID: 1, From: from})
 }
 
-// SaveMinFallbackComplete 提交原生与合成数据，以及 [from,through) 已检查标记。
+// SaveMinuteFallbackComplete 提交原生与合成数据，以及 [from,through) 已检查标记。
 // 调用方须先处理所有缺失交易日，并将需保留的本地尾部数据合并到 ks。
-func (s *Service) SaveMinFallbackComplete(code Code, year int, from, through int64, ks []*KlineMinute) error {
+func (s *Service) SaveMinuteFallbackComplete(code Code, year int, from, through int64, ks []*KlineMinute) error {
 	if len(ks) == 0 {
 		return nil
 	}
 	if through <= from {
 		return fmt.Errorf("pull: 无效分钟覆盖区间 %d..%d", from, through)
 	}
-	return s.saveMinCoverage(code, year, ks, MinuteCoverage{
+	return s.saveMinuteCoverage(code, year, ks, MinuteCoverage{
 		ID: 1, From: from, Through: through, TradeFallback: true,
 	})
 }
 
-func (s *Service) saveMinCoverage(code Code, year int, ks []*KlineMinute, coverage MinuteCoverage) error {
+func (s *Service) saveMinuteCoverage(code Code, year int, ks []*KlineMinute, coverage MinuteCoverage) error {
 	if len(ks) == 0 {
 		return nil
 	}
@@ -76,7 +76,7 @@ func (s *Service) saveMinCoverage(code Code, year int, ks []*KlineMinute, covera
 			writeFrom = k.Unix
 		}
 	}
-	db, release, err := s.openMin(code, year)
+	db, release, err := s.openMinute(code, year)
 	if err != nil {
 		return err
 	}

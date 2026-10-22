@@ -14,7 +14,7 @@ import (
 )
 
 // ExConn 是绑定扩展行情协议的业务连接，实现 Client；财务、F10 等标准专用查询返回不支持错误。
-// DialExHq* 直接返回该类型，不会建立标准连接。
+// DialEx* 直接返回该类型，不会建立标准连接。
 type ExConn struct {
 	*conn
 	*queries
@@ -228,8 +228,8 @@ func (c *ExConn) GetMarkets() ([]Exchange, error) {
 }
 
 // getExtendedMarkets 市场代码表。
-func (this *ExConn) getExtendedMarkets() ([]protocol.ExMarket, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameMarkets())
+func (c *ExConn) getExtendedMarkets() ([]protocol.ExMarket, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameMarkets())
 	if err != nil {
 		return nil, err
 	}
@@ -237,8 +237,8 @@ func (this *ExConn) getExtendedMarkets() ([]protocol.ExMarket, error) {
 }
 
 // getExtendedCount 全部品种数量。
-func (this *ExConn) getExtendedCount() (int, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameCount())
+func (c *ExConn) getExtendedCount() (int, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameCount())
 	if err != nil {
 		return 0, err
 	}
@@ -246,8 +246,8 @@ func (this *ExConn) getExtendedCount() (int, error) {
 }
 
 // getExtendedInstruments 按全局序号分页的品种列表。
-func (this *ExConn) getExtendedInstruments(start uint32, count uint16) ([]protocol.ExInstrument, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameInstrument(start, count))
+func (c *ExConn) getExtendedInstruments(start uint32, count uint16) ([]protocol.ExInstrument, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameInstrument(start, count))
 	if err != nil {
 		return nil, err
 	}
@@ -255,8 +255,8 @@ func (this *ExConn) getExtendedInstruments(start uint32, count uint16) ([]protoc
 }
 
 // getExtendedQuote 单品种五档行情。
-func (this *ExConn) getExtendedQuote(market uint8, code string) (*protocol.ExQuote, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameQuote(market, code))
+func (c *ExConn) getExtendedQuote(market uint8, code string) (*protocol.ExQuote, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameQuote(market, code))
 	if err != nil {
 		return nil, err
 	}
@@ -264,8 +264,8 @@ func (this *ExConn) getExtendedQuote(market uint8, code string) (*protocol.ExQuo
 }
 
 // GetQuoteList 批量行情列表(category 2=港股 3=期货)。
-func (this *ExConn) getQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameQuoteList(market, start, count), protocol.ExQuoteListCache{Category: category})
+func (c *ExConn) getQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameQuoteList(market, start, count), protocol.ExQuoteListCache{Category: category})
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +273,8 @@ func (this *ExConn) getQuoteList(market, category uint8, start, count uint16) ([
 }
 
 // getExtendedKline K线(category 同标准 KLINE 类型)。
-func (this *ExConn) getExtendedKline(category, market uint8, code string, start, count uint16) ([]protocol.ExKline, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameBars(category, market, code, start, count), protocol.ExBarsCache{Category: category})
+func (c *ExConn) getExtendedKline(category, market uint8, code string, start, count uint16) ([]protocol.ExKline, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameBars(category, market, code, start, count), protocol.ExBarsCache{Category: category})
 	if err != nil {
 		return nil, err
 	}
@@ -282,8 +282,8 @@ func (this *ExConn) getExtendedKline(category, market uint8, code string, start,
 }
 
 // getExtendedMinute 当日分时。
-func (this *ExConn) getExtendedMinute(market uint8, code string) ([]protocol.ExMinuteTick, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameMinute(market, code))
+func (c *ExConn) getExtendedMinute(market uint8, code string) ([]protocol.ExMinuteTick, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameMinute(market, code))
 	if err != nil {
 		return nil, err
 	}
@@ -291,8 +291,8 @@ func (this *ExConn) getExtendedMinute(market uint8, code string) ([]protocol.ExM
 }
 
 // getExtendedHistoryMinute 历史分时(date=YYYYMMDD)。
-func (this *ExConn) getExtendedHistoryMinute(market uint8, code string, date uint32) ([]protocol.ExMinuteTick, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameHistMinute(market, code, date))
+func (c *ExConn) getExtendedHistoryMinute(market uint8, code string, date uint32) ([]protocol.ExMinuteTick, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameHistMinute(market, code, date))
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +300,8 @@ func (this *ExConn) getExtendedHistoryMinute(market uint8, code string, date uin
 }
 
 // getExtendedTrade 当日分笔成交。
-func (this *ExConn) getExtendedTrade(market uint8, code string, start, count uint16) ([]protocol.ExTradeTick, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameTrade(market, code, start, count), protocol.ExTradeCache{Market: market})
+func (c *ExConn) getExtendedTrade(market uint8, code string, start, count uint16) ([]protocol.ExTradeTick, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameTrade(market, code, start, count), protocol.ExTradeCache{Market: market})
 	if err != nil {
 		return nil, err
 	}
@@ -309,8 +309,8 @@ func (this *ExConn) getExtendedTrade(market uint8, code string, start, count uin
 }
 
 // getExtendedHistoryTrade 历史分笔成交(date=YYYYMMDD)。
-func (this *ExConn) getExtendedHistoryTrade(market uint8, code string, date uint32, start, count uint16) ([]protocol.ExTradeTick, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameHistTrade(market, code, date, start, count), protocol.ExTradeCache{Market: market})
+func (c *ExConn) getExtendedHistoryTrade(market uint8, code string, date uint32, start, count uint16) ([]protocol.ExTradeTick, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameHistTrade(market, code, date, start, count), protocol.ExTradeCache{Market: market})
 	if err != nil {
 		return nil, err
 	}
@@ -318,14 +318,14 @@ func (this *ExConn) getExtendedHistoryTrade(market uint8, code string, date uint
 }
 
 // getExtendedKlineRange 历史K线区间(date/date2=YYYYMMDD)。
-func (this *ExConn) getExtendedKlineRange(market uint8, code string, date, date2 uint32) ([]protocol.ExRangeKline, error) {
-	r, err := this.SendFrame(protocol.MEx.FrameBarsRange(market, code, date, date2))
+func (c *ExConn) getExtendedKlineRange(market uint8, code string, date, date2 uint32) ([]protocol.ExRangeKline, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameBarsRange(market, code, date, date2))
 	if err != nil {
 		return nil, err
 	}
 	return r.([]protocol.ExRangeKline), nil
 }
-func (c *ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
+func (*ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	switch f.Type {
 	case protocol.TypeExSetup:
 		// 握手响应忽略
@@ -373,110 +373,110 @@ func newExConn(core *conn) *ExConn {
 	c.queries = &queries{source: c}
 	return c
 }
-func (c *ExConn) protocol() protocol.MarketProtocol { return protocol.ProtocolExtended }
+func (*ExConn) protocol() protocol.MarketProtocol { return protocol.ProtocolExtended }
 
-func (c *ExConn) GetBlockData(file string) ([]*protocol.Block, error) {
+func (*ExConn) GetBlockData(file string) ([]*protocol.Block, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
+func (*ExConn) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetBlockFileRaw(file string) ([]byte, error) {
+func (*ExConn) GetBlockFileRaw(file string) ([]byte, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
+func (*ExConn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
+func (*ExConn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
+func (*ExConn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
 	return "", errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetETFCodeAll() ([]string, error) {
+func (*ExConn) GetETFCodeAll() ([]string, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
+func (*ExConn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetGbbq(code string) (*protocol.GbbqResp, error) {
+func (*ExConn) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
+func (*ExConn) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetIndexCodeAll() ([]string, error) {
+func (*ExConn) GetIndexCodeAll() ([]string, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetReportFile(file string) ([]byte, error) {
+func (*ExConn) GetReportFile(file string) ([]byte, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetSpBlock() ([]*protocol.SpBlock, error) {
+func (*ExConn) GetSpBlock() ([]*protocol.SpBlock, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetStockCodeAll() ([]string, error) {
+func (*ExConn) GetStockCodeAll() ([]string, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetTdxBk() ([]*protocol.TdxBk, error) {
+func (*ExConn) GetTdxBk() ([]*protocol.TdxBk, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetTdxHy() ([]*protocol.TdxHy, error) {
+func (*ExConn) GetTdxHy() ([]*protocol.TdxHy, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetTdxStat() ([]*protocol.TdxStat, error) {
+func (*ExConn) GetTdxStat() ([]*protocol.TdxStat, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetTdxStat2() ([]*protocol.TdxStat2, error) {
+func (*ExConn) GetTdxStat2() ([]*protocol.TdxStat2, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetTdxZs() ([]*protocol.TdxZs, error) {
+func (*ExConn) GetTdxZs() ([]*protocol.TdxZs, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetXgsg() ([]*protocol.TdxXgsg, error) {
+func (*ExConn) GetXgsg() ([]*protocol.TdxXgsg, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (c *ExConn) GetZHBFiles() (map[string][]byte, error) {
+func (*ExConn) GetZHBFiles() (map[string][]byte, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-// DialExHqDefault 连接默认扩展行情服务器(轮询 ExHosts)。
-func DialExHqDefault(op ...client.Option) (*ExConn, error) {
+// DialExDefault 连接默认扩展行情服务器(轮询 ExHosts)。
+func DialExDefault(op ...client.Option) (*ExConn, error) {
 	op = append([]client.Option{WithRedial()}, op...)
-	return DialExHqHosts(ExHosts, op...)
+	return DialExHosts(ExHosts, op...)
 }
 
-// DialExHq 连接指定扩展行情服务器。
-func DialExHq(addr string, op ...client.Option) (*ExConn, error) {
-	return dialExHqWith(NewTCPDial(withPort(addr, ExPort)), op...)
+// DialEx 连接指定扩展行情服务器。
+func DialEx(addr string, op ...client.Option) (*ExConn, error) {
+	return dialExWith(NewTCPDial(withPort(addr, ExPort)), op...)
 }
 
-// DialExHqHosts 遍历扩展行情服务器，裸 IP 默认使用端口 7727。
-func DialExHqHosts(hosts []string, op ...client.Option) (*ExConn, error) {
-	return dialExHqWith(NewRangeDial(hostAddrs(hosts, ExHosts, ExPort)), op...)
+// DialExHosts 遍历扩展行情服务器，裸 IP 默认使用端口 7727。
+func DialExHosts(hosts []string, op ...client.Option) (*ExConn, error) {
+	return dialExWith(NewRangeDial(hostAddrs(hosts, ExHosts, ExPort)), op...)
 }
 
-// dialExHqWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。
-func dialExHqWith(dial ios.DialFunc, op ...client.Option) (cli *ExConn, err error) {
+// dialExWith 建立扩展行情连接:握手用 ExSetup,心跳用品种数量请求。
+func dialExWith(dial ios.DialFunc, op ...client.Option) (cli *ExConn, err error) {
 	return dialEx(context.Background(), dial, op...)
 }
 

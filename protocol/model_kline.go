@@ -17,19 +17,19 @@ type KlineReq struct {
 	Count    uint16
 }
 
-func (this *KlineReq) Bytes(Type uint8) (types.Bytes, error) {
-	if this.Count > 800 {
+func (r *KlineReq) Bytes(category uint8) (types.Bytes, error) {
+	if r.Count > 800 {
 		return nil, errors.New("单次数量不能超过800")
 	}
-	if len(this.Code) != 6 {
+	if len(r.Code) != 6 {
 		return nil, errors.New("股票代码长度错误")
 	}
-	data := []byte{this.Exchange.Uint8(), 0x0}
-	data = append(data, []byte(this.Code)...) //这里怎么是正序了？
-	data = append(data, Type, 0x0)
+	data := []byte{r.Exchange.Uint8(), 0x0}
+	data = append(data, []byte(r.Code)...) //这里怎么是正序了？
+	data = append(data, category, 0x0)
 	data = append(data, 0x01, 0x0)
-	data = append(data, Bytes(this.Start)...)
-	data = append(data, Bytes(this.Count)...)
+	data = append(data, Bytes(r.Start)...)
+	data = append(data, Bytes(r.Count)...)
 	data = append(data, make([]byte, 10)...) //未知啥含义
 	return data, nil
 }
@@ -53,42 +53,42 @@ type Kline struct {
 	DownCount int       //下跌数量,指数有效
 }
 
-func (this *Kline) String() string {
+func (k *Kline) String() string {
 	return fmt.Sprintf("%s 昨收盘：%.3f 开盘价：%.3f 最高价：%.3f 最低价：%.3f 收盘价：%.3f 涨跌：%s 涨跌幅：%0.2f 成交量：%s 成交额：%s 涨跌数: %d/%d",
-		this.Time.Format("2006-01-02 15:04:05"),
-		this.Last.Float64(), this.Open.Float64(), this.High.Float64(), this.Low.Float64(), this.Close.Float64(),
-		this.RisePrice(), this.RiseRate(),
-		Int64UnitString(this.Volume), FloatUnitString(this.Amount.Float64()),
-		this.UpCount, this.DownCount,
+		k.Time.Format("2006-01-02 15:04:05"),
+		k.Last.Float64(), k.Open.Float64(), k.High.Float64(), k.Low.Float64(), k.Close.Float64(),
+		k.RisePrice(), k.RiseRate(),
+		Int64UnitString(k.Volume), FloatUnitString(k.Amount.Float64()),
+		k.UpCount, k.DownCount,
 	)
 }
 
 // Amplitude 振幅
-func (this *Kline) Amplitude() Price {
-	return this.High - this.Low
+func (k *Kline) Amplitude() Price {
+	return k.High - k.Low
 }
 
 // MaxDifference 最大差值，最高-最低
-func (this *Kline) MaxDifference() Price {
-	return this.High - this.Low
+func (k *Kline) MaxDifference() Price {
+	return k.High - k.Low
 }
 
 // RisePrice 涨跌金额,第一个数据不准，仅做参考
-func (this *Kline) RisePrice() Price {
-	if this.Last == 0 {
+func (k *Kline) RisePrice() Price {
+	if k.Last == 0 {
 		//稍微数据准确点，没减去0这么夸张，还是不准的
-		return this.Close - this.Open
+		return k.Close - k.Open
 	}
-	return this.Close - this.Last
+	return k.Close - k.Last
 
 }
 
 // RiseRate 涨跌比例/涨跌幅,第一个数据不准，仅做参考
-func (this *Kline) RiseRate() float64 {
-	if this.Last == 0 {
-		return float64(this.Close-this.Open) / float64(this.Open) * 100
+func (k *Kline) RiseRate() float64 {
+	if k.Last == 0 {
+		return float64(k.Close-k.Open) / float64(k.Open) * 100
 	}
-	return float64(this.Close-this.Last) / float64(this.Last) * 100
+	return float64(k.Close-k.Last) / float64(k.Last) * 100
 }
 
 type kline struct{}
@@ -114,7 +114,7 @@ Start: a401
 Count: a401
 Append: 00000000000000000000
 */
-func (kline) Frame(Type uint8, code string, start, count uint16) (*Frame, error) {
+func (kline) Frame(category uint8, code string, start, count uint16) (*Frame, error) {
 	if count > 800 {
 		return nil, errors.New("单次数量不能超过800")
 	}
@@ -126,7 +126,7 @@ func (kline) Frame(Type uint8, code string, start, count uint16) (*Frame, error)
 
 	data := []byte{exchange.Uint8(), 0x0}
 	data = append(data, []byte(number)...) //这里怎么是正序了？
-	data = append(data, Type, 0x0)
+	data = append(data, category, 0x0)
 	data = append(data, 0x01, 0x0)
 	data = append(data, Bytes(start)...)
 	data = append(data, Bytes(count)...)
@@ -157,16 +157,16 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		}
 		k := &Kline{Time: GetTime([4]byte(date), c.Type)}
 		open := Price(d.number())
-		_close := Price(d.number())
+		closePrice := Price(d.number())
 		high := Price(d.number())
 		low := Price(d.number())
 
 		k.Last = last
 		k.Open = open + last
-		k.Close = last + open + _close
+		k.Close = last + open + closePrice
 		k.High = open + last + high
 		k.Low = open + last + low
-		last = last + open + _close
+		last = last + open + closePrice
 
 		/*
 			发现不同的K线数据处理不一致,测试如下:
@@ -182,9 +182,9 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 			年: 不需要操作
 
 		*/
-		k.Volume = int64(getVolume(d.uint32()))
+		k.Volume = int64(float32Value(d.uint32()))
 		k.Volume = normalizeKlineVolume(k.Volume, c)
-		k.Amount = Price(getVolume(d.uint32()) * 1000) //从元转为厘,并去除多余的小数
+		k.Amount = Price(float32Value(d.uint32()) * 1000) //从元转为厘,并去除多余的小数
 
 		switch c.Kind {
 		case KindIndex:
@@ -224,7 +224,7 @@ func FixKlineTime(ks []*Kline) []*Kline {
 	if len(ks) == 0 {
 		return ks
 	}
-	now := time.Now()
+	now := time.Now().In(Location())
 	//只有当天下午13~15点之间才会出现的时间问题
 	node1 := time.Date(now.Year(), now.Month(), now.Day(), 13, 0, 0, 0, now.Location())
 	node2 := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, now.Location())
@@ -498,7 +498,7 @@ func (ks Klines) Merge241(n int) Klines {
 				std = append(std, k)
 				lastClose = k.Close
 			} else {
-				t, _ := time.ParseInLocation(time.DateOnly+timeFormat, dateStr+key, time.Local)
+				t, _ := time.ParseInLocation(time.DateOnly+timeFormat, dateStr+key, dayKs[0].Time.Location())
 				std = append(std, &Kline{
 					Time:      t,
 					Open:      lastClose,

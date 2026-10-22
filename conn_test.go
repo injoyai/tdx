@@ -299,7 +299,7 @@ func testDialWith(dial ios.DialFunc, ex bool, options ...client.Option) (*testCl
 	var c protocolClient
 	var err error
 	if ex {
-		c, err = dialExHqWith(dial, options...)
+		c, err = dialExWith(dial, options...)
 	} else {
 		c, err = DialWith(dial, options...)
 	}

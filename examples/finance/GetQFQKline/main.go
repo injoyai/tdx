@@ -7,6 +7,7 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/gbbq"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -16,7 +17,7 @@ func main() {
 	flag.Parse()
 	c := tdx.NewClient(tdx.WithRedial(false))
 	defer c.Close()
-	gb, err := tdx.NewGbbq(tdx.WithGbbqClient(c))
+	gb, err := gbbq.New(gbbq.WithClient(c))
 	logs.PanicErr(err)
 	defer gb.Close()
 	result, err := c.GetKlineDayAll(*code)

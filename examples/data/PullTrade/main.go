@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2/extend/manage"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 
 	pt := extend.NewPullTrade("./output/trade")
 
-	m, err := tdx.NewManage()
+	m, err := manage.New()
 	logs.PanicErr(err)
 	defer m.Close()
 

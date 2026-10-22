@@ -1,23 +1,33 @@
-package tdx
+package tdx_test
 
 import (
 	"errors"
 	"testing"
 
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/codes"
+	"github.com/injoyai/tdx/v2/extend/gbbq"
+	"github.com/injoyai/tdx/v2/extend/workday"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type failingMetadataClient struct {
-	Client
+	tdx.Client
 	err    error
 	closes int
 }
 
-func (c *failingMetadataClient) Close() error                                     { c.closes++; return nil }
-func (c *failingMetadataClient) GetCodeAll(protocol.Exchange) (*CodeResp, error)  { return nil, c.err }
-func (c *failingMetadataClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) { return nil, c.err }
-func (c *failingMetadataClient) GetKlineDayAll(string) (*KlineResp, error)        { return nil, c.err }
+func (c *failingMetadataClient) Close() error { c.closes++; return nil }
+func (c *failingMetadataClient) GetCodeAll(protocol.Exchange) (*tdx.CodeResp, error) {
+	return nil, c.err
+}
+func (c *failingMetadataClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
+	return nil, c.err
+}
+func (c *failingMetadataClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
+	return nil, c.err
+}
 
 func TestMetadataFailureOwnership(t *testing.T) {
 	for _, kind := range []string{"codes", "gbbq", "workday"} {
@@ -35,12 +45,12 @@ func TestMetadataFailureOwnership(t *testing.T) {
 					name += "/shared db"
 				}
 				t.Run(name, func(t *testing.T) {
-					db, err := xorms.NewSqlite(":memory:")
+					db, err := xorms.NewSQLite(":memory:")
 					if err != nil {
 						t.Fatal(err)
 					}
 					defer db.Close()
-					if err := db.Sync2(new(CodeModel), new(protocol.Gbbq), new(WorkdayModel)); err != nil {
+					if err := db.Sync2(new(codes.CodeModel), new(protocol.Gbbq), new(workday.WorkdayModel)); err != nil {
 						t.Fatal(err)
 					}
 					want := errors.New("initial update failed")
@@ -48,46 +58,46 @@ func TestMetadataFailureOwnership(t *testing.T) {
 					var result any
 					switch kind {
 					case "codes":
-						cop, dop := WithCodesClient(c), WithCodesDB(db)
+						cop, dop := codes.WithClient(c), codes.WithDB(db)
 						if ownClient {
-							cop = WithCodesDialClient(func() (Client, error) { return c, nil })
+							cop = codes.WithDialClient(func() (tdx.Client, error) { return c, nil })
 						}
 						if ownDB {
-							dop = WithCodesDialDB(func() (*xorms.Engine, error) { return db, nil })
+							dop = codes.WithDialDB(func() (*xorms.Engine, error) { return db, nil })
 						}
-						result, err = NewCodes(cop, dop)
+						result, err = codes.New(cop, dop)
 					case "gbbq":
-						cop, dop := WithGbbqClient(c), WithGbbqDB(db)
+						cop, dop := gbbq.WithClient(c), gbbq.WithDB(db)
 						if ownClient {
-							cop = WithGbbqDialClient(func() (Client, error) { return c, nil })
+							cop = gbbq.WithDialClient(func() (tdx.Client, error) { return c, nil })
 						}
 						if ownDB {
-							dop = WithGbbqDialDB(func() (*xorms.Engine, error) { return db, nil })
+							dop = gbbq.WithDialDB(func() (*xorms.Engine, error) { return db, nil })
 						}
-						result, err = NewGbbq(cop, dop)
+						result, err = gbbq.New(cop, dop)
 					case "workday":
-						cop, dop := WithWorkdayClient(c), WithWorkdayDB(db)
+						cop, dop := workday.WithClient(c), workday.WithDB(db)
 						if ownClient {
-							cop = WithWorkdayDialClient(func() (Client, error) { return c, nil })
+							cop = workday.WithDialClient(func() (tdx.Client, error) { return c, nil })
 						}
 						if ownDB {
-							dop = WithWorkdayDialDB(func() (*xorms.Engine, error) { return db, nil })
+							dop = workday.WithDialDB(func() (*xorms.Engine, error) { return db, nil })
 						}
-						result, err = NewWorkday(cop, dop)
+						result, err = workday.New(cop, dop)
 					}
 					if !errors.Is(err, want) {
 						t.Fatal("lost initialization error", err)
 					}
 					switch v := result.(type) {
-					case *Codes:
+					case *codes.Codes:
 						if v != nil {
 							t.Fatal("returned failed object")
 						}
-					case *Gbbq:
+					case *gbbq.Gbbq:
 						if v != nil {
 							t.Fatal("returned failed object")
 						}
-					case *Workday:
+					case *workday.Workday:
 						if v != nil {
 							t.Fatal("returned failed object")
 						}
@@ -113,13 +123,13 @@ func TestMetadataDBOpenFailureClosesClient(t *testing.T) {
 	for _, kind := range []string{"codes", "gbbq"} {
 		t.Run(kind, func(t *testing.T) {
 			c := &failingMetadataClient{}
-			dial := func() (Client, error) { return c, nil }
+			dial := func() (tdx.Client, error) { return c, nil }
 			db := func() (*xorms.Engine, error) { return nil, want }
 			var err error
 			if kind == "codes" {
-				_, err = NewCodes(WithCodesDialClient(dial), WithCodesDialDB(db))
+				_, err = codes.New(codes.WithDialClient(dial), codes.WithDialDB(db))
 			} else {
-				_, err = NewGbbq(WithGbbqDialClient(dial), WithGbbqDialDB(db))
+				_, err = gbbq.New(gbbq.WithDialClient(dial), gbbq.WithDialDB(db))
 			}
 			if !errors.Is(err, want) || c.closes != 1 {
 				t.Fatal("created client leaked", c.closes, err)
@@ -129,13 +139,13 @@ func TestMetadataDBOpenFailureClosesClient(t *testing.T) {
 }
 
 func TestWorkdayClientOpenFailureClosesDB(t *testing.T) {
-	db, err := xorms.NewSqlite(":memory:")
+	db, err := xorms.NewSQLite(":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 	want := errors.New("client open failed")
-	w, err := NewWorkday(WithWorkdayDialDB(func() (*xorms.Engine, error) { return db, nil }), WithWorkdayDialClient(func() (Client, error) { return nil, want }))
+	w, err := workday.New(workday.WithDialDB(func() (*xorms.Engine, error) { return db, nil }), workday.WithDialClient(func() (tdx.Client, error) { return nil, want }))
 	if w != nil || !errors.Is(err, want) || db.Ping() == nil {
 		t.Fatal("created db leaked", w, err)
 	}

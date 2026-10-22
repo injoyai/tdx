@@ -68,7 +68,7 @@ type TdxStat2 struct {
 
 // splitStatLines 按行分割 GBK 文本并解码, 去空行。
 func splitStatLines(data []byte) []string {
-	return strings.Split(string(UTF8ToGBK(data)), "\n")
+	return strings.Split(string(GBKToUTF8(data)), "\n")
 }
 
 func field(f []string, i int) string {

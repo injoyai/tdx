@@ -33,8 +33,7 @@ func NewHostDial(hosts []string) ios.DialFunc {
 		addr := hosts[index]
 		index = (index + 1) % len(hosts)
 		mu.Unlock()
-		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
-		return c, addr, err
+		return NewTCPDial(addr)(ctx)
 	}
 }
 
@@ -45,8 +44,7 @@ func NewRandomDial(hosts []string) ios.DialFunc {
 			return nil, "", errors.New("服务器列表为空")
 		}
 		addr := hosts[rand.Intn(len(hosts))]
-		c, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
-		return c, addr, err
+		return NewTCPDial(addr)(ctx)
 	}
 }
 
@@ -62,7 +60,7 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 				return nil, "", ctx.Err()
 			default:
 			}
-			c, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", addr)
+			c, _, err = NewTCPDial(addr)(ctx)
 			if err == nil {
 				return c, addr, nil
 			}

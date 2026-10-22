@@ -32,7 +32,7 @@ func (u *instrumentTestUnit) Codes(s *Service) ([]Code, error) {
 }
 
 type failOnceInstrumentPool struct {
-	tdx.IPool
+	tdx.ClientPool
 	fail bool
 }
 
@@ -41,7 +41,7 @@ func (p *failOnceInstrumentPool) Do(fn func(tdx.Client) error) error {
 		p.fail = false
 		return errors.New("instrument discovery failed")
 	}
-	return p.IPool.Do(fn)
+	return p.ClientPool.Do(fn)
 }
 
 func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
@@ -101,7 +101,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 			}
 		}
 	}()
-	c, err := tdx.DialExHq(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
+	c, err := tdx.DialEx(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	if err != nil {
 		l.Close()
 		<-done
@@ -113,7 +113,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { p.Close(); l.Close(); <-done })
-	faulty := &failOnceInstrumentPool{IPool: p}
+	faulty := &failOnceInstrumentPool{ClientPool: p}
 	s := testService(t)
 	s.cfg.ExPool = faulty
 	s.overrides = nil

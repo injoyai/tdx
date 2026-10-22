@@ -21,7 +21,7 @@ type TdxXgsg struct {
 
 // ParseXgsg 解析 xgsg.cfg → 新股申购列表。
 func ParseXgsg(data []byte) []*TdxXgsg {
-	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	lines := strings.Split(string(GBKToUTF8(data)), "\n")
 	out := make([]*TdxXgsg, 0, len(lines))
 	for _, ln := range lines {
 		ln = strings.TrimRight(ln, "\r")

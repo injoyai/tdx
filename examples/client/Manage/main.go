@@ -5,11 +5,12 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
 )
 
 // 管理器复用连接池、代码缓存和交易日历。
 func main() {
-	m, err := tdx.NewManage()
+	m, err := manage.New()
 	logs.PanicErr(err)
 	defer m.Close()
 	logs.Debug("今天是否为交易日:", m.Workday.TodayIs())

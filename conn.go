@@ -60,12 +60,12 @@ func dialWith(ctx context.Context, dial ios.DialFunc, timeout time.Duration, set
 	}
 
 	cli.Client, err = client.DialContext(ctx, cli.cancelableDial(dial), func(c *client.Client) {
-		c.Logger.Debug(true)                           //关闭日志打印
-		c.Logger.SetLevel(LevelInfo)                   //设置日志级别
-		c.Logger.WithHEX()                             //以HEX显示
-		c.SetOption(op...)                             //自定义选项
-		c.Event.OnReadFrom = protocol.ReadFrom         //分包
-		c.Event.OnDealMessage = cli.handlerDealMessage //解析数据并处理
+		c.Logger.Debug(true)                      //关闭日志打印
+		c.Logger.SetLevel(LevelInfo)              //设置日志级别
+		c.Logger.WithHEX()                        //以HEX显示
+		c.SetOption(op...)                        //自定义选项
+		c.Event.OnReadFrom = protocol.ReadFrom    //分包
+		c.Event.OnDealMessage = cli.handleMessage //解析数据并处理
 		c.Event.OnConnected = func(c *client.Client) error {
 			defer func() { <-cli.writeGate }()
 			w := cli.wrapWriter(c)
@@ -109,22 +109,22 @@ type conn struct {
 }
 
 // Close 取消整个连接生命周期，关闭后不再重连。
-func (c *conn) Close() error {
-	if c.cancelRun != nil {
-		c.cancelRun()
-		c.waitMu.Lock()
-		w := c.writer
-		c.waitMu.Unlock()
+func (cn *conn) Close() error {
+	if cn.cancelRun != nil {
+		cn.cancelRun()
+		cn.waitMu.Lock()
+		w := cn.writer
+		cn.waitMu.Unlock()
 		if w != nil && w.conn != nil {
 			_ = w.conn.Close() // 解除读取阻塞，由读取协程结束当次连接。
 		}
-		<-c.Client.Done()
+		<-cn.Client.Done()
 	}
-	return c.Client.Close()
+	return cn.Client.Close()
 }
 
-// handlerDealMessage 处理服务器响应的数据
-func (this *conn) handlerDealMessage(c *client.Client, msg ios.Acker) {
+// handleMessage 处理服务器响应的数据
+func (cn *conn) handleMessage(c *client.Client, msg ios.Acker) {
 
 	defer func() {
 		if e := recover(); e != nil {
@@ -139,48 +139,48 @@ func (this *conn) handlerDealMessage(c *client.Client, msg ios.Acker) {
 		logs.Err(err)
 		if len(payload) >= 16 {
 			key := conv.String(protocol.Uint32(payload[5:9]))
-			this.waitMu.Lock()
-			this.Wait.Done(key, nil, err)
-			this.m.GetAndDel(key)
-			this.waitMu.Unlock()
+			cn.waitMu.Lock()
+			cn.Wait.Done(key, nil, err)
+			cn.m.GetAndDel(key)
+			cn.waitMu.Unlock()
 		}
 		return
 	}
-	this.waitMu.Lock()
-	defer this.waitMu.Unlock()
-	if f.MsgID != 0 && !this.Wait.IsWait(conv.String(f.MsgID)) {
+	cn.waitMu.Lock()
+	defer cn.waitMu.Unlock()
+	if f.MsgID != 0 && !cn.Wait.IsWait(conv.String(f.MsgID)) {
 		return // 超时或写入失败的请求已清理，忽略迟到响应。
 	}
 
 	//从缓存中获取数据,响应数据中不同类型有不同的处理方式,但是响应无返回该类型,固根据消息id进行缓存
-	val, _ := this.m.GetAndDel(conv.String(f.MsgID))
+	val, _ := cn.m.GetAndDel(conv.String(f.MsgID))
 
-	resp, err := this.decode(f, val)
+	resp, err := cn.decode(f, val)
 
 	if err != nil {
 		logs.Err(err)
-		this.Wait.Done(conv.String(f.MsgID), nil, err)
+		cn.Wait.Done(conv.String(f.MsgID), nil, err)
 		return
 	}
 
-	this.Wait.Done(conv.String(f.MsgID), resp)
+	cn.Wait.Done(conv.String(f.MsgID), resp)
 
 }
 
 // SetTimeout 设置超时时间
-func (this *conn) SetTimeout(t time.Duration) {
-	this.waitMu.Lock()
-	defer this.waitMu.Unlock()
-	this.waitTimeout = t
-	this.Wait.SetTimeout(t)
+func (cn *conn) SetTimeout(t time.Duration) {
+	cn.waitMu.Lock()
+	defer cn.waitMu.Unlock()
+	cn.waitTimeout = t
+	cn.Wait.SetTimeout(t)
 }
 
 // SendFrame 发送数据,并等待响应
-func (this *conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
-	f.MsgID = atomic.AddUint32(&this.msgID, 1)
+func (cn *conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
+	f.MsgID = atomic.AddUint32(&cn.msgID, 1)
 	key := conv.String(f.MsgID)
 	if len(cache) > 0 {
-		this.m.Set(key, cache[0])
+		cn.m.Set(key, cache[0])
 	}
 	type result struct {
 		value any
@@ -188,16 +188,16 @@ func (this *conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	}
 	done := make(chan result, 1)
 	// 先注册完整回调再发送；注册和响应处理互斥，避免依赖内部的 list 竞争。
-	this.waitMu.Lock()
-	timeout := this.waitTimeout
-	w := this.writer
-	this.Wait.Async(key, func(value any, err error) { done <- result{value, err} }, 1, 0)
-	this.waitMu.Unlock()
+	cn.waitMu.Lock()
+	timeout := cn.waitTimeout
+	w := cn.writer
+	cn.Wait.Async(key, func(value any, err error) { done <- result{value, err} }, 1, 0)
+	cn.waitMu.Unlock()
 	defer func() {
-		this.waitMu.Lock()
-		defer this.waitMu.Unlock()
-		this.Wait.Done(key, nil)
-		this.m.GetAndDel(key)
+		cn.waitMu.Lock()
+		defer cn.waitMu.Unlock()
+		cn.Wait.Done(key, nil)
+		cn.m.GetAndDel(key)
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -226,4 +226,4 @@ func (this *conn) SendFrame(f *protocol.Frame, cache ...any) (any, error) {
 	}
 }
 
-func (c *conn) transport() *conn { return c }
+func (cn *conn) transport() *conn { return cn }

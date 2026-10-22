@@ -20,7 +20,7 @@ type minuteFallback struct {
 // 本地数据参与合并，避免补旧日期时被现有删尾重插规则删除；原生数据优先。
 func (f *minuteFallback) fill(s *pull.Service, code pull.Code, from, end, boundary time.Time,
 	native []*pull.KlineMinute) ([]*pull.KlineMinute, error) {
-	local, err := s.QueryMin(code, from, end.Add(-time.Second))
+	local, err := s.QueryMinute(code, from, end.Add(-time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func hasMinuteDay(rows map[int64]*pull.KlineMinute, day time.Time) bool {
 }
 
 // tradesToMinutes 复用 Trades.Klines 的 241 根规则；合成值是近似值。
-// 解码时间携带 UTC，但其钟面值属于请求交易日，不能直接 In(Local) 平移。
+// 按请求交易日的钟面值构造，兼容旧调用方携带 UTC 标签的分笔。
 func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute, error) {
 	if len(trades) == 0 {
 		return nil, errors.New("历史分笔为空，保留缺口")
@@ -124,8 +124,7 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 			return nil, errors.New("历史分笔日期、时间或量价无效")
 		}
 		copy := *trade
-		// Klines 内部按 time.Local 组日；用钟面值构造，合成后再恢复目标时区。
-		copy.Time = time.Date(y, m, d, trade.Time.Hour(), trade.Time.Minute(), 0, 0, time.Local)
+		copy.Time = time.Date(y, m, d, trade.Time.Hour(), trade.Time.Minute(), 0, 0, day.Location())
 		normalized = append(normalized, &copy)
 		volume += int64(trade.Volume)
 	}
@@ -136,9 +135,8 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	ks := normalized.Klines()
 	out := make([]*pull.KlineMinute, 0, len(ks))
 	for _, k := range ks {
-		t := time.Date(day.Year(), day.Month(), day.Day(), k.Time.Hour(), k.Time.Minute(), 0, 0, day.Location())
 		out = append(out, &pull.KlineMinute{
-			Unix: t.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
+			Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
 			Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: pull.ToShares(k.Volume),
 			Amount: k.Amount.Float64(), Source: pull.MinuteSourceTrade,
 		})

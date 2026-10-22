@@ -26,7 +26,7 @@ func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
 		return nil, err
 	}
 	var blocks []*protocol.Block
-	err = m.IPool.Do(func(c tdx.Client) error {
+	err = m.ClientPool.Do(func(c tdx.Client) error {
 		var err error
 		blocks, err = c.GetBlockDataWithIndex(protocol.BlockFileZS)
 		return err
@@ -54,7 +54,7 @@ func (u *Block) FetchDay(s *pull.Service, code pull.Code) error {
 	return u.stdUnit.FetchDay(s, code)
 }
 
-// FetchMin 板块指数分钟线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchMin(s *pull.Service, code pull.Code) error {
-	return u.stdUnit.FetchMin(s, code)
+// FetchMinute 板块指数分钟线：走 stdUnit 的 index 逻辑。
+func (u *Block) FetchMinute(s *pull.Service, code pull.Code) error {
+	return u.stdUnit.FetchMinute(s, code)
 }

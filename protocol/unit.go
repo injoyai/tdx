@@ -50,16 +50,17 @@ func Uint16(bs []byte) uint16 {
 	return conv.Uint16(Reverse(bs))
 }
 
-func UTF8ToGBK(text []byte) []byte {
+// GBKToUTF8 将 GBK 文本解码为 UTF-8，并移除 NUL 字节。
+func GBKToUTF8(text []byte) []byte {
 	r := bytes.NewReader(text)
-	decoder := transform.NewReader(r, simplifiedchinese.GBK.NewDecoder()) //GB18030
+	decoder := transform.NewReader(r, simplifiedchinese.GBK.NewDecoder())
 	content, _ := io.ReadAll(decoder)
 	return bytes.ReplaceAll(content, []byte{0x00}, []byte{})
 }
 
 // DecodeCode 解析证券代码,返回(交易所, 去掉前缀的代码主体, 错误)。
 //
-// 支持三种输入形式:
+// 已接入行情的品种复用 ParseInstrument 的解析与规范化规则，支持以下形式:
 //  1. 带交易所前缀,如 "sz000001"/"sh600000"/"hk00700"/"usAAPL"/"cffIF2609"/"上海600000",
 //     前缀支持小写缩写(见 Exchange.String())、大写("SZ000001")或中文名("上海600000")。
 //  2. 带点后缀,如 "000001.SZ"/"600000.SH"/"00700.HK"/"AAPL.US"/"IF2609.CFF",
@@ -70,8 +71,23 @@ func UTF8ToGBK(text []byte) []byte {
 //     - 纯字母代码(如 AAPL/BRK.B)→ 美国(ExchangeUS)
 //     - 字母+数字的合约代码(如 IF2609)→ 无法确定交易所,提示使用显式前缀
 //
-// 代码主体保持原始形态(A股仍为6位数字);无法识别的输入返回明确错误,不会静默解析。
+// 港美股主体转大写，期货保留大小写，A股仍为6位数字；原始协议的其他交易所保留旧格式校验。
 func DecodeCode(code string) (Exchange, string, error) {
+	i, err := ParseInstrument(code)
+	if err == nil {
+		return i.Exchange, i.Code, nil
+	}
+	// 原始协议仍允许统一 Client 尚未接入的交易所。
+	ex, body, rawErr := decodeCode(code)
+	if rawErr == nil {
+		if _, marketErr := (Instrument{ex, body}).Market(); marketErr != nil {
+			return ex, body, nil
+		}
+	}
+	return 0, "", err
+}
+
+func decodeCode(code string) (Exchange, string, error) {
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return 0, "", fmt.Errorf("代码不能为空")
@@ -101,7 +117,7 @@ func DecodeCode(code string) (Exchange, string, error) {
 		if prefixed == code {
 			return 0, "", fmt.Errorf("无法识别的代码: %q", code)
 		}
-		return DecodeCode(prefixed)
+		return decodeCode(prefixed)
 	case len(code) == 5 && isDigits(code):
 		// 港股: 5 位纯数字,如 00700
 		return ExchangeHK, code, nil
@@ -268,8 +284,8 @@ func GetHourMinute(bs [2]byte) string {
 	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
-func GetTime(bs [4]byte, Type uint8) time.Time {
-	switch Type {
+func GetTime(bs [4]byte, category uint8) time.Time {
+	switch category {
 	case TypeKlineMinute, TypeKlineMinute2, TypeKline5Minute, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute:
 
 		yearMonthDay := Uint16(bs[:2])
@@ -279,7 +295,7 @@ func GetTime(bs [4]byte, Type uint8) time.Time {
 		day := int((yearMonthDay % 2048) % 100)
 		hour := int(hourMinute / 60)
 		minute := int(hourMinute % 60)
-		return time.Date(year, time.Month(month), day, hour, minute, 0, 0, time.Local)
+		return time.Date(year, time.Month(month), day, hour, minute, 0, 0, Location())
 
 	default:
 
@@ -287,7 +303,7 @@ func GetTime(bs [4]byte, Type uint8) time.Time {
 		year := int(yearMonthDay / 10000)
 		month := int((yearMonthDay % 10000) / 100)
 		day := int(yearMonthDay % 100)
-		return time.Date(year, time.Month(month), day, 15, 0, 0, 0, time.Local)
+		return time.Date(year, time.Month(month), day, 15, 0, 0, 0, Location())
 
 	}
 }
@@ -321,12 +337,8 @@ func basePrice(code string) Price {
 	}
 }
 
-func getVolume(val uint32) float64 {
+func float32Value(val uint32) float64 {
 	return float64(math.Float32frombits(val))
-}
-
-func getVolume2(val uint32) float64 {
-	return getVolume(val)
 }
 
 // IsStock 是否是股票,示例sz000001

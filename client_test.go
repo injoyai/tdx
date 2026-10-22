@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -648,15 +647,6 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 	if std.Load() != 7 || ex.Load() != 1 {
 		t.Fatal("wrong routing", std.Load(), ex.Load())
 	}
-	var cs Codes
-	WithCodesClient(api)(&cs)
-	var g Gbbq
-	WithGbbqClient(api)(&g)
-	var w Workday
-	WithWorkdayClient(api)(&w)
-	if cs.c != api || g.c != api || w.c != api {
-		t.Fatal("metadata manager requires a concrete connection")
-	}
 	if err = api.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -768,30 +758,6 @@ func TestClientInterfaceCloseStopsReconnection(t *testing.T) {
 	}
 	if _, err := api.GetMarkets(); err == nil {
 		t.Fatal("closed native interface remained usable")
-	}
-}
-
-func TestClientInterfaceNilInjection(t *testing.T) {
-	if reflect.TypeOf((*Client)(nil)).Elem().Kind() != reflect.Interface {
-		t.Fatal("Client is not an interface")
-	}
-	for _, api := range []Client{(*StConn)(nil), (*MarketClient)(nil), nil} {
-		var cs Codes
-		WithCodesClient(api)(&cs)
-		var g Gbbq
-		WithGbbqClient(api)(&g)
-		var w Workday
-		WithWorkdayClient(api)(&w)
-		if cs.c != nil || g.c != nil || w.c != nil {
-			t.Fatal("typed nil client no longer follows nil injection behavior")
-		}
-	}
-	dial := func() (Client, error) { return (*StConn)(nil), nil }
-	if cs, err := NewCodes(WithCodesDialClient(dial)); cs != nil || err == nil {
-		t.Fatal("nil factory accepted", cs, err)
-	}
-	if g, err := NewGbbq(WithGbbqDialClient(dial)); g != nil || err == nil {
-		t.Fatal("nil factory accepted", g, err)
 	}
 }
 

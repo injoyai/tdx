@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestXRXD_FQ(t *testing.T) {
+func TestXRXDFQ(t *testing.T) {
 	p := Yuan(10)         //10元
 	x := XRXD{Fenhong: 5} //10股分红5元
 	p2 := x.Pre(p)
@@ -85,7 +85,7 @@ func approxYuan(got Price, expYuan float64) bool {
 	return d < 0.005
 }
 
-func TestFactors_QFQ_TDX(t *testing.T) {
+func TestFactorsQFQTDX(t *testing.T) {
 	type assertion struct {
 		date       int
 		o, h, l, c float64 // 期望前复权 开/高/低/收(元), naN 表示不校验该字段
@@ -160,11 +160,11 @@ func TestFactors_QFQ_TDX(t *testing.T) {
 	}
 }
 
-// TestFactors_QFQ_KnownException 记录唯一已知无法对齐的特例:
+// TestFactorsQFQKnownException 记录唯一已知无法对齐的特例:
 // 600519 2006-05-26 开盘, 本算法=-260.97, 通达信桌面端=-260.98(差 0.005)。
 // 原因见 PreKlines.Factors 注释。此测试断言本算法稳定输出 -260.97, 防止意外回归;
 // 若将来定位到通达信该日确切口径, 再更新此处。
-func TestFactors_QFQ_KnownException(t *testing.T) {
+func TestFactorsQFQKnownException(t *testing.T) {
 	xs := buildXRXDs(ev600519)
 	ks := buildKlines(kl600519)
 	fs := xs.Pre(ks).Factors()
@@ -179,8 +179,8 @@ func TestFactors_QFQ_KnownException(t *testing.T) {
 	}
 }
 
-// TestFactors_HFQ_Affine 验证后复权由前复权系数(最早日锚定)反推的一致性。
-func TestFactors_HFQ_Affine(t *testing.T) {
+// TestFactorsHFQAffine 验证后复权由前复权系数(最早日锚定)反推的一致性。
+func TestFactorsHFQAffine(t *testing.T) {
 	xs := buildXRXDs(ev000651)
 	ks := buildKlines(kl000651)
 	fs := xs.Pre(ks).Factors()
@@ -197,10 +197,10 @@ func TestFactors_HFQ_Affine(t *testing.T) {
 	}
 }
 
-// TestFactors_FutureExDayIgnored 回归: gbbq 含【已公告但 ex-day 在未来】的除权记录时,
+// TestFactorsFutureExDayIgnored 回归: gbbq 含【已公告但 ex-day 在未来】的除权记录时,
 // 不得提前施加, 否则前复权锚定日 B!=0, 整条历史被平移一个未发生的分红额。
 // 还原 600887 场景: 最新交易日为 2016-01-05, gbbq 却有一条 ex-day 在未来的派9元记录。
-func TestFactors_FutureExDayIgnored(t *testing.T) {
+func TestFactorsFutureExDayIgnored(t *testing.T) {
 	ks := buildKlines([]fixKline{
 		{20160104, 15170, 15170, 12000, 15170}, // 收 15.17 元
 		{20160105, 15490, 15490, 12000, 15490}, // 最新交易日

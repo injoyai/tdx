@@ -53,19 +53,19 @@ Length: 1c00
 Type: 2d05
 000030303030303104000100a401a40100000000000000000000
 */
-func (this *Frame) Bytes() types.Bytes {
-	length := uint16(len(this.Data) + 2)
-	data := make([]byte, 12+len(this.Data))
+func (f *Frame) Bytes() types.Bytes {
+	length := uint16(len(f.Data) + 2)
+	data := make([]byte, 12+len(f.Data))
 	data[0] = Prefix
-	if this.Prefix != 0 {
-		data[0] = this.Prefix
+	if f.Prefix != 0 {
+		data[0] = f.Prefix
 	}
-	copy(data[1:], Bytes(this.MsgID))
-	data[5] = this.Control.Uint8()
+	copy(data[1:], Bytes(f.MsgID))
+	data[5] = f.Control.Uint8()
 	copy(data[6:], Bytes(length))
 	copy(data[8:], Bytes(length))
-	copy(data[10:], Bytes(this.Type))
-	copy(data[12:], this.Data)
+	copy(data[10:], Bytes(f.Type))
+	copy(data[12:], f.Data)
 	return data
 }
 

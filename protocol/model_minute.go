@@ -17,13 +17,13 @@ type PriceNumber struct {
 	Number int
 }
 
-func (this PriceNumber) String() string {
-	return fmt.Sprintf("%s \t%-6s \t%-6d(手)", this.Time, this.Price, this.Number)
+func (p PriceNumber) String() string {
+	return fmt.Sprintf("%s \t%-6s \t%-6d(手)", p.Time, p.Price, p.Number)
 }
 
 type minute struct{}
 
-func (this *minute) Frame(code string) (*Frame, error) {
+func (*minute) Frame(code string) (*Frame, error) {
 	exchange, number, err := DecodeCode(code)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (this *minute) Frame(code string) (*Frame, error) {
 	}, nil
 }
 
-func (this *minute) Decode(bs []byte) (*MinuteResp, error) {
+func (*minute) Decode(bs []byte) (*MinuteResp, error) {
 
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")

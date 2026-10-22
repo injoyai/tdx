@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestServiceStartDateValidation(t *testing.T) {
@@ -12,7 +14,7 @@ func TestServiceStartDateValidation(t *testing.T) {
 	for _, value := range []string{"20260230", "20261301", "2026-01-02", "2026012"} {
 		t.Run(value, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "data")
-			s, err := NewService(&Config{Dir: dir, Codes: []string{"test.one"}, StartAt: value})
+			s, err := New(&Config{Dir: dir, Codes: []string{"test.one"}, StartAt: value})
 			if err == nil || s != nil {
 				t.Fatal("accepted invalid start date", value, err)
 			}
@@ -23,12 +25,12 @@ func TestServiceStartDateValidation(t *testing.T) {
 	}
 	for _, value := range []string{"", "20240229"} {
 		t.Run("valid-"+value, func(t *testing.T) {
-			s, err := NewService(&Config{Dir: t.TempDir(), Codes: []string{"test.one"}, StartAt: value})
+			s, err := New(&Config{Dir: t.TempDir(), Codes: []string{"test.one"}, StartAt: value})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer s.Close()
-			want := time.Now().AddDate(-2, 0, 0).Format("20060102")
+			want := time.Now().In(protocol.Location()).AddDate(-2, 0, 0).Format("20060102")
 			if value != "" {
 				want = value
 			}

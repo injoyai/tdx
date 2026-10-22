@@ -44,7 +44,7 @@ type exUnit struct {
 func (u *exUnit) Name() string { return u.name.String() }
 
 // Ex 取扩展行情连接池；未配置返回错误。
-func (u *exUnit) Ex(s *pull.Service) (tdx.IPool, error) {
+func (u *exUnit) Ex(s *pull.Service) (tdx.ClientPool, error) {
 	p := s.ExPool()
 	if p == nil {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 ExPool（扩展行情7727连接池）", u.name)
@@ -104,50 +104,13 @@ func (u *exUnit) marketOf(code pull.Code) (uint8, string, error) {
 	return u.markets[0], codeStr, nil
 }
 
-// parseExTime 解析扩展行情时间字符串 "YYYY-MM-DD HH:MM"。
+// parseExTime 仅转换 bars 已验证的钟面时间，统一采用固定东八区。
 func parseExTime(dt string) time.Time {
-	t, err := time.ParseInLocation("2006-01-02 15:04", dt, time.Local)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
+	at, _ := time.ParseInLocation("2006-01-02 15:04", dt, protocol.Location())
+	return at
 }
 
-// exPageLimit ExBars 的 start 参数为 uint16，翻页偏移超过 65535 会回绕，
-// 故设上限护栏：超出仍未命中停止条件时报错（也意味着该接口最多取 ~65535 根历史）。
-const exPageLimit = 65535
-
-// readExBars 扩展行情只扫描一次；包含增量边界，不跨 uint16 偏移上限。
-func readExBars(from time.Time,
-	fetch func(uint16, uint16) ([]protocol.ExKline, error)) ([]protocol.ExKline, error) {
-	var out []protocol.ExKline
-	for page := 0; ; page += 800 {
-		if page > exPageLimit {
-			return nil, fmt.Errorf("pull: 扩展行情翻页偏移超过 %d", exPageLimit)
-		}
-		bars, err := fetch(uint16(page), 800)
-		if err != nil {
-			return nil, err
-		}
-		for i := len(bars) - 1; i >= 0; i-- {
-			t := parseExTime(bars[i].Datetime)
-			if t.IsZero() {
-				return nil, fmt.Errorf("pull: 无效扩展行情时间 %q", bars[i].Datetime)
-			}
-			if t.Before(from) {
-				return out, nil
-			}
-			out = append(out, bars[i])
-			if t.Equal(from) {
-				return out, nil
-			}
-		}
-		if len(bars) < 800 {
-			return out, nil
-		}
-	}
-}
-
+// bars 复用客户端分页；过滤 Until 包含的界外停止记录。
 func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time.Time) ([]protocol.ExKline, error) {
 	p, err := u.Ex(s)
 	if err != nil {
@@ -159,19 +122,28 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 	}
 	var out []protocol.ExKline
 	err = p.Do(func(c tdx.Client) error {
-		var err error
-		out, err = readExBars(from, func(start, count uint16) ([]protocol.ExKline, error) {
-			r, err := c.GetKline(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), start, count)
-			if err != nil {
-				return nil, err
-			}
-			bars := make([]protocol.ExKline, 0, len(r.List))
-			for _, k := range r.List {
-				bars = append(bars, *k.Extended)
-			}
-			return bars, nil
+		var parseErr error
+		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), func(k tdx.Kline) bool {
+			var at time.Time
+			at, parseErr = time.ParseInLocation("2006-01-02 15:04", k.Time, protocol.Location())
+			return parseErr != nil || !at.After(from)
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		if parseErr != nil {
+			return parseErr
+		}
+		for _, k := range r.List {
+			at, err := time.ParseInLocation("2006-01-02 15:04", k.Time, protocol.Location())
+			if err != nil {
+				return err
+			}
+			if !at.Before(from) {
+				out = append(out, *k.Extended)
+			}
+		}
+		return nil
 	})
 	return out, err
 }
@@ -204,8 +176,8 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	return saveDays(s, code, from.Unix(), out)
 }
 
-// FetchMin 多年份共用一次分页，成功扫描后才提交年度完成标记。
-func (u *exUnit) FetchMin(s *pull.Service, code pull.Code) error {
+// FetchMinute 多年份共用一次分页，成功扫描后才提交年度完成标记。
+func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 	info, ok := u.name.Info()
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)

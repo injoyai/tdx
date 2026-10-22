@@ -12,7 +12,7 @@ func (u *discoveryTestUnit) Codes(*Service) ([]Code, error) { return u.list, nil
 func TestConfiguredCodesDeduplicateTasksAndIdentity(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one", " test.one "}, Goroutines: 1}
-	s, err := NewService(&cfg)
+	s, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestConfiguredCodesDeduplicateTasksAndIdentity(t *testing.T) {
 		t.Fatal("重复代码执行了多次", u.days, u.minutes)
 	}
 	cfg.Codes = []string{"test.one"}
-	single, err := NewService(&cfg)
+	single, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

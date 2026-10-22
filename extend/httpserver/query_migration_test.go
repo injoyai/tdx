@@ -148,7 +148,7 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 	}()
 	var c tdx.Client
 	if extended {
-		c, err = tdx.DialExHq(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
+		c, err = tdx.DialEx(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	} else {
 		c, err = tdx.Dial(l.Addr().String(), tdx.WithRedial(false), tdx.WithLevel(tdx.LevelNone), tdx.WithDebug(false))
 	}

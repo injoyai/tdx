@@ -16,7 +16,7 @@ type serverConfig struct {
 	addr       string
 	hosts      []string
 	poolSize   int
-	exHqHosts  []string
+	exHosts    []string
 	exPoolSize int
 	options    []client.Option
 }
@@ -36,9 +36,9 @@ func WithPoolSize(n int) Option {
 	return func(c *serverConfig) { c.poolSize = n }
 }
 
-// WithExHqHosts 设置扩展行情服务器列表,启用扩展行情 /ex/* 路由
-func WithExHqHosts(hosts ...string) Option {
-	return func(c *serverConfig) { c.exHqHosts = hosts }
+// WithExHosts 设置扩展行情服务器列表,启用扩展行情 /ex/* 路由
+func WithExHosts(hosts ...string) Option {
+	return func(c *serverConfig) { c.exHosts = hosts }
 }
 
 // WithExPoolSize 设置扩展连接池大小
@@ -46,8 +46,8 @@ func WithExPoolSize(n int) Option {
 	return func(c *serverConfig) { c.exPoolSize = n }
 }
 
-// WithOptions 设置通达信连接选项,如 tdx.WithDebug()、tdx.WithRedial()
-func WithOptions(opts ...client.Option) Option {
+// WithClientOptions 设置通达信连接选项,如 tdx.WithDebug()、tdx.WithRedial()
+func WithClientOptions(opts ...client.Option) Option {
 	return func(c *serverConfig) {
 		c.options = append(c.options, opts...)
 	}
@@ -87,12 +87,12 @@ func New(opts ...Option) (*Server, error) {
 
 	s := &Server{pool: pool}
 
-	if len(cfg.exHqHosts) > 0 {
+	if len(cfg.exHosts) > 0 {
 		if cfg.exPoolSize <= 0 {
 			cfg.exPoolSize = 1
 		}
 		exPool, err := tdx.NewPool(func() (tdx.Client, error) {
-			return tdx.DialExHqHosts(cfg.exHqHosts, cfg.options...)
+			return tdx.DialExHosts(cfg.exHosts, cfg.options...)
 		}, cfg.exPoolSize)
 		if err != nil {
 			return nil, err
@@ -113,7 +113,7 @@ func New(opts ...Option) (*Server, error) {
 
 // Default 使用默认配置创建 HTTP 服务(开启断线重连)
 func Default(opts ...Option) (*Server, error) {
-	opts = append([]Option{WithOptions(tdx.WithRedial())}, opts...)
+	opts = append([]Option{WithClientOptions(tdx.WithRedial())}, opts...)
 	return New(opts...)
 }
 
@@ -233,6 +233,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 }
 
 // handleHealth 健康检查
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (*Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	respondOK(w, map[string]string{"status": "running"})
 }

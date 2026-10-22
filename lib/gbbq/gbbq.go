@@ -76,13 +76,19 @@ func Download(dir string) (string, error) {
 }
 
 func Decode(content []byte) (GBBQs, error) {
+	if len(content) < 4 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	count := binary.LittleEndian.Uint32(content[:4])
+	if uint64(count) > uint64((len(content)-4)/29) {
+		return nil, io.ErrUnexpectedEOF
+	}
 	hexStr := strings.ReplaceAll(HexKeys, " ", "")
 	keys, err := hex.DecodeString(hexStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hex keys: %w", err)
 	}
 
-	count := binary.LittleEndian.Uint32(content[0:4])
 	pos := 4
 	var result []*GBBQ
 
@@ -175,6 +181,8 @@ func decryptBlock(keys, encrypted []byte) []byte {
 	return decrypted
 }
 
+// GBBQ 保留文件解密后的原始字段，C1..C4 的含义依 Category 而定。
+// 文件单位未在本库独立核实，不能直接当作 protocol.Equity 的股数使用。
 type GBBQ struct {
 	Category int       //2, 3, 5, 7, 8, 9, 10
 	Code     string    //600000
@@ -187,9 +195,13 @@ type GBBQ struct {
 
 type GBBQs []*GBBQ
 
-func (this GBBQs) GetStocks() map[string]Equities {
+// GetStocks 提取股本类记录，保留文件原值与无前缀代码。
+//
+// Deprecated: 新业务使用 Client.GetGbbq / protocol.Gbbq.Equity 的以股计模型。
+// 需要文件数据时先独立确认单位，再显式转换；本方法不执行单位换算。
+func (gs GBBQs) GetStocks() map[string]Equities {
 	m := map[string]Equities{}
-	for _, v := range this {
+	for _, v := range gs {
 		switch v.Category {
 		case 2, 3, 5, 7, 8, 9, 10:
 			m[v.Code] = append(m[v.Code], &Equity{
@@ -204,6 +216,9 @@ func (this GBBQs) GetStocks() map[string]Equities {
 	return m
 }
 
+// Equity 是历史文件模型，Float/Total 保留原值，单位未独立核实。
+//
+// Deprecated: 新业务使用 protocol.Equity；不能直接转换字段数值。
 type Equity struct {
 	Category int       //2, 3, 5, 7, 8, 9, 10
 	Code     string    //600000
@@ -212,20 +227,22 @@ type Equity struct {
 	Total    float64   //总股本
 }
 
-func (this *Equity) TableName() string {
+func (*Equity) TableName() string {
 	return "equity"
 }
 
-// Turnover 换手率
-func (this *Equity) Turnover(volume float64) float64 {
-	return volume / (this.Float * 100)
+// Turnover 保留历史公式 volume/(Float*100)，不保证与 protocol.Equity.Turnover 的百分数口径相同。
+//
+// Deprecated: 请确认文件股本和成交量单位，转换为股后使用 protocol.Equity.Turnover。
+func (e *Equity) Turnover(volume float64) float64 {
+	return volume / (e.Float * 100)
 }
 
 type Equities []*Equity
 
-func (this Equities) Map() map[string]Equities {
+func (es Equities) Map() map[string]Equities {
 	m := make(map[string]Equities)
-	for _, v := range this {
+	for _, v := range es {
 		m[v.Code] = append(m[v.Code], v)
 	}
 	return m

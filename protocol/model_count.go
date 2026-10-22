@@ -9,7 +9,7 @@ type CountResp struct {
 type count struct{}
 
 // Frame 0c0200000001080008004e04000075c73301
-func (this *count) Frame(exchange Exchange) *Frame {
+func (*count) Frame(exchange Exchange) *Frame {
 	return &Frame{
 		Control: Control01,
 		Type:    TypeCount,
@@ -17,7 +17,7 @@ func (this *count) Frame(exchange Exchange) *Frame {
 	}
 }
 
-func (this *count) Decode(bs []byte) (*CountResp, error) {
+func (*count) Decode(bs []byte) (*CountResp, error) {
 	if len(bs) < 2 {
 		return nil, errors.New("数据长度不足")
 	}

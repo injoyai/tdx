@@ -24,8 +24,8 @@ go test ./examples/...
 | 分类 | 示例 | 内容与使用条件 |
 | --- | --- | --- |
 | client | [UnifiedClient](client/UnifiedClient/main.go) | 统一客户端与跨市场日线 |
-| client | [GetExHq](client/GetExHq/main.go) | 扩展连接、市场发现与港股代码查询 |
-| client | [Manage](client/Manage/main.go) | 连接池、交易日历、代码缓存、深圳指数与 ETF 数量统计 |
+| client | [ExClient](client/ExClient/main.go) | 扩展连接、市场发现与港股代码查询 |
+| client | [Manage](client/Manage/main.go) | `extend/manage` 管理器：连接池、交易日历、代码缓存、深圳指数与 ETF 数量统计 |
 | codes | [GetCodeAll](codes/GetCodeAll/main.go) | 市场总数、分页或完整代码列表、沪深北股票代码 |
 | codes | [GetBlockData](codes/GetBlockData/main.go) | 板块成分、指数代码关联、专业板块与板块行情 |
 | codes | [GetTdxHy](codes/GetTdxHy/main.go) | 通达信与申万行业归属 |

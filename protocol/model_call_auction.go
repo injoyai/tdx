@@ -61,10 +61,10 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 		return nil, errors.New("数据长度不足")
 	}
 
-	_count := Uint16(bs[:2])
+	count := Uint16(bs[:2])
 	resp := &CallAuctionResp{
-		Count: _count,
-		List:  make([]*CallAuction, 0, _count),
+		Count: count,
+		List:  make([]*CallAuction, 0, count),
 	}
 
 	bs = bs[2:]
@@ -74,8 +74,8 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 
 		n := Uint16(bs[:2])
 
-		_hour := int(n / 60)
-		_minute := int(n % 60)
+		hour := int(n / 60)
+		minute := int(n % 60)
 
 		a := &CallAuction{
 			Price:     Price(Float32(bs[2:6]) * 1000),
@@ -94,9 +94,9 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 			a.Unmatched = -a.Unmatched
 		}
 
-		_second := int(bs[15])
+		second := int(bs[15])
 
-		a.Time = time.Date(now.Year(), now.Month(), now.Day(), _hour, _minute, _second, 0, now.Location())
+		a.Time = time.Date(now.Year(), now.Month(), now.Day(), hour, minute, second, 0, now.Location())
 		resp.List = append(resp.List, a)
 
 		bs = bs[16:]

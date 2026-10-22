@@ -10,7 +10,7 @@ import (
 
 type downloadTransport func(*http.Request) (*http.Response, error)
 
-func (f downloadTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (t downloadTransport) RoundTrip(r *http.Request) (*http.Response, error) { return t(r) }
 
 func TestDownloadTimeout(t *testing.T) {
 	previous := downloadClient

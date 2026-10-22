@@ -160,9 +160,18 @@ func TestTradePaginationOverflow(t *testing.T) {
 }
 
 func TestOtherPaginationLimits(t *testing.T) {
-	for _, mode := range []string{"code", "stock", "index", "until"} {
+	for _, mode := range []string{"code", "stock", "index", "until", "extended"} {
 		t.Run(mode, func(t *testing.T) {
-			c := respondingTestClient(t, false, func(h, _ []byte) []byte {
+			c := respondingTestClient(t, mode == "extended", func(h, _ []byte) []byte {
+				if mode == "extended" {
+					sample := testExtendedBar(20250102)
+					out := append([]byte(nil), sample[:20]...)
+					binary.LittleEndian.PutUint16(out[18:], 800)
+					for j := 0; j < 800; j++ {
+						out = append(out, sample[20:]...)
+					}
+					return out
+				}
 				if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeCode {
 					return append(protocol.Bytes(uint16(1000)), make([]byte, 1000*29)...)
 				}
@@ -179,6 +188,8 @@ func TestOtherPaginationLimits(t *testing.T) {
 			})
 			var err error
 			switch mode {
+			case "extended":
+				_, err = c.GetKlineAll(protocol.TypeKlineDay, "hk00700")
 			case "code":
 				_, err = c.GetCodeAll(protocol.ExchangeSZ)
 			case "index":
@@ -498,9 +509,11 @@ func (c completionCalendar) Range(start, end time.Time, visit func(time.Time) bo
 }
 
 func TestUnifiedHistoryCalendar(t *testing.T) {
+	var daily atomic.Int32
 	c := respondingTestClient(t, true, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeExBars {
 			if binary.LittleEndian.Uint16(b[10:]) == 4 {
+				daily.Add(1)
 				r := testExtendedBar(20261008)
 				r = append(r, testExtendedBar(20261009)[20:]...)
 				binary.LittleEndian.PutUint16(r[18:], 2)
@@ -518,9 +531,13 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 		return r
 	})
 	days := []time.Time{time.Date(2026, 10, 8, 0, 0, 0, 0, time.FixedZone("caller", 8*3600)), time.Date(2026, 10, 9, 0, 0, 0, 0, time.FixedZone("caller", 8*3600))}
-	r, err := c.GetHistoryTradeBefore("hk00700", completionCalendar{days}, days[1].AddDate(0, 0, 1))
+	calendar := completionCalendar{append([]time.Time{days[0].AddDate(0, 0, -1)}, days...)}
+	r, err := c.GetHistoryTradeBefore("hk00700", calendar, days[1].AddDate(0, 0, 1))
 	if err != nil || r.Count != 2 || r.List[0].Date != "20261008" || r.List[1].Date != "20261009" {
 		t.Fatal(r, err)
+	}
+	if daily.Load() != 1 {
+		t.Fatal("repeated daily guard", daily.Load())
 	}
 	if _, err = c.GetHistoryTradeFull("hk00700", nil); err == nil {
 		t.Fatal("nil calendar accepted")
@@ -542,7 +559,7 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 		binary.LittleEndian.PutUint16(r[14:], 1)
 		return r
 	})
-	if r, err = failed.GetHistoryTradeBefore("hk00700", completionCalendar{days}, days[1].AddDate(0, 0, 1)); r != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+	if r, err = failed.GetHistoryTradeBefore("hk00700", calendar, days[1].AddDate(0, 0, 1)); r != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatal("failed day returned partial history", r, err)
 	}
 }

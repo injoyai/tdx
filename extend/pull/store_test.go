@@ -17,28 +17,28 @@ func testService(t *testing.T) *Service {
 	// 测试环境未注册内置市场，注册一个仅供测试的市场（多个测试共用，只注册一次）；
 	// 用完整键 "test.xxx" 通过 ParseCode 路由到该市场
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	s, err := NewService(&Config{
+	s, err := New(&Config{
 		Dir:   dir,
 		Codes: []string{"test.sh600000"},
 	})
 	if err != nil {
-		t.Fatalf("NewService: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
 }
 
-// mockUnit 仅用于满足 NewService 的 Unit 非空校验。
+// mockUnit 仅用于满足 New 的 Unit 非空校验。
 type mockUnit struct{ name string }
 
 func (u *mockUnit) Name() string { return u.name }
-func (u *mockUnit) Codes(s *Service) ([]Code, error) {
+func (*mockUnit) Codes(s *Service) ([]Code, error) {
 	return nil, nil
 }
-func (u *mockUnit) FetchDay(s *Service, code Code) error {
+func (*mockUnit) FetchDay(s *Service, code Code) error {
 	return nil
 }
-func (u *mockUnit) FetchMin(s *Service, code Code) error {
+func (*mockUnit) FetchMinute(s *Service, code Code) error {
 	return nil
 }
 
@@ -139,7 +139,7 @@ func TestStoreDayUpsert(t *testing.T) {
 	}
 }
 
-func TestStoreMin(t *testing.T) {
+func TestStoreMinute(t *testing.T) {
 	s := testService(t)
 	code := Code{Market: MarketAStock, Code: "sz000001"}
 
@@ -154,27 +154,27 @@ func TestStoreMin(t *testing.T) {
 			Volume: int64(i+1) * 100,
 		})
 	}
-	if err := s.SaveMin(code, year, 0, ks); err != nil {
-		t.Fatalf("SaveMin: %v", err)
+	if err := s.SaveMinute(code, year, 0, ks); err != nil {
+		t.Fatalf("SaveMinute: %v", err)
 	}
 
-	last, err := s.LastMinUnix(code, year)
+	last, err := s.LastMinuteUnix(code, year)
 	if err != nil {
-		t.Fatalf("LastMinUnix: %v", err)
+		t.Fatalf("LastMinuteUnix: %v", err)
 	}
 	if last != ks[2].Unix {
-		t.Errorf("LastMinUnix = %d, want %d", last, ks[2].Unix)
+		t.Errorf("LastMinuteUnix = %d, want %d", last, ks[2].Unix)
 	}
 
-	if !s.MinExists(code, year) {
+	if !s.MinuteExists(code, year) {
 		t.Errorf("MinExists(%d) = false, want true", year)
 	}
-	if s.MinExists(code, year+1) {
+	if s.MinuteExists(code, year+1) {
 		t.Errorf("MinExists(%d) = true, want false", year+1)
 	}
 
 	// 查询
-	minFile := code.MinFile(s.Config().Dir, year)
+	minFile := code.MinuteFile(s.Config().Dir, year)
 	db, err := openDB(minFile, new(KlineMinute))
 	if err != nil {
 		t.Fatalf("openDB: %v", err)
@@ -209,8 +209,8 @@ func TestCodeFileLayout(t *testing.T) {
 		if got := c.code.DayFile(dir); got != filepath.Join(dir, c.dayFile) {
 			t.Errorf("%s DayFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, c.dayFile))
 		}
-		if got := c.code.MinFile(dir, 2026); got != filepath.Join(dir, c.minFile) {
-			t.Errorf("%s MinFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, c.minFile))
+		if got := c.code.MinuteFile(dir, 2026); got != filepath.Join(dir, c.minFile) {
+			t.Errorf("%s MinuteFile = %s, want %s", c.code.Key(), got, filepath.Join(dir, c.minFile))
 		}
 	}
 }
@@ -304,12 +304,12 @@ func TestDirCreation(t *testing.T) {
 	dir := filepath.Join(os.TempDir(), "pull-test-"+t.Name())
 	defer os.RemoveAll(dir)
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	s, err := NewService(&Config{
+	s, err := New(&Config{
 		Dir:   dir,
 		Codes: []string{"test.sh600000"},
 	})
 	if err != nil {
-		t.Fatalf("NewService: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
 	code := Code{Market: MarketAStock, Code: "sh600000"}
@@ -367,7 +367,7 @@ func TestQueryDay(t *testing.T) {
 	}
 }
 
-func TestQueryMin(t *testing.T) {
+func TestQueryMinute(t *testing.T) {
 	s := testService(t)
 	code := Code{Market: MarketAStock, Code: "sz000001"}
 
@@ -382,25 +382,25 @@ func TestQueryMin(t *testing.T) {
 			Volume: int64(i+1) * 100,
 		})
 	}
-	if err := s.SaveMin(code, year, 0, ks); err != nil {
-		t.Fatalf("SaveMin: %v", err)
+	if err := s.SaveMinute(code, year, 0, ks); err != nil {
+		t.Fatalf("SaveMinute: %v", err)
 	}
 
 	// 跨零值端点查询（自动定位年份文件）
-	ls, err := s.QueryMin(code, time.Time{}, time.Time{})
+	ls, err := s.QueryMinute(code, time.Time{}, time.Time{})
 	if err != nil {
-		t.Fatalf("QueryMin: %v", err)
+		t.Fatalf("QueryMinute: %v", err)
 	}
 	if len(ls) != 3 {
-		t.Fatalf("QueryMin 全范围 = %d 根, want 3", len(ls))
+		t.Fatalf("QueryMinute 全范围 = %d 根, want 3", len(ls))
 	}
 	// 范围过滤
-	ls, err = s.QueryMin(code, base, base.Add(time.Minute))
+	ls, err = s.QueryMinute(code, base, base.Add(time.Minute))
 	if err != nil {
-		t.Fatalf("QueryMin 范围: %v", err)
+		t.Fatalf("QueryMinute 范围: %v", err)
 	}
 	if len(ls) != 2 {
-		t.Fatalf("QueryMin 范围 = %d 根, want 2", len(ls))
+		t.Fatalf("QueryMinute 范围 = %d 根, want 2", len(ls))
 	}
 }
 

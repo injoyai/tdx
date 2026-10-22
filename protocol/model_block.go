@@ -74,7 +74,7 @@ type TdxZs struct {
 //	轮动趋势|880081|5|2|0|轮动趋势
 //	黑龙江|880201|3|1|0|1
 func ParseTdxZs(data []byte) []*TdxZs {
-	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	lines := strings.Split(string(GBKToUTF8(data)), "\n")
 	out := make([]*TdxZs, 0, len(lines))
 	for _, ln := range lines {
 		ln = strings.TrimRight(ln, "\r")
@@ -105,7 +105,7 @@ func ParseTdxZs(data []byte) []*TdxZs {
 //
 //	44|920000|2|安徽凤凰|1|
 func ParseTdxBjMore(data []byte) []*Code {
-	lines := strings.Split(string(UTF8ToGBK(data)), "\n")
+	lines := strings.Split(string(GBKToUTF8(data)), "\n")
 	out := make([]*Code, 0, len(lines))
 	for _, ln := range lines {
 		ln = strings.TrimRight(ln, "\r")
@@ -236,7 +236,7 @@ func ParseBlockFile(data []byte) []*Block {
 		if pos+13 > len(data) {
 			break
 		}
-		name := strings.TrimRight(string(UTF8ToGBK(data[pos:pos+9])), "\x00")
+		name := strings.TrimRight(string(GBKToUTF8(data[pos:pos+9])), "\x00")
 		pos += 9
 		stockCount := int(Uint16(data[pos : pos+2]))
 		blockType := Uint16(data[pos+2 : pos+4])

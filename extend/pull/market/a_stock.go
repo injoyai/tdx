@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/gbbq"
+	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// stdUnit 标准行情(7709)市场的基础实现：通过 tdx.Manage 连接源取连接。
+// stdUnit 标准行情(7709)市场的基础实现：通过 manage.Manage 连接源取连接。
 // 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
 	name pull.Market // 市场标识（pull.Market 枚举）
@@ -25,7 +27,7 @@ func (u *stdUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 }
 
 // Manage 只获取标准行情连接源；不因查询代码、指数或分钟线触发股本初始化。
-func (u *stdUnit) Manage(s *pull.Service) (*tdx.Manage, error) {
+func (u *stdUnit) Manage(s *pull.Service) (*manage.Manage, error) {
 	m := s.Manage()
 	if m == nil {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Manage（标准行情7709连接源）", u.name)
@@ -134,38 +136,38 @@ func init() {
 
 // ---- Codes 实现 ----
 
-func (u *AStock) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := u.Manage(s)
+func (a *AStock) Codes(s *pull.Service) ([]pull.Code, error) {
+	m, err := a.Manage(s)
 	if err != nil {
 		return nil, err
 	}
 	out := []pull.Code{}
 	for _, v := range m.Codes.GetStocks() {
-		out = append(out, pull.Code{Market: u.name, Code: v.FullCode(), Name: v.Name})
+		out = append(out, pull.Code{Market: a.name, Code: v.FullCode(), Name: v.Name})
 	}
 	return out, nil
 }
 
-func (u *Index) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := u.Manage(s)
+func (i *Index) Codes(s *pull.Service) ([]pull.Code, error) {
+	m, err := i.Manage(s)
 	if err != nil {
 		return nil, err
 	}
 	out := []pull.Code{}
 	for _, v := range m.Codes.GetIndexes() {
-		out = append(out, pull.Code{Market: u.name, Code: v.FullCode(), Name: v.Name})
+		out = append(out, pull.Code{Market: i.name, Code: v.FullCode(), Name: v.Name})
 	}
 	return out, nil
 }
 
-func (u *EtfLof) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := u.Manage(s)
+func (e *EtfLof) Codes(s *pull.Service) ([]pull.Code, error) {
+	m, err := e.Manage(s)
 	if err != nil {
 		return nil, err
 	}
 	out := []pull.Code{}
 	for _, v := range m.Codes.GetETFs() {
-		out = append(out, pull.Code{Market: u.name, Code: v.FullCode(), Name: v.Name})
+		out = append(out, pull.Code{Market: e.name, Code: v.FullCode(), Name: v.Name})
 	}
 	return out, nil
 }
@@ -181,7 +183,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	if err != nil {
 		return err
 	}
-	var equity tdx.IGbbq
+	var equity gbbq.Interface
 	if u.name == pull.MarketAStock {
 		equity, err = m.InitGbbq()
 		if err != nil {
@@ -195,7 +197,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	start := s.Start()
 
 	var ks protocol.Klines
-	err = m.IPool.Do(func(c tdx.Client) error {
+	err = m.ClientPool.Do(func(c tdx.Client) error {
 		var err error
 		if last > 0 {
 			ks, err = u.fetchDayFrom(c, code.Code, last, start)
@@ -232,8 +234,8 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	return saveDays(s, code, max(last, start.Unix()), out)
 }
 
-// FetchMin 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
-func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
+// FetchMinute 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
+func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 	info, ok := u.name.Info()
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
@@ -247,7 +249,7 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 		fallback = &minuteFallback{
 			days: func(from time.Time) (protocol.Klines, error) {
 				var days protocol.Klines
-				err := m.IPool.Do(func(c tdx.Client) error {
+				err := m.ClientPool.Do(func(c tdx.Client) error {
 					var err error
 					days, err = u.fetchDayAll(c, code.Code, from)
 					return err
@@ -256,7 +258,7 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 			},
 			trades: func(day time.Time) (protocol.Trades, error) {
 				var trades protocol.Trades
-				err := m.IPool.Do(func(c tdx.Client) error {
+				err := m.ClientPool.Do(func(c tdx.Client) error {
 					resp, err := c.GetHistoryTradeDay(day.Format("20060102"), code.Code)
 					if err != nil {
 						return err
@@ -274,7 +276,7 @@ func (u *stdUnit) FetchMin(s *pull.Service, code pull.Code) error {
 	}
 	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
 		var ks protocol.Klines
-		err := m.IPool.Do(func(c tdx.Client) error {
+		err := m.ClientPool.Do(func(c tdx.Client) error {
 			var err error
 			ks, err = u.fetchMinAll(c, code.Code, from)
 			return err

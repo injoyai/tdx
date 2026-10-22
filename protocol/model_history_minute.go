@@ -8,7 +8,7 @@ import (
 
 type historyMinute struct{}
 
-func (this historyMinute) Frame(date, code string) (*Frame, error) {
+func (historyMinute) Frame(date, code string) (*Frame, error) {
 	exchange, number, err := DecodeCode(code)
 	if err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func (this historyMinute) Frame(date, code string) (*Frame, error) {
 	}, nil
 }
 
-func (this historyMinute) Decode(bs []byte) (*MinuteResp, error) {
+func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")

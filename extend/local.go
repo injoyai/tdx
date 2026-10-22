@@ -51,7 +51,7 @@ func ReadDay(dir string, code string) (protocol.Klines, error) {
 		rec := bs[i : i+32]
 		// 00~03 日期 YYYYMMDD
 		d := binary.LittleEndian.Uint32(rec[0:4])
-		t := time.Date(int(d/10000), time.Month(d/100%100), int(d%100), 0, 0, 0, 0, time.Local)
+		t := time.Date(int(d/10000), time.Month(d/100%100), int(d%100), 0, 0, 0, 0, protocol.Location())
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {
 			vol = protocol.FromShares(vol)
@@ -104,7 +104,7 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 		// 02~03 当日分钟数
 		m := binary.LittleEndian.Uint16(rec[2:4])
 		hour, minute := int(m/60), int(m%60)
-		t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, time.Local)
+		t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, protocol.Location())
 		amount := math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {

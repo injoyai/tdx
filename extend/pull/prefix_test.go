@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestMarketPrefixForms(t *testing.T) {
@@ -15,6 +17,8 @@ func TestMarketPrefixForms(t *testing.T) {
 	}{
 		{[]string{"sh600000", "sh.600000", "SH.600000"}, MarketAStock, "sh600000"},
 		{[]string{"sz000001", "Sz.000001"}, MarketAStock, "sz000001"},
+		{[]string{"000001.SZ", "000001.sz"}, MarketAStock, "sz000001"},
+		{[]string{"上海600000", "600000.SH"}, MarketAStock, "sh600000"},
 		{[]string{"bj920001", "BJ.920001"}, MarketAStock, "bj920001"},
 		{[]string{"sh000001", "SH.000001"}, MarketIndex, "sh000001"},
 		{[]string{"sz399001", "sz.399001"}, MarketIndex, "sz399001"},
@@ -26,7 +30,7 @@ func TestMarketPrefixForms(t *testing.T) {
 		{[]string{"hkCES120", "HK.CES120"}, MarketHKIndex, "CES120"},
 		{[]string{"hk.HZ5021", "hkHZ5021"}, MarketHKIndex, "HZ5021"},
 		{[]string{"usAAPL", "US.AAPL", "Us.aapl"}, MarketUS, "AAPL"},
-		{[]string{"usBRK.B", "us.BRK.B", "US.BRK.B"}, MarketUS, "BRK.B"},
+		{[]string{"usBRK.B", "us.BRK.B", "US.BRK.B", "BRK.B", "brk.b"}, MarketUS, "BRK.B"},
 		{[]string{"usABC1", "us.ABC1", "US.abc1"}, MarketUS, "ABC1"},
 		{[]string{"cffIF2609", "CFF.IF2609", "cff/IF2609"}, MarketFuture, "cff/IF2609"},
 		{[]string{"czcSR2609", "CZC.SR2609"}, MarketFuture, "czc/SR2609"},
@@ -56,6 +60,38 @@ func TestMarketPrefixForms(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestBuiltinParsersAgree(t *testing.T) {
+	for _, s := range []string{"000001.SZ", "BRK.B", "hkHSI", "上海600000", "sh.600000", "us.BRK.B", "cff/IF2609", "899050", "hk.CES120"} {
+		i, err := protocol.ParseInstrument(s)
+		if err != nil {
+			t.Fatal(s, err)
+		}
+		ex, body, err := protocol.DecodeCode(s)
+		if err != nil || ex != i.Exchange || body != i.Code {
+			t.Fatalf("DecodeCode(%q)=%s/%s, %v; Instrument=%s", s, ex, body, err, i)
+		}
+		c, err := ParseCode(s)
+		if err != nil {
+			t.Fatal(s, err)
+		}
+		market, _ := i.Market()
+		if c.Market != market {
+			t.Fatalf("ParseCode(%q) market=%s, want %s", s, c.Market, market)
+		}
+	}
+	if _, err := ParseCode("unknown.opaque-code"); err == nil {
+		t.Fatal("unregistered market silently accepted")
+	}
+	for _, key := range []string{"hk.", "sh.AAPL", "hk/index."} {
+		if got := SplitKey(key); got != (Code{Code: key}) {
+			t.Fatal("invalid builtin key no longer preserved", key, got)
+		}
+	}
+	if got := SplitKey("unknown.opaque-code"); got != (Code{Market: "unknown", Code: "opaque-code"}) {
+		t.Fatal("best-effort unknown key changed", got)
 	}
 }
 
@@ -141,7 +177,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
 	dir := t.TempDir()
 	for _, input := range []string{"us.12345", "us.ABCDEFGHIJ", "cn/stock.hk00700"} {
-		s, err := NewService(&Config{Dir: dir, Codes: []string{input}})
+		s, err := New(&Config{Dir: dir, Codes: []string{input}})
 		if err == nil {
 			s.Close()
 			t.Fatal("invalid input initialized service", input)

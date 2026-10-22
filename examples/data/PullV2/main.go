@@ -7,6 +7,7 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 )
@@ -40,7 +41,7 @@ func main() {
 			needsEx = true
 		}
 	}
-	m, err := tdx.NewManage()
+	m, err := manage.New()
 	logs.PanicErr(err)
 	defer m.Close()
 	cfg := &pull.Config{
@@ -49,13 +50,13 @@ func main() {
 	}
 	if needsEx {
 		ex, err := tdx.NewPool(func() (tdx.Client, error) {
-			return tdx.DialExHqDefault(tdx.WithRedial(false))
+			return tdx.DialExDefault(tdx.WithRedial(false))
 		}, 1)
 		logs.PanicErr(err)
 		defer ex.Close()
 		cfg.ExPool = ex
 	}
-	s, err := pull.NewService(cfg)
+	s, err := pull.New(cfg)
 	logs.PanicErr(err)
 	defer s.Close()
 	logs.PanicErr(s.Update(*force))

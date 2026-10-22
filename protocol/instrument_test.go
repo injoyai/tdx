@@ -31,7 +31,7 @@ func TestParseInstrument(t *testing.T) {
 			}
 		})
 	}
-	for _, s := range []string{"", "hk.", "us.", "sh.12345", "sh.AAPL", "cff.IF", "IF2609", "us.A..B", "us.A-", "us.1234", "hk.123456", "hk.ABCDEFGHIJ", "us.ABCDEFGHIJ", "cff.IF$2609", "nq400001", "us.股票"} {
+	for _, s := range []string{"", "hk.", "us.", "sh.12345", "sh.AAPL", "cff.IF", "IF2609", "us.A..B", "us.A-", "us.1234", "hk.123456", "hk.ABCDEFGHIJ", "us.ABCDEFGHIJ", "cff.IF$2609", "nq400001", "cffo123456", "gfeo123456", "us.股票"} {
 		if i, err := ParseInstrument(s); err == nil {
 			t.Errorf("accepted invalid/unsupported code %q as %s", s, i)
 		}

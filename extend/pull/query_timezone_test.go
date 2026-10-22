@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestQueryMinUsesStorageTimezone(t *testing.T) {
+func TestQueryMinuteUsesStorageTimezone(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		at   time.Time
@@ -17,12 +17,12 @@ func TestQueryMinUsesStorageTimezone(t *testing.T) {
 			s := testService(t)
 			s.start = tt.at
 			code := Code{Market: MarketFuture, Code: "shf/cu2601"}
-			if err := s.SaveMin(code, tt.at.Year(), 0, []*KlineMinute{{Unix: tt.at.Unix(), Close: 10}}); err != nil {
+			if err := s.SaveMinute(code, tt.at.Year(), 0, []*KlineMinute{{Unix: tt.at.Unix(), Close: 10}}); err != nil {
 				t.Fatal(err)
 			}
 			start, end := tt.at.Add(-time.Minute), tt.at.Add(time.Minute)
 			for _, bounds := range [][2]time.Time{{start, end}, {start.UTC(), end.UTC()}, {{}, end.UTC()}, {start.UTC(), {}}} {
-				rows, err := s.QueryMin(code, bounds[0], bounds[1])
+				rows, err := s.QueryMinute(code, bounds[0], bounds[1])
 				if err != nil || len(rows) != 1 || rows[0].Unix != tt.at.Unix() {
 					t.Fatal("同一时间范围因时区变化而漏记录", bounds, rows, err)
 				}

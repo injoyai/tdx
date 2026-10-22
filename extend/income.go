@@ -55,14 +55,14 @@ type Income struct {
 	Current protocol.Kline //当前
 }
 
-func (this *Income) String() string {
-	return fmt.Sprintf("偏移: %d, 时间: %s, 涨幅: %.1f%%", this.Offset, this.Time.Format(time.DateOnly), this.RiseRate()*100)
+func (i *Income) String() string {
+	return fmt.Sprintf("偏移: %d, 时间: %s, 涨幅: %.1f%%", i.Offset, i.Time.Format(time.DateOnly), i.RiseRate()*100)
 }
 
-func (this *Income) Rise() protocol.Price {
-	return this.Current.Close - this.Source.Close
+func (i *Income) Rise() protocol.Price {
+	return i.Current.Close - i.Source.Close
 }
 
-func (this *Income) RiseRate() float64 {
-	return this.Rise().Float64() / this.Source.Close.Float64()
+func (i *Income) RiseRate() float64 {
+	return i.Rise().Float64() / i.Source.Close.Float64()
 }

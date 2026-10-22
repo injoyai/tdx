@@ -634,6 +634,24 @@ func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	return out, nil
 }
 
+// StandardResponse 转换标准分时结果，保留原始数据并校验记录数与来源。
+func (r *MinuteResp) StandardResponse() (*protocol.MinuteResp, error) {
+	if r.Instrument.Exchange > protocol.ExchangeBJ {
+		return nil, errors.New("扩展分时不能转换为标准协议数据")
+	}
+	if len(r.List) > 65535 {
+		return nil, errors.New("累计记录数超过标准返回类型 uint16 上限")
+	}
+	out := &protocol.MinuteResp{Count: uint16(len(r.List))}
+	for _, k := range r.List {
+		if k.Standard == nil {
+			return nil, errors.New("缺少标准分时原始数据")
+		}
+		out.List = append(out.List, *k.Standard)
+	}
+	return out, nil
+}
+
 func (r *TradeResp) StandardResponse() (*protocol.TradeResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展分笔不能转换为标准协议数据")

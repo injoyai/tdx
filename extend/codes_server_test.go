@@ -3,18 +3,20 @@ package extend
 import (
 	"encoding/json"
 	"errors"
+	"github.com/injoyai/tdx/v2/extend/gbbq"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/codes"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestCodesHTTPStartupErrors(t *testing.T) {
 	want := errors.New("offline initialization failure")
-	options := []tdx.CodesOption{tdx.WithCodesDialClient(func() (tdx.Client, error) { return nil, want })}
+	options := []codes.Option{codes.WithDialClient(func() (tdx.Client, error) { return nil, want })}
 	for _, test := range []struct {
 		name string
 		fn   func() error
@@ -48,28 +50,28 @@ func TestGbbqHTTPEffectiveDay(t *testing.T) {
 }
 
 func TestCodesHandlerRoutes(t *testing.T) {
-	c := tdx.NewCodesBase()
-	stock := &tdx.CodeModel{Exchange: "sh", Code: "600000", Name: "stock"}
-	etf := &tdx.CodeModel{Exchange: "sh", Code: "510300", Name: "etf"}
-	index := &tdx.CodeModel{Exchange: "sh", Code: "000001", Name: "index"}
-	c.Update(tdx.CodeModels{index, etf, stock})
+	c := codes.NewBase()
+	stock := &codes.CodeModel{Exchange: "sh", Code: "600000", Name: "stock"}
+	etf := &codes.CodeModel{Exchange: "sh", Code: "510300", Name: "etf"}
+	index := &codes.CodeModel{Exchange: "sh", Code: "000001", Name: "index"}
+	c.Update(codes.CodeModels{index, etf, stock})
 	for _, equity := range []bool{false, true} {
-		var g *tdx.Gbbq
+		var g *gbbq.Gbbq
 		if equity {
-			g = &tdx.Gbbq{}
+			g = &gbbq.Gbbq{}
 		}
 		h := codesHandler(c, g)
 		for _, tc := range []struct {
 			path string
-			want tdx.CodeModels
+			want codes.CodeModels
 		}{
-			{"/codes", tdx.CodeModels{stock, etf, index}}, {"/all", tdx.CodeModels{stock, etf, index}},
-			{"/stocks", tdx.CodeModels{stock}}, {"/etfs", tdx.CodeModels{etf}}, {"/indexes", tdx.CodeModels{index}},
+			{"/codes", codes.CodeModels{stock, etf, index}}, {"/all", codes.CodeModels{stock, etf, index}},
+			{"/stocks", codes.CodeModels{stock}}, {"/etfs", codes.CodeModels{etf}}, {"/indexes", codes.CodeModels{index}},
 		} {
 			for _, method := range []string{"GET", "POST"} {
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, httptest.NewRequest(method, tc.path+"?v=1", nil))
-				var got tdx.CodeModels
+				var got codes.CodeModels
 				if w.Code != 200 || w.Header().Get("Content-Type") != "application/json" {
 					t.Fatal(tc.path, w.Code, w.Header())
 				}

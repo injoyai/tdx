@@ -80,7 +80,7 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 }
 
 func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +88,11 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	day2 := day.AddDate(0, 0, 1)
-	now := time.Date(2026, 1, 6, 16, 0, 0, 0, time.Local)
-	current := &pull.KlineMinute{Unix: minuteDay(now, time.Local).Add(9*time.Hour + 31*time.Minute).Unix(), Close: 20}
+	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
+	current := &pull.KlineMinute{Unix: minuteDay(now, protocol.Location()).Add(9*time.Hour + 31*time.Minute).Unix(), Close: 20}
 	// 旧标记和本地原生记录必须保留，但不能因此跳过分笔兜底。
 	nativeOld := &pull.KlineMinute{Unix: day.Add(9*time.Hour + 31*time.Minute).Unix(), Close: 99}
-	if err := s.SaveMinComplete(code, 2025, day.Unix(), []*pull.KlineMinute{nativeOld}); err != nil {
+	if err := s.SaveMinuteComplete(code, 2025, day.Unix(), []*pull.KlineMinute{nativeOld}); err != nil {
 		t.Fatal(err)
 	}
 	calls := map[int64]int{}
@@ -118,7 +118,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 	if err := pullMinutes(s, code, now, fetch, fallback); !errors.Is(err, want) {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryMin(code, time.Time{}, time.Time{})
+	rows, err := s.QueryMinute(code, time.Time{}, time.Time{})
 	if err != nil || len(rows) != 242 {
 		t.Fatal("失败丢失了可用数据", len(rows), err)
 	}
@@ -127,11 +127,11 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 			t.Fatal("合成覆盖原生", k)
 		}
 	}
-	c, err := s.QueryMinCoverage(code, 2025)
+	c, err := s.QueryMinuteCoverage(code, 2025)
 	if err != nil || c == nil || c.TradeFallback {
 		t.Fatal("失败标记完成", c, err)
 	}
-	if c, err := s.QueryMinCoverage(code, 2026); err != nil || c == nil || !c.TradeFallback {
+	if c, err := s.QueryMinuteCoverage(code, 2026); err != nil || c == nil || !c.TradeFallback {
 		t.Fatal("其他年份被失败日期连带影响", c, err)
 	}
 	fail = false
@@ -141,12 +141,12 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 	if calls[day.Unix()] != 1 || calls[day2.Unix()] != 2 || len(calls) != 2 {
 		t.Fatal("重复补已完成日或请求停牌日", calls)
 	}
-	rows, err = s.QueryMin(code, time.Time{}, time.Time{})
+	rows, err = s.QueryMinute(code, time.Time{}, time.Time{})
 	if err != nil || len(rows) != 483 {
 		t.Fatal(len(rows), err)
 	}
-	c, err = s.QueryMinCoverage(code, 2025)
-	end := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local).Unix()
+	c, err = s.QueryMinuteCoverage(code, 2025)
+	end := time.Date(2026, 1, 1, 0, 0, 0, 0, protocol.Location()).Unix()
 	if err != nil || c == nil || !c.TradeFallback || c.From != day.Unix() || c.Through != end {
 		t.Fatal(c, err)
 	}
@@ -164,7 +164,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 }
 
 func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20260105", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20260105", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,24 +183,24 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 	if err := pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) { return nil, network }, fallback); !errors.Is(err, network) || calls != 0 {
 		t.Fatal("网络失败进入兜底", err, calls)
 	}
-	native := &pull.KlineMinute{Unix: minuteDay(now, time.Local).Add(10 * time.Hour).Unix(), Close: 10}
+	native := &pull.KlineMinute{Unix: minuteDay(now, protocol.Location()).Add(10 * time.Hour).Unix(), Close: 10}
 	if err := pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) { return []*pull.KlineMinute{native}, nil }, fallback); err == nil {
 		t.Fatal("空分笔未报告缺口")
 	}
-	rows, err := s.QueryMin(c, time.Time{}, time.Time{})
+	rows, err := s.QueryMinute(c, time.Time{}, time.Time{})
 	if err != nil || len(rows) != 1 || rows[0].Source != "" {
 		t.Fatal("空分笔生成了假 K 线", rows, err)
 	}
-	if coverage, err := s.QueryMinCoverage(c, 2026); err != nil || coverage != nil {
+	if coverage, err := s.QueryMinuteCoverage(c, 2026); err != nil || coverage != nil {
 		t.Fatal("空分笔标记完成", coverage, err)
 	}
 	// 新原生数据可以替换已有合成值。
 	native.Source = pull.MinuteSourceTrade
-	if err := s.SaveMin(c, 2026, native.Unix, []*pull.KlineMinute{native}); err != nil {
+	if err := s.SaveMinute(c, 2026, native.Unix, []*pull.KlineMinute{native}); err != nil {
 		t.Fatal(err)
 	}
 	replacement := &pull.KlineMinute{Unix: native.Unix, Close: 88}
-	from := minuteDay(now, time.Local)
+	from := minuteDay(now, protocol.Location())
 	rows, err = fallback.fill(s, c, from, now, from, []*pull.KlineMinute{replacement})
 	if err != nil || len(rows) != 1 || rows[0].Close != 88 || rows[0].Source != "" {
 		t.Fatal("原生未替换合成", rows, err)
@@ -208,7 +208,7 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 }
 
 func TestMinuteFallbackYearRollover(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20251230", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20251230", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMinFallbackComplete(code, 2025, day.Unix(), day.Add(16*time.Hour).Unix(), ks); err != nil {
+	if err := s.SaveMinuteFallbackComplete(code, 2025, day.Unix(), day.Add(16*time.Hour).Unix(), ks); err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
@@ -245,11 +245,11 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 	}, fallback); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryMin(code, day, now)
+	rows, err := s.QueryMinute(code, day, now)
 	if err != nil || len(rows) != 482 || calls != 1 {
 		t.Fatal("跨年补拉失败", len(rows), calls, err)
 	}
-	coverage, err := s.QueryMinCoverage(code, 2025)
+	coverage, err := s.QueryMinuteCoverage(code, 2025)
 	if err != nil || coverage == nil || coverage.Through != time.Date(2026, 1, 1, 0, 0, 0, 0, day.Location()).Unix() {
 		t.Fatal("跨年覆盖范围未更新", coverage, err)
 	}
@@ -257,7 +257,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 
 func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	cfg := &pull.Config{Dir: t.TempDir(), StartAt: "20251230", Codes: []string{"sz000001"}, TradeFallback: true}
-	s, err := pull.NewService(cfg)
+	s, err := pull.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,13 +274,13 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMinFallbackComplete(code, 2025, day.Unix(), day.Add(16*time.Hour).Unix(), ks); err != nil {
+	if err := s.SaveMinuteFallbackComplete(code, 2025, day.Unix(), day.Add(16*time.Hour).Unix(), ks); err != nil {
 		t.Fatal(err)
 	}
-	if complete, err := s.MinYearComplete(code, 2025, day.Unix()); err != nil || complete {
+	if complete, err := s.MinuteYearComplete(code, 2025, day.Unix()); err != nil || complete {
 		t.Fatal("部分兜底范围被当作整年完成", complete, err)
 	}
-	now := time.Date(2026, 1, 2, 16, 0, 0, 0, time.Local)
+	now := time.Date(2026, 1, 2, 16, 0, 0, 0, protocol.Location())
 	called := false
 	if err := pullMinutes(s, code, now, func(from time.Time) ([]*pull.KlineMinute, error) {
 		called = true
@@ -294,15 +294,15 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 }
 
 func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
-	s, err := pull.NewService(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
 	day := s.Start()
-	now := time.Date(2026, 1, 6, 16, 0, 0, 0, time.Local)
-	if err := s.SaveMinEmptyScan(code, 2025, day.Unix(), now); err != nil {
+	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
+	if err := s.SaveMinuteEmptyScan(code, 2025, day.Unix(), now); err != nil {
 		t.Fatal(err)
 	}
 	calls := 0
@@ -324,7 +324,7 @@ func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
 	if err != nil || calls != 1 {
 		t.Fatal("未补缺失历史交易日", calls, err)
 	}
-	rows, err := s.QueryMin(code, time.Time{}, time.Time{})
+	rows, err := s.QueryMinute(code, time.Time{}, time.Time{})
 	if err != nil || len(rows) != 242 {
 		t.Fatal("分笔兜底数据未写入", len(rows), err)
 	}

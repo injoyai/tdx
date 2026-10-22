@@ -15,18 +15,21 @@ import (
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/codes"
+	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/workday"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type tradeTestPool struct {
-	tdx.IPool
+	tdx.ClientPool
 	c tdx.Client
 }
 
 func (p tradeTestPool) Do(fn func(tdx.Client) error) error { return fn(p.c) }
 
-type tradeTestCodes struct{ tdx.ICodes }
+type tradeTestCodes struct{ codes.Interface }
 
 func (tradeTestCodes) GetName(string) string { return "测试股票" }
 
@@ -86,30 +89,30 @@ func TestPullTradePeriods(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	c.SetTimeout(time.Second)
 
-	db, err := xorms.NewSqlite(filepath.Join(t.TempDir(), "workday.db"))
+	db, err := xorms.NewSQLite(filepath.Join(t.TempDir(), "workday.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if err := db.Sync2(new(tdx.WorkdayModel)); err != nil {
+	if err := db.Sync2(new(workday.WorkdayModel)); err != nil {
 		t.Fatal(err)
 	}
 	for _, date := range []time.Time{
-		time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local),
-		time.Date(2025, 1, 3, 15, 0, 0, 0, time.Local),
-		tdx.IntegerDay(time.Now()).Add(15 * time.Hour),
+		time.Date(2025, 1, 2, 15, 0, 0, 0, protocol.Location()),
+		time.Date(2025, 1, 3, 15, 0, 0, 0, protocol.Location()),
+		tdx.IntegerDay(time.Now().In(protocol.Location())).Add(15 * time.Hour),
 	} {
-		if _, err := db.Insert(&tdx.WorkdayModel{Unix: date.Unix(), Date: date.Format("20060102")}); err != nil {
+		if _, err := db.Insert(&workday.WorkdayModel{Unix: date.Unix(), Date: date.Format("20060102")}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	w, err := tdx.NewWorkday(tdx.WithWorkdayDB(db), tdx.WithWorkdayClient(c), tdx.WithWorkdaySpec("@every 87600h"))
+	w, err := workday.New(workday.WithDB(db), workday.WithClient(c), workday.WithSpec("@every 87600h"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { w.Close() })
 	dir := t.TempDir()
-	m := &tdx.Manage{IPool: tradeTestPool{c: c}, Workday: w, Codes: tradeTestCodes{}}
+	m := &manage.Manage{ClientPool: tradeTestPool{c: c}, Workday: w, Codes: tradeTestCodes{}}
 	if err := NewPullTrade(dir).PullYear(context.Background(), m, 2025, "sz000001"); err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +129,9 @@ func TestPullTradePeriods(t *testing.T) {
 			}
 			if got, want := len(rows)-1, 2*((241+period-1)/period); got != want {
 				t.Fatalf("data rows=%d, want %d", got, want)
+			}
+			if rows[1][1] != "09:30" || rows[1][8] != "1" || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
+				t.Fatalf("auction/session boundary changed: first=%v second=%v", rows[1], rows[2])
 			}
 			volume := 0
 			amount := 0.0

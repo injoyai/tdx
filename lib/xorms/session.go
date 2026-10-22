@@ -10,36 +10,36 @@ func newSession(session *xorm.Session) *Session {
 	return &Session{session}
 }
 
-func (this *Session) Like(param, arg string) *Session {
-	this.Session.Where(param+" like ?", "%"+arg+"%")
-	return this
+func (s *Session) Like(param, arg string) *Session {
+	s.Session.Where(param+" like ?", "%"+arg+"%")
+	return s
 }
 
-func (this *Session) Desc(colNames ...string) *Session {
-	this.Session.Desc(colNames...)
-	return this
+func (s *Session) Desc(colNames ...string) *Session {
+	s.Session.Desc(colNames...)
+	return s
 }
 
-func (this *Session) Asc(colNames ...string) *Session {
-	this.Session.Asc(colNames...)
-	return this
+func (s *Session) Asc(colNames ...string) *Session {
+	s.Session.Asc(colNames...)
+	return s
 }
 
-func (this *Session) Limit(limit int, start ...int) *Session {
+func (s *Session) Limit(limit int, start ...int) *Session {
 	if limit > 0 {
-		this.Session.Limit(limit, start...)
+		s.Session.Limit(limit, start...)
 	}
-	return this
+	return s
 }
 
-func (this *Session) Where(query any, args ...any) *Session {
-	this.Session.Where(query, args...)
-	return this
+func (s *Session) Where(query any, args ...any) *Session {
+	s.Session.Where(query, args...)
+	return s
 }
 
-func (this *Session) And(query any, args ...any) *Session {
-	this.Session.And(query, args...)
-	return this
+func (s *Session) And(query any, args ...any) *Session {
+	s.Session.And(query, args...)
+	return s
 }
 
 func NewSessionFunc(db *xorm.Engine, fn func(session *xorm.Session) error) error {

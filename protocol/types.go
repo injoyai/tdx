@@ -8,8 +8,8 @@ import (
 
 type Control uint8
 
-func (this Control) Uint8() uint8 {
-	return uint8(this)
+func (c Control) Uint8() uint8 {
+	return uint8(c)
 }
 
 const (
@@ -18,10 +18,10 @@ const (
 
 type Exchange uint8
 
-func (this Exchange) Uint8() uint8 { return uint8(this) }
+func (e Exchange) Uint8() uint8 { return uint8(e) }
 
-func (this Exchange) String() string {
-	switch this {
+func (e Exchange) String() string {
+	switch e {
 	case ExchangeSZ:
 		return "sz"
 	case ExchangeSH:
@@ -75,8 +75,8 @@ func (this Exchange) String() string {
 	}
 }
 
-func (this Exchange) Name() string {
-	switch this {
+func (e Exchange) Name() string {
+	switch e {
 	case ExchangeSH:
 		return "上海"
 	case ExchangeSZ:

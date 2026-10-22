@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Unit 代表一个可拉取的独立市场/品种类别（可插拔）。
@@ -20,8 +22,8 @@ type Unit interface {
 	// FetchDay 拉取并存储某代码日线；实现需读取最后时间戳、控制增量边界并调用 SaveDay。
 	FetchDay(s *Service, code Code) error
 
-	// FetchMin 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。
-	FetchMin(s *Service, code Code) error
+	// FetchMinute 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。
+	FetchMinute(s *Service, code Code) error
 }
 
 // registry 市场注册表（可插拔核心）。
@@ -43,8 +45,8 @@ func Register(u Unit) {
 	if name == "" {
 		panic("pull: 注册的市场 Unit 缺少 Name")
 	}
-	for _, prefix := range marketPrefixes {
-		if !strings.Contains(prefix, "/") && strings.EqualFold(name, prefix) {
+	if ex, err := protocol.ParseExchange(name); err == nil && strings.EqualFold(name, ex.String()) {
+		if _, err := (protocol.Instrument{Exchange: ex}).Market(); err == nil {
 			panic(fmt.Sprintf("pull: 市场 Unit %q 占用内置简称", name))
 		}
 	}
