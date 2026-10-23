@@ -8,32 +8,34 @@ import (
 	"xorm.io/xorm"
 )
 
-// KlineDay 日线（单位：价格=元，Volume=股，Amount=元）。
+// KlineDay 日线；价格/金额使用证券原币种或报价单位，成交量按 Market.Info 换算。
 // 一代码一个文件 day/{key}.db。
 type KlineDay struct {
-	Unix       int64 `xorm:"pk"` // 秒级时间戳，日线固定 15:00
-	Open       float64
-	High       float64
-	Low        float64
-	Close      float64
-	Volume     int64   // 股
-	Amount     float64 // 成交额（元）
-	Turnover   float64 // 换手率（%），仅股票有，指数/ETF/期货等为 0
-	FloatStock float64 // 流通股本（股），股票才有
-	TotalStock float64 // 总股本（股），股票才有
+	Unix          int64 `xorm:"pk"` // 秒级时间戳，日线固定 15:00
+	Open          float64
+	High          float64
+	Low           float64
+	Close         float64
+	Volume        int64   // 已确认市场为股；其他市场按默认倍率存储，单位待确认
+	Amount        float64 // 原币种成交额，AmountUnknown=true 时为 0
+	AmountUnknown bool    `xorm:"default 0"` // true 时 Amount=0，不能作为真实零成交额
+	Turnover      float64 // 换手率（%），仅股票有，指数/ETF/期货等为 0
+	FloatStock    float64 // 流通股本（股），股票才有
+	TotalStock    float64 // 总股本（股），股票才有
 }
 
-// KlineMinute 1分钟线（全称，单位：价格=元，Volume=股，Amount=元）。
+// KlineMinute 1分钟线；量价单位及未确认金额语义与 KlineDay 相同。
 // 一代码一年一个文件 min/{key}/{year}.db。
 type KlineMinute struct {
-	Unix   int64 `xorm:"pk"` // 秒级时间戳
-	Open   float64
-	High   float64
-	Low    float64
-	Close  float64
-	Volume int64   // 股
-	Amount float64 // 成交额（元）
-	Source string  `xorm:"default ''"` // 空=原生分钟线（含旧库），trade=分笔合成
+	Unix          int64 `xorm:"pk"` // 秒级时间戳
+	Open          float64
+	High          float64
+	Low           float64
+	Close         float64
+	Volume        int64   // 已确认市场为股；其他市场按默认倍率存储，单位待确认
+	Amount        float64 // 原币种成交额，AmountUnknown=true 时为 0
+	AmountUnknown bool    `xorm:"default 0"`
+	Source        string  `xorm:"default ''"` // 空=原生分钟线（含旧库），trade=分笔合成
 }
 
 // MinuteSourceTrade 标识分笔合成的近似分钟线。
@@ -132,8 +134,8 @@ func insertBatch(session *xorm.Session, cols int, fn func(start, end int) error,
 // dayCols / minCols 每行字段数（与 KlineDay / KlineMinute 结构体字段数一致，
 // 用于 insertBatch 计算分批大小）。
 const (
-	dayCols = 10 // Unix, Open, High, Low, Close, Volume, Amount, Turnover, FloatStock, TotalStock
-	minCols = 8  // Unix, Open, High, Low, Close, Volume, Amount, Source
+	dayCols = 11 // Unix, OHLC, Volume, Amount, AmountUnknown, Turnover, FloatStock, TotalStock
+	minCols = 9  // Unix, OHLC, Volume, Amount, AmountUnknown, Source
 )
 
 // queryDay 按时间范围查询日线（升序）；start/end 为零值时表示不限制该端。

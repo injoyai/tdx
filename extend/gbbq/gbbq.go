@@ -100,7 +100,7 @@ func New(op ...Option) (result *Gbbq, err error) {
 		if ownedClient && clientOrNil(s.c) != nil {
 			err = errors.Join(err, s.c.Close())
 		}
-		if ownedDB && s.db != nil {
+		if ownedDB && s.db != nil && s.db.Engine != nil {
 			err = errors.Join(err, s.db.Close())
 		}
 		return err
@@ -138,6 +138,9 @@ func New(op ...Option) (result *Gbbq, err error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if s.db == nil || s.db.Engine == nil {
+		return nil, errors.New("数据库工厂返回空引擎")
 	}
 	if err = s.db.Sync2(new(protocol.Gbbq)); err != nil {
 		return nil, err
@@ -193,10 +196,13 @@ func (g *Gbbq) All() map[string][]*protocol.Gbbq {
 }
 
 func (g *Gbbq) records(code string) []*protocol.Gbbq {
-	code = protocol.AddPrefix(code)
+	key, err := metadata.CodeKey(code)
+	if err != nil {
+		return nil
+	}
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.m[code]
+	return g.m[key]
 }
 
 func (g *Gbbq) GetEquity(code string, t time.Time) *protocol.Equity {

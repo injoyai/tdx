@@ -40,34 +40,34 @@ func main() {
 func writeMinute1(c tdx.Client, code string, outDir string) {
 	result, err := c.GetKlineMinuteAll(code)
 	logs.PanicErr(err)
-	resp, err := result.StandardResponse()
+	ks, err := result.Klines()
 	logs.PanicErr(err)
-	if len(resp.List) == 0 {
+	if len(ks) == 0 {
 		logs.Panicf("代码 %s 无1分钟数据", code)
 	}
-	bs, err := extend.WriteMinute1(code, protocol.Klines(resp.List))
+	bs, err := extend.WriteMinute1(code, ks)
 	if err != nil {
 		logs.PanicErr(err)
 	}
 	saveFile(outDir, code, "minline", ".lc1", bs)
-	printInfo("1分钟.lc1", code, len(resp.List), len(bs), resp.List[0], resp.List[len(resp.List)-1])
+	printInfo("1分钟.lc1", code, len(ks), len(bs), ks[0], ks[len(ks)-1])
 }
 
 // writeMinute5 拉取 5 分钟K线,编码为通达信 .lc5 字节流并写入本地文件
 func writeMinute5(c tdx.Client, code string, outDir string) {
 	result, err := c.GetKline5MinuteAll(code)
 	logs.PanicErr(err)
-	resp, err := result.StandardResponse()
+	ks, err := result.Klines()
 	logs.PanicErr(err)
-	if len(resp.List) == 0 {
+	if len(ks) == 0 {
 		logs.Panicf("代码 %s 无5分钟数据", code)
 	}
-	bs, err := extend.WriteMinute5(code, protocol.Klines(resp.List))
+	bs, err := extend.WriteMinute5(code, ks)
 	if err != nil {
 		logs.PanicErr(err)
 	}
 	saveFile(outDir, code, "fzline", ".lc5", bs)
-	printInfo("5分钟.lc5", code, len(resp.List), len(bs), resp.List[0], resp.List[len(resp.List)-1])
+	printInfo("5分钟.lc5", code, len(ks), len(bs), ks[0], ks[len(ks)-1])
 }
 
 // saveFile 写入 outDir/vipdoc/<ex>/<sub>/<code><ext>

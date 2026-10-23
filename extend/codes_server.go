@@ -14,6 +14,7 @@ import (
 	"github.com/injoyai/tdx/v2/extend/codes"
 	"github.com/injoyai/tdx/v2/extend/gbbq"
 	query "github.com/injoyai/tdx/v2/internal/gbbq"
+	"github.com/injoyai/tdx/v2/internal/metadata"
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -191,10 +192,13 @@ func (g *GbbqHTTP) Update() error {
 }
 
 func (g *GbbqHTTP) records(code string) []*protocol.Gbbq {
-	code = protocol.AddPrefix(code)
+	key, err := metadata.CodeKey(code)
+	if err != nil {
+		return nil
+	}
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.m[code]
+	return g.m[key]
 }
 
 func (g *GbbqHTTP) GetEquity(code string, t time.Time) *protocol.Equity {

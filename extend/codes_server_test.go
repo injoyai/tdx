@@ -49,6 +49,21 @@ func TestGbbqHTTPEffectiveDay(t *testing.T) {
 	}
 }
 
+func TestGbbqHTTPCodeForms(t *testing.T) {
+	at := time.Date(2026, 10, 19, 0, 0, 0, 0, protocol.Location())
+	g := &GbbqHTTP{m: map[string][]*protocol.Gbbq{"sz000001": {{Time: at, Category: 5, C3: 100, C4: 200}}}}
+	for _, code := range []string{"sz000001", "SZ000001", "sz.000001", "000001.SZ", "000001"} {
+		if got := g.GetEquity(code, at); got == nil || got.Float != 100 {
+			t.Fatalf("%s: %+v", code, got)
+		}
+	}
+	for _, code := range []string{"hk00001", "invalid", ""} {
+		if got := g.GetEquity(code, at); got != nil {
+			t.Fatalf("invalid code %s: %+v", code, got)
+		}
+	}
+}
+
 func TestCodesHandlerRoutes(t *testing.T) {
 	c := codes.NewBase()
 	stock := &codes.CodeModel{Exchange: "sh", Code: "600000", Name: "stock"}

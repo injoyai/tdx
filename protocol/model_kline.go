@@ -46,7 +46,7 @@ type Kline struct {
 	Low       Price     //最低价
 	Close     Price     //收盘价,如果是当天,则是最新价/实时价
 	Order     int       //成交单数,不一定有值
-	Volume    int64     //成交量,手
+	Volume    int64     // 原始量：股票通常为手、标准指数为股；指标/本地文件须先统一为手
 	Amount    Price     //成交额
 	Time      time.Time //时间
 	UpCount   int       //上涨数量,指数有效

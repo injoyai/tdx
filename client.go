@@ -616,7 +616,32 @@ func standardKline(k *protocol.Kline) Kline {
 	return Kline{Time: k.Time.Format("2006-01-02 15:04"), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
-// StandardResponse 供标准指标、复权和旧 HTTP 数据契约使用，不换算扩展数据。
+// Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。
+// 未知单位或不能无损换算的股数返回错误；不修改原始协议记录。
+func (r *KlineResp) Klines() (protocol.Klines, error) {
+	raw, err := r.StandardResponse()
+	if err != nil {
+		return nil, err
+	}
+	if len(raw.List) > 0 && r.VolumeUnit != protocol.VolumeHundredShares && r.VolumeUnit != protocol.VolumeShares {
+		return nil, fmt.Errorf("成交量单位 %q 不能转换为整数手", r.VolumeUnit)
+	}
+	out := make(protocol.Klines, 0, len(raw.List))
+	for _, k := range raw.List {
+		copy := *k
+		if r.VolumeUnit == protocol.VolumeShares {
+			if k.Volume%protocol.SharesPerLot != 0 {
+				return nil, errors.New("成交量股数不能无损转换为整数手")
+			}
+			copy.Volume = protocol.FromShares(k.Volume)
+		}
+		out = append(out, &copy)
+	}
+	return out, nil
+}
+
+// StandardResponse 保留原始记录及其单位，供复权和旧 HTTP 数据契约使用。
+// 指标与本地文件编码需要整数手，使用 Klines；指数原始量为股。
 func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")

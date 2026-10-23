@@ -94,15 +94,18 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 `GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。日历实现使用 `*workday.Workday`（`extend/workday`），它是中国市场历史日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
 
-标准指标、复权、存储和旧 HTTP 结构可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取原始字段，不从浮点价格重建整数，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。例如：
+复权和旧 HTTP 结构可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取原始字段，不从浮点价格重建整数，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的股数，不能直接作为整数手输入交给 VWAP 或本地文件写入器；这些场景使用新增的 `KlineResp.Klines()`：
 
 ```go
 r, err := c.GetKlineDayAll("sz000001")
 if err != nil { return err }
-raw, err := r.StandardResponse()
+ks, err := r.Klines()
 if err != nil { return err }
-// raw.List 可继续用于 protocol.Klines 的指标或标准复权 API。
+vwap := ks.VWAP()
+_ = vwap
 ```
+
+`Klines()` 返回记录副本，标准股票/ETF 保持整数手，标准指数从股换为手，原始记录及 HTTP 响应不变。未知单位、缺少标准来源、旧数量上限或不能无损换算的股数会报错，不能把未知转债或扩展单位猜成手数。
 
 `GetKlineRange(code,startDate,endDate)` 固定查询一分钟线，日期使用 YYYYMMDD，包含两端日期。扩展保留原区间协议的固定请求周期 7（与普通扩展一分钟查询的周期映射不同），持仓和结算价等字段在 `RangeExtended`，金额及量单位未确认时保持未知；标准通过分页筛选日期区间，超出可读取分页范围时报错。未接入的协议市场仍须使用 `SendFrame`。`GetKlineMinute241Until` 在两种 Client 上使用同一签名及统一返回类型，仅适用于标准股票/ETF；指数或扩展品种明确报错，普通分钟查询使用 `GetKlineMinuteUntil`。
 
@@ -323,7 +326,7 @@ import (
 
 `Dir` 必须显式设置；`StartAt` 改用 `YYYYMMDD` 字符串，未设置时默认最近两年，非法格式或不存在的日期在创建服务时直接报错，且不会创建数据库。`Day` 与 `Minute` 都为 `false` 时默认同时拉取两种数据。服务使用完成后调用 `s.Close()`，外部连接池仍由调用方关闭。
 
-日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与金额为元，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。将价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/data/PullV2/main.go) 和 [Income](../examples/finance/Income/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
+日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。将标准价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/data/PullV2/main.go) 和 [Income](../examples/finance/Income/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
 内置市场的 K 线参数和成交量换算现集中于 `Market.Info()`；由 `ParseCode` 得到市场后可直接查询。未知单位设为 `VolumeDefault`，暂按旧倍率 ×100，不能据此认定这些扩展市场的量单位为股或合约。配置只覆盖日线和 1 分钟线。
 

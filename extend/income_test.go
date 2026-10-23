@@ -8,7 +8,7 @@ import (
 )
 
 func TestDoIncomesBounds(t *testing.T) {
-	day := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
+	day := time.Date(2026, 1, 5, 15, 0, 0, 0, protocol.Location())
 	ks := protocol.Klines{{Time: day, Close: 1000}, {Time: day.AddDate(0, 0, 1), Close: 2000}}
 	for _, tc := range []struct {
 		name  string

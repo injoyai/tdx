@@ -31,7 +31,7 @@ func main() {
 	ks2 := make(protocol.Klines, len(ks))
 	for i, v := range ks {
 		ks2[i] = &protocol.Kline{
-			Time:  time.Unix(v.Unix, 0),
+			Time:  time.Unix(v.Unix, 0).In(protocol.Location()),
 			Open:  protocol.Price(math.Round(v.Open * 1000)),
 			High:  protocol.Price(math.Round(v.High * 1000)),
 			Low:   protocol.Price(math.Round(v.Low * 1000)),
@@ -39,7 +39,7 @@ func main() {
 		}
 	}
 
-	t := time.Now().AddDate(0, -1, -9)
+	t := time.Now().In(protocol.Location()).AddDate(0, -1, -9)
 	logs.Debug(t.Format(time.DateOnly))
 	ls := extend.DoIncomes(ks2, t, 5, 10, 20)
 

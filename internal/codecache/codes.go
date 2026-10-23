@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/injoyai/conv"
+	"github.com/injoyai/tdx/v2/internal/metadata"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -96,9 +97,13 @@ func (cb *Base) Iter() iter.Seq2[string, *CodeModel] {
 }
 
 func (cb *Base) Get(code string) *CodeModel {
+	key, err := metadata.CodeKey(code)
+	if err != nil {
+		return nil
+	}
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
-	return cb.m[code]
+	return cb.m[key]
 }
 
 // GetName 获取股票名称

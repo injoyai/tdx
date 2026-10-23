@@ -7,9 +7,10 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// DoIncomes 从 startAt 所在的东八区交易日期起计算收益；兼容零点与 15:00 日线时间。
 func DoIncomes(ks protocol.Klines, startAt time.Time, days ...int) Incomes {
-	year, month, day := startAt.Date()
-	start := time.Date(year, month, day, 15, 0, 0, 0, startAt.Location()).Unix()
+	year, month, day := startAt.In(protocol.Location()).Date()
+	start := time.Date(year, month, day, 0, 0, 0, 0, protocol.Location()).Unix()
 	index := len(ks)
 	for i, v := range ks {
 		if v.Time.Unix() >= start {

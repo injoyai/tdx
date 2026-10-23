@@ -215,12 +215,17 @@ Codes: []string{
 
 | 字段 | 单位 |
 |---|---|
-| 价格（Open/High/Low/Close） | 元（float64） |
+| 价格（Open/High/Low/Close） | 证券原币种或报价单位（float64） |
 | Volume | 已确认的股票/ETF/指数/板块及港股日线为**股**；其他项按市场配置的默认倍率存储，单位待确认 |
-| Amount | 元 |
+| Amount | 证券原币种成交额；`AmountUnknown=true` 时为 0，不代表真实零成交额 |
+| AmountUnknown | 金额是否未确认；当前全部内置扩展市场为 true，标准市场为 false |
 | Source（分钟线） | 空字符串=原生数据（含旧库）；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 
 > 与本地 `.day/.lc1/.lc5` 文件的量单位不同。使用 `VolumeDefault` 的扩展市场及周期尚未确认单位，不能仅依据存储字段名宣称其成交量为股。
+
+扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 新增 `AmountUnknown` 列（默认 false），已有 SQLite 库由现有建表同步流程增加该列。查询内置扩展市场的旧库时，也返回 `Amount=0, AmountUnknown=true`，原始金额数值不批量重写；直接 SQL 读取旧 Amount 列仍可能读到未经确认的旧值。需要原始字段时使用行情记录的 `Extended`。
+
+周期合并遇到任意未知金额，合并结果也为 `Amount=0, AmountUnknown=true`，避免将部分金额之和冒充完整成交额。价格和金额都不做汇率换算；只有人民币证券的已确认金额才能解释为人民币元。
 
 ### 增量写入
 

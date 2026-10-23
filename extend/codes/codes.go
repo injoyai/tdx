@@ -95,7 +95,7 @@ func New(op ...Option) (result *Codes, err error) {
 		if ownedClient && clientOrNil(cs.c) != nil {
 			err = errors.Join(err, cs.c.Close())
 		}
-		if ownedDB && cs.db != nil {
+		if ownedDB && cs.db != nil && cs.db.Engine != nil {
 			err = errors.Join(err, cs.db.Close())
 		}
 		return err
@@ -133,6 +133,9 @@ func New(op ...Option) (result *Codes, err error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if cs.db == nil || cs.db.Engine == nil {
+		return nil, errors.New("数据库工厂返回空引擎")
 	}
 	if err = cs.db.Sync2(new(CodeModel)); err != nil {
 		return nil, err

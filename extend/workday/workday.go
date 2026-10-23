@@ -100,7 +100,7 @@ func New(op ...Option) (result *Workday, err error) {
 		if ownedClient && clientOrNil(w.c) != nil {
 			err = errors.Join(err, w.c.Close())
 		}
-		if ownedDB && w.db != nil {
+		if ownedDB && w.db != nil && w.db.Engine != nil {
 			err = errors.Join(err, w.db.Close())
 		}
 		return err
@@ -122,6 +122,9 @@ func New(op ...Option) (result *Workday, err error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if w.db == nil || w.db.Engine == nil {
+		return nil, errors.New("数据库工厂返回空引擎")
 	}
 	if err := w.db.Sync2(new(WorkdayModel)); err != nil {
 		return nil, err
@@ -270,15 +273,19 @@ func (w *Workday) IterYear(year int, desc ...bool) iter.Seq[time.Time] {
 	)
 }
 
-// Iter 遍历指定范围的工作日,推荐start带上时间15:00,这样当天小于15点不会触发
+// Iter 遍历 [start,end) 内从 start 起每隔 24 小时的工作日；倒序仅改变顺序。
 func (w *Workday) Iter(start, end time.Time, desc ...bool) iter.Seq[time.Time] {
 	start = conv.Select(start.Before(protocol.ExchangeEstablish), protocol.ExchangeEstablish, start)
 	if len(desc) > 0 && desc[0] {
 		//倒序遍历
 		return func(yield func(time.Time) bool) {
-			for ; end.After(start); end = end.Add(-time.Hour * 24) {
-				if w.Is(end) {
-					if !yield(end) {
+			if !start.Before(end) {
+				return
+			}
+			last := start.Add((end.Sub(start) - 1) / (24 * time.Hour) * (24 * time.Hour))
+			for at := last; !at.Before(start); at = at.Add(-24 * time.Hour) {
+				if w.Is(at) {
+					if !yield(at) {
 						return
 					}
 				}
@@ -287,9 +294,9 @@ func (w *Workday) Iter(start, end time.Time, desc ...bool) iter.Seq[time.Time] {
 	}
 	//正序遍历
 	return func(yield func(time.Time) bool) {
-		for ; start.Before(end); start = start.Add(time.Hour * 24) {
-			if w.Is(start) {
-				if !yield(start) {
+		for at := start; at.Before(end); at = at.Add(time.Hour * 24) {
+			if w.Is(at) {
+				if !yield(at) {
 					return
 				}
 			}

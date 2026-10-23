@@ -446,7 +446,18 @@ func (s *Service) QueryDay(code Code, start, end time.Time) ([]*KlineDay, error)
 		return nil, err
 	}
 	defer release()
-	return queryDay(db, start, end)
+	rows, err := queryDay(db, start, end)
+	info, _ := code.Market.Info()
+	for _, k := range rows {
+		// 旧扩展库也可能存有持仓字节的浮点解释；查询时隔离，不重写历史数据。
+		if info.Protocol == protocol.ProtocolExtended {
+			k.AmountUnknown = true
+		}
+		if k.AmountUnknown {
+			k.Amount = 0
+		}
+	}
+	return rows, err
 }
 
 // LastDayUnix 查询某代码日线库内最后一条记录的时间戳；空库返回 0。
@@ -512,6 +523,7 @@ func (s *Service) MinuteExists(code Code, year int) bool {
 // start/end 为零值时表示不限制该端。
 func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, error) {
 	out := []*KlineMinute{}
+	info, _ := code.Market.Info()
 	startYear, endYear := minMaxYear(start, end, s.Start().Location())
 	for y := startYear; y <= endYear; y++ {
 		file := code.MinuteFile(s.cfg.Dir, y)
@@ -526,6 +538,14 @@ func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, 
 		release()
 		if err != nil {
 			return nil, err
+		}
+		for _, k := range ls {
+			if info.Protocol == protocol.ProtocolExtended {
+				k.AmountUnknown = true
+			}
+			if k.AmountUnknown {
+				k.Amount = 0
+			}
 		}
 		out = append(out, ls...)
 	}

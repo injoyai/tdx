@@ -57,6 +57,9 @@ func DayToCalendar(ks []*KlineDay, period CalendarPeriod, loc *time.Location) ([
 			end++
 		}
 		k := *DayToPeriod(input[start:end], end-start)[0]
+		if k.AmountUnknown {
+			k.Amount = 0
+		}
 		out = append(out, &k)
 		start = end
 	}
@@ -157,11 +160,17 @@ func MinuteToSessions(ks []*KlineMinute, n int, loc *time.Location, sessions []T
 			last.Close, last.Unix = k.Close, k.Unix
 			last.Volume += k.Volume
 			last.Amount += k.Amount
+			last.AmountUnknown = last.AmountUnknown || k.AmountUnknown
 			if k.Source != "" {
 				last.Source = k.Source
 			}
 		}
 		previous = current
+	}
+	for _, k := range out {
+		if k.AmountUnknown {
+			k.Amount = 0
+		}
 	}
 	return out, nil
 }
