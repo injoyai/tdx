@@ -12,7 +12,6 @@
 - [`mootdx`](https://github.com/mootdx/mootdx)
 - [`tdx2db`](https://github.com/jing2uo/tdx2db)
 - [`niexq-tdx`](https://github.com/niexqc/niexq-tdx)
-- 推荐 **Web可视化界面 + RESTful API**：[tdx-api](https://github.com/oficcejo/tdx-api)
 
 ---
 
