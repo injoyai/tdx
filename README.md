@@ -367,9 +367,11 @@ MIT License - 详见 [LICENSE](LICENSE)
 默认测试使用离线样本，覆盖协议解析、指标、导出与拉取存储：
 
 ```sh
-go test . ./protocol/... ./extend/... ./lib/...
+go test . ./tests/... ./internal/... ./protocol/... ./extend/... ./lib/...
 go test ./examples/... -run '^$'
 ```
+
+根包内部测试与源码同目录，按客户端、连接、查询、拨号和连接池归并；只依赖公开接口的跨包契约、元数据资源归属及数据一致性测试集中在 [`tests/integration/`](tests/integration/README.md)。`go test .` 仅运行根包测试，`go test ./...` 会包含跨包测试。
 
 爬虫和扩展行情的实连测试需显式启用：
 

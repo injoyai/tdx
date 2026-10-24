@@ -1,4 +1,4 @@
-package tdx_test
+package integration_test
 
 import (
 	"encoding/binary"
@@ -22,6 +22,7 @@ import (
 type consistencyClient struct{ tdx.Client }
 
 func (*consistencyClient) Close() error { return nil }
+
 func (*consistencyClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
 	i, _ := protocol.ParseInstrument(code)
 	k := &protocol.ExKline{Datetime: "2026-10-20 15:00", Open: 10, High: 10, Low: 10, Close: 10, Position: 100000, Trade: 100, Amount: float64(math.Float32frombits(100000))}
@@ -32,9 +33,11 @@ func (*consistencyClient) GetKlineUntil(category uint8, code string, stop func(t
 }
 
 func consistencyDay(n int) time.Time { return time.Date(2026, 10, n, 15, 0, 0, 0, protocol.Location()) }
+
 func (*consistencyClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	return map[string][]*protocol.Gbbq{"sz000001": {{Code: "sz000001", Time: consistencyDay(20), Category: 1, C1: 10}}}, nil
 }
+
 func (*consistencyClient) GetKlineDayAll(code string) (*tdx.KlineResp, error) {
 	i, err := protocol.ParseInstrument(code)
 	if err != nil {

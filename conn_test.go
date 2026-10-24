@@ -1,13 +1,11 @@
 package tdx
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"io"
-	"math"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -38,348 +36,6 @@ func TestProtocolConnOwnership(t *testing.T) {
 			t.Fatal("transport implements Client")
 		}
 	}
-}
-
-func TestProtocolClientQueries(t *testing.T) {
-	for _, extended := range []bool{false, true} {
-		name, code, wrong := "standard", "sz000001", "hk00700"
-		if extended {
-			name, code, wrong = "extended", wrong, code
-		}
-		t.Run(name, func(t *testing.T) {
-			var requests atomic.Int32
-			var daily, history atomic.Int32
-			native := respondingTestClient(t, extended, func(h, b []byte) []byte {
-				requests.Add(1)
-				typ := binary.LittleEndian.Uint16(h[10:])
-				if h[0] != 0x0c && !extended || h[0] != 0x01 && extended {
-					t.Errorf("wrong request prefix %x", h[0])
-				}
-				switch typ {
-				case protocol.TypeQuote:
-					return testQuoteResponse(b)
-				case protocol.TypeExQuote:
-					data := make([]byte, 150)
-					copy(data, b)
-					return data
-				case protocol.TypeKline:
-					daily.Add(1)
-					return testStandardBar(false)
-				case protocol.TypeExBars:
-					daily.Add(1)
-					return testExtendedBar(20261009)
-				case protocol.TypeHistoryTrade:
-					history.Add(1)
-					return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 1, 0}
-				case protocol.TypeExHistTrade:
-					history.Add(1)
-					data := make([]byte, 32)
-					binary.LittleEndian.PutUint16(data[14:], 1)
-					return data
-				default:
-					t.Errorf("unexpected request type %x", typ)
-					return nil
-				}
-			})
-			var api Client = native.protocolClient
-			quotes, err := api.GetQuote(code, code)
-			if err != nil || len(quotes) != 2 || quotes[0].Instrument != quotes[1].Instrument {
-				t.Fatal("quote order/duplicates changed", quotes, err)
-			}
-			bars, err := api.GetKlineDayAll(code)
-			if err != nil || bars.Count != 1 {
-				t.Fatal("shared pagination failed", bars, err)
-			}
-			before := daily.Load()
-			trades, err := api.GetHistoryTradeDay("20261009", code)
-			if err != nil || trades.Count != 1 || trades.List[0].Date != "20261009" || daily.Load()-before != 1 || history.Load() != 1 {
-				t.Fatal("history check/date changed", trades, err, daily.Load(), history.Load())
-			}
-			beforeRequests := requests.Load()
-			for _, call := range []func() error{
-				func() error { _, err := api.GetQuote(wrong); return err },
-				func() error { _, err := api.GetKlineDayAll(wrong); return err },
-				func() error { _, err := api.GetHistoryMinute("20261009", wrong); return err },
-				func() error { _, err := api.GetHistoryTrade("20261009", wrong, 0, 1); return err },
-				func() error { _, err := api.GetKlineRange(wrong, "20261009", "20261009"); return err },
-			} {
-				if err := call(); err == nil {
-					t.Fatal("other protocol accepted")
-				}
-			}
-			if extended {
-				if _, err := api.GetFinanceInfo(protocol.ExchangeSZ, "000001"); err == nil {
-					t.Fatal("extended client accepted finance")
-				}
-				if _, err := api.GetReportFile("a"); err == nil {
-					t.Fatal("extended client accepted standard report")
-				}
-			}
-			if requests.Load() != beforeRequests {
-				t.Fatal("unsupported query sent a packet")
-			}
-			if err := api.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := api.GetMarkets(); !errors.Is(err, net.ErrClosed) {
-				t.Fatal("closed implementation remained usable", err)
-			}
-		})
-	}
-}
-
-func TestClientUnifiedBjCodes(t *testing.T) {
-	var buf bytes.Buffer
-	z := zip.NewWriter(&buf)
-	f, err := z.Create(protocol.FileTdxBjMore)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.Write([]byte("44|920000|2|First|1|\n44|920001|2|Second|1|\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err = z.Close(); err != nil {
-		t.Fatal(err)
-	}
-	c := respondingTestClient(t, false, func(h, b []byte) []byte {
-		if binary.LittleEndian.Uint16(h[10:]) != protocol.TypeBlockInfo || binary.LittleEndian.Uint32(b) != 0 {
-			t.Error("BJ codes did not use report source")
-		}
-		return append(protocol.Bytes(uint32(buf.Len())), buf.Bytes()...)
-	})
-	if n, err := c.GetCount(protocol.ExchangeBJ); err != nil || n != 2 {
-		t.Fatal(n, err)
-	}
-	page, err := c.GetCode(protocol.ExchangeBJ, 1, 1)
-	if err != nil || page.Count != 1 || page.List[0].Instrument.Code != "920001" || page.List[0].Standard.Name != "Second" {
-		t.Fatal(page, err)
-	}
-}
-
-func testCodePage(start uint16) []byte {
-	codes := []string{"000001", "000002", "000003"}
-	if int(start) >= len(codes) {
-		return []byte{0, 0}
-	}
-	codes = codes[start:]
-	b := make([]byte, 2+len(codes)*29)
-	binary.LittleEndian.PutUint16(b, uint16(len(codes)))
-	for j, code := range codes {
-		p := 2 + j*29
-		copy(b[p:], code)
-		binary.LittleEndian.PutUint16(b[p+6:], 100)
-		copy(b[p+8:], "NAME")
-		b[p+20] = 4
-	}
-	return b
-}
-
-func testInstrumentPage(start uint32, count uint16) []byte {
-	items := []protocol.ExInstrument{{Market: 31, Code: "00700", Name: "Tencent", Category: 2}, {Market: 74, Code: "AAPL", Name: "Apple", Category: 13}, {Market: 31, Code: "00005", Name: "HSBC", Category: 2}}
-	if uint64(start) >= uint64(len(items)) {
-		return make([]byte, 6)
-	}
-	items = items[int(start):min(int(start)+int(count), len(items))]
-	b := make([]byte, 6+64*len(items))
-	binary.LittleEndian.PutUint16(b[4:], uint16(len(items)))
-	for j, it := range items {
-		p := 6 + j*64
-		b[p], b[p+1] = it.Category, it.Market
-		copy(b[p+5:], it.Code)
-		copy(b[p+14:], it.Name)
-		copy(b[p+31:], "desc")
-	}
-	return b
-}
-
-func testMarketTable() []byte {
-	b := make([]byte, 2+64)
-	binary.LittleEndian.PutUint16(b, 1)
-	b[2] = 13
-	copy(b[3:], "Other")
-	b[35] = 200 // 发现未接入的市场时仍保留原始编号。
-	copy(b[36:], "OT")
-	return b
-}
-
-func TestClientUnifiedCodes(t *testing.T) {
-	for _, ex := range []bool{false, true} {
-		t.Run(map[bool]string{false: "standard", true: "extended"}[ex], func(t *testing.T) {
-			var sent atomic.Int32
-			c := respondingTestClient(t, ex, func(h, b []byte) []byte {
-				sent.Add(1)
-				switch binary.LittleEndian.Uint16(h[10:]) {
-				case protocol.TypeCount:
-					return []byte{3, 0}
-				case protocol.TypeCode:
-					return testCodePage(binary.LittleEndian.Uint16(b[2:]))
-				case protocol.TypeExCount:
-					r := make([]byte, 23)
-					binary.LittleEndian.PutUint32(r[19:], 3)
-					return r
-				case protocol.TypeExInstrument:
-					return testInstrumentPage(binary.LittleEndian.Uint32(b), binary.LittleEndian.Uint16(b[4:]))
-				default:
-					t.Error("unexpected request", h)
-					return nil
-				}
-			})
-			exchange, wrong, want := protocol.ExchangeSZ, protocol.ExchangeHK, 3
-			if ex {
-				exchange, wrong, want = wrong, exchange, 2
-			}
-			n, err := c.GetCount(exchange)
-			if err != nil || n != want {
-				t.Fatal(n, err)
-			}
-			all, err := c.GetCodeAll(exchange)
-			if err != nil || all.Count != want || len(all.List) != want {
-				t.Fatal(all, err)
-			}
-			page, err := c.GetCode(exchange, 1, 1)
-			if err != nil || page.Count != 1 || len(page.List) != 1 {
-				t.Fatal(page, err)
-			}
-			item := page.List[0]
-			if item.Instrument.Exchange != exchange {
-				t.Fatal(item)
-			}
-			if ex {
-				if item.Instrument.Code != "00005" || item.Extended.Category != 2 || item.Extended.Desc != "desc" {
-					t.Fatal("global offset was used as market offset", item)
-				}
-				page, err = c.GetCode(exchange, ^uint32(0), 1)
-			} else {
-				if item.Instrument.Code != "000002" || item.Standard.Multiple != 100 || item.Standard.Decimal != 4 {
-					t.Fatal("standard metadata lost", item)
-				}
-				page, err = c.GetCode(exchange, 3, 1)
-			}
-			if err != nil || page.Count != 0 || len(page.List) != 0 {
-				t.Fatal(page, err)
-			}
-			before := sent.Load()
-			for _, call := range []func() error{
-				func() error { _, e := c.GetCode(exchange, 0, 0); return e },
-				func() error { _, e := c.GetCode(exchange, 0, 1001); return e },
-				func() error { _, e := c.GetCode(wrong, 0, 1); return e },
-				func() error { _, e := c.GetCount(wrong); return e },
-				func() error { _, e := c.GetCodeAll(wrong); return e },
-				func() error { _, e := c.GetCodeAll(255); return e },
-			} {
-				if e := call(); e == nil {
-					t.Fatal("invalid query accepted")
-				}
-			}
-			if !ex {
-				if _, e := c.GetCode(exchange, 65536, 1); e == nil {
-					t.Fatal("offset overflow accepted")
-				}
-			}
-			if sent.Load() != before {
-				t.Fatal("invalid query sent a request")
-			}
-		})
-	}
-}
-
-// testClient lets protocol-independent transport tests inspect the shared core.
-type testClient struct {
-	protocolClient
-	*conn
-}
-
-func (c *testClient) Close() error { return c.protocolClient.Close() }
-
-func (c *testClient) SetTimeout(t time.Duration) { c.protocolClient.SetTimeout(t) }
-
-func (c *testClient) Done() <-chan struct{} { return c.conn.Done() }
-
-func testDialWith(dial ios.DialFunc, ex bool, options ...client.Option) (*testClient, error) {
-	var c protocolClient
-	var err error
-	if ex {
-		c, err = dialExWith(dial, options...)
-	} else {
-		c, err = DialWith(dial, options...)
-	}
-	if err != nil {
-		return nil, err
-	}
-	core := c.(interface{ transport() *conn }).transport()
-	return &testClient{protocolClient: c, conn: core}, nil
-}
-
-func readTestFrame(r io.Reader) ([]byte, []byte, error) {
-	h := make([]byte, 12)
-	if _, err := io.ReadFull(r, h); err != nil {
-		return nil, nil, err
-	}
-	n := int(binary.LittleEndian.Uint16(h[6:8])) - 2
-	if n < 0 {
-		return nil, nil, io.ErrUnexpectedEOF
-	}
-	b := make([]byte, n)
-	_, err := io.ReadFull(r, b)
-	return h, b, err
-}
-
-func writeTestResponse(w io.Writer, h, data []byte) error {
-	r := make([]byte, 16+len(data))
-	copy(r, []byte{0xb1, 0xcb, 0x74, 0, 0x1c})
-	copy(r[5:9], h[1:5])
-	copy(r[10:12], h[10:12])
-	binary.LittleEndian.PutUint16(r[12:14], uint16(len(data)))
-	binary.LittleEndian.PutUint16(r[14:16], uint16(len(data)))
-	copy(r[16:], data)
-	_, err := w.Write(r)
-	return err
-}
-
-func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...client.Option) *testClient {
-	t.Helper()
-	a, b := net.Pipe()
-	serverDone := make(chan struct{})
-	go func() { defer close(serverDone); serve(b) }()
-	dial := func(context.Context) (ios.ReadWriteCloser, string, error) { return a, "offline-test", nil }
-	var c *testClient
-	var err error
-	op := append([]client.Option{WithRedial(false), WithLevel(LevelNone)}, options...)
-	if ex {
-		c, err = testDialWith(dial, true, op...)
-	} else {
-		c, err = testDialWith(dial, false, op...)
-	}
-	if err != nil {
-		a.Close()
-		b.Close()
-		t.Fatal(err)
-	}
-	c.Logger.Debug(false)
-	c.SetTimeout(time.Second)
-	t.Cleanup(func() {
-		c.Close()
-		b.Close()
-		<-serverDone
-	})
-	return c
-}
-
-func respondingTestClient(t *testing.T, ex bool, data func([]byte, []byte) []byte) *testClient {
-	return pipeTestClient(t, ex, func(s net.Conn) {
-		for {
-			h, b, err := readTestFrame(s)
-			if err != nil {
-				return
-			}
-			if binary.LittleEndian.Uint32(h[1:5]) == 0 {
-				continue // 握手与心跳没有等待者。
-			}
-			if err := writeTestResponse(s, h, data(h, b)); err != nil {
-				return
-			}
-		}
-	})
 }
 
 func TestNativeClientConcurrentWrites(t *testing.T) {
@@ -465,36 +121,6 @@ func TestRequestTimeoutWhileQueuedDoesNotWrite(t *testing.T) {
 	}
 	if len(offsets) != 1 || offsets[0] != 2 {
 		t.Fatal("expired request was sent", offsets)
-	}
-}
-
-func TestBlockDownloadIntegrity(t *testing.T) {
-	for _, mode := range []string{"complete", "empty", "truncated", "oversized"} {
-		t.Run(mode, func(t *testing.T) {
-			c := respondingTestClient(t, false, func(h, b []byte) []byte {
-				if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeBlockMeta {
-					return protocol.Bytes(uint32(16))
-				}
-				start := binary.LittleEndian.Uint32(b[:4])
-				if mode == "empty" || (mode == "truncated" && start > 0) {
-					return []byte{0, 0, 0, 0}
-				}
-				if mode == "oversized" {
-					return make([]byte, 4+17)
-				}
-				return []byte{4, 0, 0, 0, 'a', 'b', 'c', 'd'}
-			})
-			bs, err := c.GetBlockFileRaw(protocol.BlockFileGN)
-			if mode == "complete" {
-				if err != nil || string(bs) != "abcdabcdabcdabcd" {
-					t.Fatal(string(bs), err)
-				}
-			} else if err == nil || bs != nil {
-				t.Fatal("incomplete download reported success", len(bs), err)
-			} else if mode != "oversized" && !errors.Is(err, io.ErrUnexpectedEOF) {
-				t.Fatal("expected unexpected EOF", err)
-			}
-		})
 	}
 }
 
@@ -693,13 +319,6 @@ type strictCloseConn struct {
 	closes atomic.Int32
 }
 
-func (c *strictCloseConn) Close() error {
-	if c.closes.Add(1) > 1 {
-		return net.ErrClosed
-	}
-	return c.Conn.Close()
-}
-
 func TestCloseAllRunsDisconnectCleanup(t *testing.T) {
 	a, b := net.Pipe()
 	transport := &strictCloseConn{Conn: a}
@@ -892,115 +511,101 @@ func TestSendFrameTimeoutWithBlockedWriter(t *testing.T) {
 	}
 }
 
-func TestClientUnifiedQueries(t *testing.T) {
-	for _, extended := range []bool{false, true} {
-		name, code, wrong := "standard", "sz000001", "hk00700"
-		if extended {
-			name, code, wrong = "extended", wrong, code
-		}
-		t.Run(name, func(t *testing.T) {
-			var requests atomic.Int32
-			c := respondingTestClient(t, extended, func(h, b []byte) []byte {
-				requests.Add(1)
-				typ := binary.LittleEndian.Uint16(h[10:12])
-				switch typ {
-				case protocol.TypeQuote:
-					return testQuoteResponse(b)
-				case protocol.TypeExQuote:
-					data := make([]byte, 150)
-					copy(data, b)
-					binary.LittleEndian.PutUint32(data[30:34], math.Float32bits(10))
-					return data
-				case protocol.TypeKline:
-					return testStandardBar(false)
-				case protocol.TypeExBars:
-					return testExtendedBar(20261009)
-				case protocol.TypeHistoryMinute:
-					return []byte{1, 0, 0, 0, 0, 0, 0xa8, 0x0f, 0, 2}
-				case protocol.TypeExMinute, protocol.TypeExHistMinute:
-					header := 12
-					if typ == protocol.TypeExHistMinute {
-						header = 20
+func TestHandshakeBeforeConcurrentWrites(t *testing.T) {
+	for _, ex := range []bool{false, true} {
+		t.Run(map[bool]string{false: "standard", true: "extended"}[ex], func(t *testing.T) {
+			var dials, setups atomic.Int32
+			var servers sync.WaitGroup
+			first := make(chan net.Conn, 1)
+			frames := make(chan uint16, 8)
+			started, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			setup := func() *protocol.Frame {
+				if setups.Add(1) == 2 {
+					close(started)
+					<-release
+				}
+				if ex {
+					return protocol.MEx.FrameSetup()
+				}
+				return protocol.MConnect.Frame()
+			}
+			dial := func(context.Context) (ios.ReadWriteCloser, string, error) {
+				a, b := net.Pipe()
+				n := dials.Add(1)
+				if n == 1 {
+					first <- b
+				}
+				servers.Add(1)
+				go func() {
+					defer servers.Done()
+					defer b.Close()
+					for {
+						h, _, err := readTestFrame(b)
+						if err != nil {
+							return
+						}
+						if n > 1 {
+							frames <- binary.LittleEndian.Uint16(h[10:12])
+						}
 					}
-					data := make([]byte, header+18)
-					binary.LittleEndian.PutUint16(data[header-2:header], 1)
-					binary.LittleEndian.PutUint16(data[header:header+2], 570)
-					binary.LittleEndian.PutUint32(data[header+2:header+6], math.Float32bits(10))
-					return data
-				case protocol.TypeTrade:
-					return []byte{1, 0, 0x3a, 2, 0xa8, 0x0f, 1, 3, 1, 0}
-				case protocol.TypeHistoryTrade:
-					return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 1, 0}
-				case protocol.TypeExTrade, protocol.TypeExHistTrade:
-					data := make([]byte, 32)
-					binary.LittleEndian.PutUint16(data[14:16], 1)
-					binary.LittleEndian.PutUint16(data[16:18], 570)
-					binary.LittleEndian.PutUint32(data[18:22], 10000)
-					binary.LittleEndian.PutUint16(data[30:32], 256)
-					return data
-				case protocol.TypeExQuoteList:
-					return []byte{0, 0}
-				default:
-					t.Errorf("unexpected request type %x", typ)
-					return nil
-				}
-			})
-			quotes, err := c.GetQuote(code)
-			if err != nil || len(quotes) != 1 || quotes[0].Price != 10 {
-				t.Fatal(quotes, err)
+				}()
+				return a, "pipe", nil
 			}
-			bars, err := c.GetKline(protocol.TypeKlineDay, code, 0, 1)
-			if err != nil || bars.Count != 1 {
-				t.Fatal(bars, err)
+			c, err := dialWith(context.Background(), dial, time.Second, setup, protocol.MHeart.Frame, func(*protocol.Response, any) (any, error) { return nil, nil }, WithRedial(), WithDebug(false))
+			if err != nil {
+				t.Fatal(err)
 			}
-			minute, err := c.GetMinute(code)
-			if err != nil || minute.Count != 1 || minute.List[0].Price != 10 {
-				t.Fatal(minute, err)
+			t.Cleanup(func() { once.Do(func() { close(release) }); c.Close(); servers.Wait() })
+			(<-first).Close()
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("reconnect did not reach handshake")
 			}
-			minute, err = c.GetHistoryMinute("20261009", code)
-			if err != nil || minute.Count != 1 || minute.Date != "20261009" {
-				t.Fatal(minute, err)
+			written := make(chan error, 1)
+			go func() {
+				_, err := c.Write((&protocol.Frame{MsgID: 1, Type: protocol.TypeCount}).Bytes())
+				written <- err
+			}()
+			select {
+			case typ := <-frames:
+				t.Fatalf("frame %04x escaped before handshake", typ)
+			case <-time.After(50 * time.Millisecond):
 			}
-			trade, err := c.GetTrade(code, 0, 1)
-			if err != nil || trade.Count != 1 || trade.List[0].Direction != -1 {
-				t.Fatal(trade, err)
+			once.Do(func() { close(release) })
+			want := uint16(protocol.TypeConnect)
+			if ex {
+				want = protocol.TypeExSetup
 			}
-			trade, err = c.GetHistoryTrade("20261009", code, 0, 1)
-			if err != nil || trade.Count != 1 || trade.Date != "20261009" {
-				t.Fatal(trade, err)
-			}
-			if extended {
-				if quotes[0].Extended == nil || bars.List[0].Extended == nil || minute.List[0].Extended == nil || trade.List[0].Extended == nil || trade.List[0].Price != nil {
-					t.Fatal("lost extended data or guessed trade scale")
-				}
-			} else if quotes[0].Standard == nil || bars.List[0].Standard == nil || minute.List[0].Standard == nil || trade.List[0].Standard == nil || trade.List[0].Price == nil || *trade.List[0].Price != 10 {
-				t.Fatal("lost standard data")
-			}
-			before := requests.Load()
-			for _, call := range []func() error{
-				func() error { _, err := c.GetQuote(wrong); return err },
-				func() error { _, err := c.GetKline(9, wrong, 0, 1); return err },
-				func() error { _, err := c.GetMinute(wrong); return err },
-				func() error { _, err := c.GetTrade(wrong, 0, 1); return err },
-			} {
-				if err := call(); err == nil {
-					t.Fatal("single connection accepted the other protocol")
+			for _, typ := range []uint16{want, protocol.TypeCount} {
+				select {
+				case got := <-frames:
+					if got != typ {
+						t.Fatalf("frame=%04x want=%04x", got, typ)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("missing frame")
 				}
 			}
-			if requests.Load() != before {
-				t.Fatal("protocol mismatch sent a request")
-			}
-			if _, ok := any(c.transport()).(Client); ok {
-				t.Fatal("transport still implements the business interface")
-			}
-
-			list, err := c.GetQuoteList(31, 2, 0, 1)
-			if extended && (err != nil || len(list) != 0) {
-				t.Fatal("GetQuoteList migration failed", list, err)
-			}
-			if !extended && err == nil {
-				t.Fatal("standard connection accepted an extended quote list")
+			if err := <-written; err != nil {
+				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestMalformedResponsesReachCaller(t *testing.T) {
+	c := respondingTestClient(t, false, func(h, _ []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeQuote {
+			return []byte{0, 0, 1, 0}
+		}
+		return []byte{1, 0}
+	})
+	for _, f := range []*protocol.Frame{protocol.MCode.Frame(protocol.ExchangeSH, 0), {Control: protocol.Control01, Type: protocol.TypeKline, Data: make([]byte, 28)}, {Control: protocol.Control01, Type: protocol.TypeQuote}} {
+		start := time.Now()
+		if _, err := c.SendFrame(f, protocol.KlineCache{Type: protocol.TypeKlineDay}); err == nil || time.Since(start) >= 500*time.Millisecond {
+			t.Fatal("malformed response was swallowed until timeout", err)
+		}
 	}
 }

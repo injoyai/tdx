@@ -1,4 +1,4 @@
-package tdx_test
+package integration_test
 
 import (
 	"encoding/json"

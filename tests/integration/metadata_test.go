@@ -1,4 +1,4 @@
-package tdx_test
+package integration_test
 
 import (
 	"errors"
@@ -19,12 +19,15 @@ type failingMetadataClient struct {
 }
 
 func (c *failingMetadataClient) Close() error { c.closes++; return nil }
+
 func (c *failingMetadataClient) GetCodeAll(protocol.Exchange) (*tdx.CodeResp, error) {
 	return nil, c.err
 }
+
 func (c *failingMetadataClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	return nil, c.err
 }
+
 func (c *failingMetadataClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 	return nil, c.err
 }

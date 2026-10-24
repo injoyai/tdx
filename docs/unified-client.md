@@ -34,7 +34,9 @@ ETF、可转债等标准报价需要价格精度元数据时，使用同一连�
 
 源码按职责集中：`client_interface.go` 定义统一接口；`client.go` 集中 `MarketClient` 门面、市场路由、统一返回模型和标准结果转换，对应测试放在 `client_test.go`。`conn_st.go` 包含标准连接、建连入口、业务请求和解码；`conn_ex.go` 对应拓展连接。内部 `conn.go` 仅负责收发、请求关联和生命周期；`query.go` 及 `conn_query.go` 保存共享业务算法及校验。内部传输不实现 `Client`，业务查询不经传输层转发到门面。
 
-根目录测试按职责归并：`client_test.go` 验证统一门面和接口；`conn_test.go` 验证标准/扩展连接、协议请求和共享传输；`query_test.go` 验证分页、停止条件及历史日期检查。两类协议共用的表驱动用例保持在同一个文件中；`conn_live_test.go` 集中实连测试及限流辅助函数，仍须通过原有环境变量显式启用。连接池和元数据回归测试保留在根目录；管理器实现与回归测试位于独立的 `extend/manage` 包，构造使用 `manage.New()`，详见 [管理器说明](../extend/manage/README.md)。
+根目录保留需要访问包内实现的测试：`client_test.go` 验证统一门面、接口和结果转换；`conn_test.go` 验证共享传输及连接生命周期；`conn_query_test.go` 验证标准/扩展业务查询、代码列表和报表文件；`query_test.go` 验证分页、停止条件及历史日期检查。`dial_test.go`、`hosts_test.go`、`pool_test.go` 分别覆盖拨号、服务器地址和连接池。两类协议共用的表驱动用例保持在同一个文件中，管道模拟和协议收发辅助函数集中在 `test_helpers_test.go`；`conn_live_test.go` 集中实连测试及限流辅助函数，仍须通过原有环境变量显式启用。
+
+只依赖公开接口的跨包契约、元数据资源归属及数据一致性测试位于 [`tests/integration/`](../tests/integration/README.md)，使用 `go test ./tests/...` 运行，`go test .` 不包含这部分测试。管理器实现与自身回归测试位于独立的 `extend/manage` 包，构造使用 `manage.New()`，详见 [管理器说明](../extend/manage/README.md)。
 
 `StConn`、`ExConn` 分别实现 `Client`，`MarketClient` 通过同一接口选择两者。混合报价仍保持原输入顺序，标准品种合并请求、拓展品种逐个请求。共享分页、停止条件和历史交易日期检查直接调用绑定业务对象的基本查询。
 
@@ -140,7 +142,7 @@ fmt.Println(ks.VWAP())
 离线管道测试覆盖代码解析、协议/周期路由、指数解码、混合报价排序与重复项、无需全局元数据的转债校准、分页边界、扩展列表过滤、失败传播、关闭与懒加载并发。港股日线复用 2026-10-09 原始响应及已保存的独立来源样本。新接口没有宣称所有扩展市场/字段完成准确性交叉验证。
 
 ```sh
-go test -race . ./protocol/... ./extend/... ./lib/...
+go test -race . ./tests/... ./internal/... ./protocol/... ./extend/... ./lib/...
 go test ./examples/... -run '^$'
 ```
 

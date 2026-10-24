@@ -1,4 +1,4 @@
-package tdx_test
+package integration_test
 
 import (
 	"errors"
@@ -23,12 +23,15 @@ type metadataClient struct {
 }
 
 func (c *metadataClient) Close() error { c.closes.Add(1); return nil }
+
 func (*metadataClient) GetCodeAll(protocol.Exchange) (*tdx.CodeResp, error) {
 	return &tdx.CodeResp{}, nil
 }
+
 func (*metadataClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 	return map[string][]*protocol.Gbbq{}, nil
 }
+
 func (c *metadataClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 	r := &tdx.KlineResp{Instrument: protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}}
 	for _, k := range c.days {
