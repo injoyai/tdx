@@ -46,6 +46,9 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 	if len(bs) < int(resp.Count)*29 {
 		return nil, io.ErrUnexpectedEOF
 	}
+	if resp.Count > 0 {
+		resp.List = make([]*Code, 0, resp.Count)
+	}
 
 	for i := uint16(0); i < resp.Count; i++ {
 		sec := &Code{

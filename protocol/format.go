@@ -9,8 +9,9 @@ import (
 func FloatUnit(f float64) (float64, string) {
 	m := []string{"万", "亿"}
 	unit := ""
-	for i := 0; f > 1e4 && i < len(m); f /= 1e4 {
+	for i := 0; f > 1e4 && i < len(m); i++ {
 		unit = m[i]
+		f /= 1e4
 	}
 	return f, unit
 }

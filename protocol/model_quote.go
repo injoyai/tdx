@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -114,6 +115,12 @@ func (quote) Decode(bs []byte) (QuotesResp, error) {
 		return nil, d.err
 	}
 	resp := QuotesResp{}
+	if int(number) > len(d.bs)/56 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	if number > 0 {
+		resp = make(QuotesResp, 0, number)
+	}
 	for i := uint16(0); i < number; i++ {
 		prefix := d.take(9)
 		if d.err != nil {

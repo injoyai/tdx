@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/injoyai/base/types"
@@ -97,16 +98,28 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 	if historical {
 		fields = 4
 	}
+	if int(count) > len(bs)/(2+fields) {
+		return nil, io.ErrUnexpectedEOF
+	}
+	if count == 0 {
+		return resp, nil
+	}
+	date, err := time.ParseInLocation("20060102", c.Date, Location())
+	if err != nil {
+		return nil, err
+	}
+	resp.List = make(Trades, 0, count)
+	multiple := basePrice(c.Code)
 	lastPrice := Price(0)
 	for i := uint16(0); i < resp.Count; i++ {
 		if len(bs) < 2 {
 			return nil, fmt.Errorf("成交记录 %d: 时间数据不足", i)
 		}
-		timeStr := GetHourMinute([2]byte(bs[:2]))
-		t, err := time.ParseInLocation("2006010215:04", c.Date+timeStr, Location())
-		if err != nil {
-			return nil, err
+		clock := int(Uint16(bs[:2]))
+		if clock >= 24*60 {
+			return nil, fmt.Errorf("成交记录 %d: 无效时间 %d", i, clock)
 		}
+		t := time.Date(date.Year(), date.Month(), date.Day(), clock/60, clock%60, 0, 0, Location())
 		mt := &Trade{Time: t}
 		bs = bs[2:]
 		var values [5]int
@@ -117,7 +130,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 			}
 		}
 		lastPrice += Price(values[0]) * 10 //把分转换成厘
-		mt.Price = lastPrice / basePrice(c.Code)
+		mt.Price = lastPrice / multiple
 		mt.Volume = values[1]
 		mt.Status = values[2]
 		if !historical {
@@ -211,12 +224,7 @@ func (ts Trades) klinesForDay(date time.Time) Klines {
 	_1130 := 690 //11:30 的分钟
 	_1300 := 780 //13:00 的分钟
 	_1500 := 900 //15:00 的分钟
-	keys := make([]int, 0, len(times241))
 	m := map[int]Trades{}
-	for _, clock := range times241 {
-		t, _ := time.Parse("15:04", clock)
-		keys = append(keys, minutes(t))
-	}
 	//获取开盘价,有可能前几分钟没有数据,先遍历一遍
 	var open Price
 	for _, v := range ts {
@@ -235,8 +243,8 @@ func (ts Trades) klinesForDay(date time.Time) Klines {
 		m[t] = append(m[t], v)
 	}
 	//合并
-	ls := []*Kline(nil)
-	for _, v := range keys {
+	ls := make(Klines, 0, len(minutes241))
+	for _, v := range minutes241 {
 		k := m[v].Kline(time.Date(date.Year(), date.Month(), date.Day(), v/60, v%60, 0, 0, date.Location()), open)
 		open = k.Close
 		ls = append(ls, k)

@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -48,6 +49,12 @@ func (*minute) Decode(bs []byte) (*MinuteResp, error) {
 	}
 	//2-6字节是啥?
 	d := wireDecoder{bs: bs[6:]}
+	if int(resp.Count) > len(d.bs)/3 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	if resp.Count > 0 {
+		resp.List = make([]PriceNumber, 0, resp.Count)
+	}
 
 	t := time.Date(0, 0, 0, 9, 0, 0, 0, time.Local)
 	for i := uint16(0); i < resp.Count; i++ {

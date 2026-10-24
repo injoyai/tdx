@@ -194,33 +194,11 @@ func isFuturesCode(s string) bool {
 	return hasLetter && hasDigit
 }
 
-//func basePrice(code string) Price {
-//	if len(code) < 2 {
-//		return 1
-//	}
-//	switch code[:1] {
-//	case "8":
-//		return 1
-//	}
-//	switch code[:2] {
-//	case "60", "30", "68", "00", "92", "43", "39":
-//		return 1
-//	default:
-//		return 1
-//	}
-//}
-
 func basePrice(code string) Price {
-	switch {
-	case IsETF(code):
+	if IsETF(code) {
 		return 10
-	case IsStock(code):
-		return 1
-	case IsIndex(code):
-		return 1
-	default:
-		return 1
 	}
+	return 1
 }
 
 // IsStock 是否是股票,示例sz000001

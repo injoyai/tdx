@@ -186,9 +186,9 @@ func (exHq) DecodeMarkets(bs []byte) ([]ExMarket, error) {
 	out := make([]ExMarket, 0, cnt)
 	for i := 0; i < cnt; i++ {
 		category := r.u8()
-		name := exGBK(r.bytes(32))
+		name := decodeGBKName(r.bytes(32))
 		market := r.u8()
-		short := exGBK(r.bytes(2))
+		short := decodeGBKName(r.bytes(2))
 		r.skip(28) // 26s + 2s
 		if category == 0 && market == 0 {
 			continue
@@ -237,9 +237,9 @@ func (exHq) DecodeInstrument(bs []byte) ([]ExInstrument, error) {
 		category := r.u8()
 		market := r.u8()
 		r.skip(3) // unused
-		code := exGBK(r.bytes(9))
-		name := exGBK(r.bytes(17))
-		desc := exGBK(r.bytes(9))
+		code := decodeGBKName(r.bytes(9))
+		name := decodeGBKName(r.bytes(17))
+		desc := decodeGBKName(r.bytes(9))
 		r.p = base + 64
 		out = append(out, ExInstrument{Category: category, Market: market, Code: code, Name: name, Desc: desc})
 	}
@@ -611,7 +611,7 @@ func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]QuoteListItem, err
 	out := make([]QuoteListItem, 0, num)
 	for i := 0; i < num; i++ {
 		market := r.u8()
-		code := exGBK(r.bytes(9))
+		code := decodeGBKName(r.bytes(9))
 		base := r.p // 数据块 140 字节有效,整体步进 290
 		it := QuoteListItem{Market: market, Code: code}
 		if c.Category == 2 {
@@ -737,11 +737,3 @@ func (r *exReader) bytes(n int) []byte {
 }
 func (r *exReader) skip(n int)  { r.p += n }
 func (r *exReader) remain() int { return len(r.b) - r.p }
-
-// exGBK 去尾随 null 并 GBK 解码(复用标准行情同款解码)。
-func exGBK(b []byte) string {
-	if i := indexByte(b, 0); i >= 0 {
-		b = b[:i]
-	}
-	return string(GBKToUTF8(b))
-}

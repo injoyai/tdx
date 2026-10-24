@@ -52,13 +52,13 @@ const (
 const (
 	ReportZHB = "zhb.zip" // 板块/配置数据总包(report file 下载后解压, 含下列文件)
 
-	FileTdxZs   = "tdxzs.cfg"   // 板块指数配置: 板块名↔指数代码(880xxx 行业/概念, 881xxx 地域)↔类型
-	FileTdxZs3  = "tdxzs3.cfg"  // 板块指数配置(扩展, 同 tdxzs.cfg 格式)
-	FileTdxDsZs = "tdxdszs.cfg" // 港股板块指数配置: 板块名↔指数代码(HKxxxx)
-	FileTdxBk    = "tdxbk.cfg"    // 概念板块简称↔全称
+	FileTdxZs     = "tdxzs.cfg"     // 板块指数配置: 板块名↔指数代码(880xxx 行业/概念, 881xxx 地域)↔类型
+	FileTdxZs3    = "tdxzs3.cfg"    // 板块指数配置(扩展, 同 tdxzs.cfg 格式)
+	FileTdxDsZs   = "tdxdszs.cfg"   // 港股板块指数配置: 板块名↔指数代码(HKxxxx)
+	FileTdxBk     = "tdxbk.cfg"     // 概念板块简称↔全称
 	FileTdxBjMore = "tdxbjmore.cfg" // 北交所代码↔名称
-	FileIncon    = "incon.dat"    // 证监会/通达信行业分类代码表
-	FileHsPy    = "hspy.dat"    // 沪深拼音/简称
+	FileIncon     = "incon.dat"     // 证监会/通达信行业分类代码表
+	FileHsPy      = "hspy.dat"      // 沪深拼音/简称
 )
 
 // TdxZs 一个板块指数定义(来自 tdxzs.cfg / tdxzs3.cfg / tdxdszs.cfg)。
@@ -126,18 +126,7 @@ func ParseTdxBjMore(data []byte) []*Code {
 // FillBlockIndex 按板块名称用 tdxzs 配置回填板块指数代码(id)到 block_*.dat 解析出的板块。
 // block 文件本身无 id, 故需 tdxzs.cfg 关联。返回成功匹配的数量。
 func FillBlockIndex(blocks []*Block, zs []*TdxZs) int {
-	m := make(map[string]string, len(zs))
-	for _, z := range zs {
-		m[z.Name] = z.Code
-	}
-	n := 0
-	for _, b := range blocks {
-		if code, ok := m[b.Name]; ok {
-			b.Index = code
-			n++
-		}
-	}
-	return n
+	return FillBlockIndexAlias(blocks, zs, nil)
 }
 
 // BlockMetaResp 板块文件元信息。

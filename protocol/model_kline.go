@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -24,14 +26,19 @@ func (r *KlineReq) Bytes(category uint8) (types.Bytes, error) {
 	if len(r.Code) != 6 {
 		return nil, errors.New("股票代码长度错误")
 	}
-	data := []byte{r.Exchange.Uint8(), 0x0}
-	data = append(data, []byte(r.Code)...) //这里怎么是正序了？
-	data = append(data, category, 0x0)
-	data = append(data, 0x01, 0x0)
-	data = append(data, Bytes(r.Start)...)
-	data = append(data, Bytes(r.Count)...)
-	data = append(data, make([]byte, 10)...) //未知啥含义
-	return data, nil
+	return klineData(r.Exchange, r.Code, r.Start, r.Count, category), nil
+}
+
+func klineData(exchange Exchange, code string, start, count uint16, category uint8) []byte {
+	data := make([]byte, 20+len(code))
+	data[0] = exchange.Uint8()
+	copy(data[2:], code)
+	pos := 2 + len(code)
+	data[pos] = category
+	data[pos+2] = 1
+	binary.LittleEndian.PutUint16(data[pos+4:], start)
+	binary.LittleEndian.PutUint16(data[pos+6:], count)
+	return data
 }
 
 type KlineResp struct {
@@ -124,18 +131,10 @@ func (kline) Frame(category uint8, code string, start, count uint16) (*Frame, er
 		return nil, err
 	}
 
-	data := []byte{exchange.Uint8(), 0x0}
-	data = append(data, []byte(number)...) //这里怎么是正序了？
-	data = append(data, category, 0x0)
-	data = append(data, 0x01, 0x0)
-	data = append(data, Bytes(start)...)
-	data = append(data, Bytes(count)...)
-	data = append(data, make([]byte, 10)...) //未知啥含义
-
 	return &Frame{
 		Control: Control01,
 		Type:    TypeKline,
-		Data:    data,
+		Data:    klineData(exchange, number, start, count, category),
 	}, nil
 }
 
@@ -148,6 +147,16 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		Count: Uint16(bs[:2]),
 	}
 	d := wireDecoder{bs: bs[2:]}
+	minRecord := 16 // 日期、四个变长价格、量和额。
+	if c.Kind == KindIndex {
+		minRecord += 4
+	}
+	if int(resp.Count) > len(d.bs)/minRecord {
+		return nil, io.ErrUnexpectedEOF
+	}
+	if resp.Count > 0 {
+		resp.List = make([]*Kline, 0, resp.Count)
+	}
 
 	var last Price //上条数据(昨天)的收盘价
 	for i := uint16(0); i < resp.Count; i++ {
@@ -414,6 +423,7 @@ func (ks Klines) Sort() {
 func (ks Klines) Kline(t time.Time, last Price) *Kline {
 	k := &Kline{
 		Time:   t,
+		Last:   last,
 		Open:   last,
 		High:   last,
 		Low:    last,
@@ -424,6 +434,7 @@ func (ks Klines) Kline(t time.Time, last Price) *Kline {
 	for i, v := range ks {
 		switch i {
 		case 0:
+			k.Last = v.Last
 			k.Open = v.Open
 			k.High = v.High
 			k.Low = v.Low
@@ -438,6 +449,10 @@ func (ks Klines) Kline(t time.Time, last Price) *Kline {
 		k.Close = v.Close
 		k.Volume += v.Volume
 		k.Amount += v.Amount
+		k.Order += v.Order
+		// 涨跌家数是时点快照，周期结果取末根，不能累加。
+		k.UpCount = v.UpCount
+		k.DownCount = v.DownCount
 	}
 	return k
 }
@@ -448,23 +463,17 @@ func (ks Klines) Merge(n int) Klines {
 		return ks
 	}
 
-	res := Klines(nil)
-	ls := Klines(nil)
-	for i := 0; ; i++ {
-		if len(ks) <= i*n {
-			break
-		}
-		if len(ks) < (i+1)*n {
-			ls = ks[i*n:]
-		} else {
-			ls = ks[i*n : (i+1)*n]
-		}
-		if len(ls) == 0 {
-			break
-		}
+	if len(ks) == 0 {
+		return nil
+	}
+	res := make(Klines, 0, 1+(len(ks)-1)/n)
+	for start := 0; start < len(ks); {
+		end := start + min(n, len(ks)-start)
+		ls := ks[start:end]
 		last := ls[len(ls)-1]
 		k := ls.Kline(last.Time, ls[0].Open)
 		res = append(res, k)
+		start = end
 	}
 	return res
 }
@@ -482,23 +491,25 @@ func (ks Klines) Merge241(n int) Klines {
 
 	result := Klines{}
 
-	for dateStr, dayKs := range mDay {
+	for _, dayKs := range mDay {
 		// 构建 minute → K 映射
-		m := make(map[string]*Kline, len(dayKs))
+		m := make(map[int]*Kline, len(dayKs))
 		for _, k := range dayKs {
-			key := k.Time.Format(timeFormat)
-			m[key] = k
+			m[minutes(k.Time)] = k
 		}
 
 		// 按 times 构建标准 241 根分钟
-		std := make([]*Kline, 0, len(times241))
+		std := make([]*Kline, 0, len(minutes241))
+		date := dayKs[0].Time
 		var lastClose Price
-		for _, key := range times241 {
+		var upCount, downCount int
+		for _, key := range minutes241 {
 			if k, ok := m[key]; ok {
 				std = append(std, k)
 				lastClose = k.Close
+				upCount, downCount = k.UpCount, k.DownCount
 			} else {
-				t, _ := time.ParseInLocation(time.DateOnly+timeFormat, dateStr+key, dayKs[0].Time.Location())
+				t := time.Date(date.Year(), date.Month(), date.Day(), key/60, key%60, 0, 0, date.Location())
 				std = append(std, &Kline{
 					Time:      t,
 					Open:      lastClose,
@@ -508,8 +519,8 @@ func (ks Klines) Merge241(n int) Klines {
 					Volume:    0,
 					Amount:    0,
 					Order:     0,
-					UpCount:   0,
-					DownCount: 0,
+					UpCount:   upCount,
+					DownCount: downCount,
 				})
 			}
 		}
@@ -539,10 +550,7 @@ func (ks Klines) Merge241(n int) Klines {
 				DownCount: std[i].DownCount,
 			}
 
-			end := i + n
-			if end > lenStd {
-				end = lenStd
-			}
+			end := i + min(n, lenStd-i)
 
 			for j := i + 1; j < end; j++ {
 				k := std[j]
@@ -557,6 +565,8 @@ func (ks Klines) Merge241(n int) Klines {
 				k2.Volume += k.Volume
 				k2.Amount += k.Amount
 				k2.Order += k.Order
+				k2.UpCount = k.UpCount
+				k2.DownCount = k.DownCount
 			}
 
 			result = append(result, k2)
@@ -570,37 +580,14 @@ func (ks Klines) Merge241(n int) Klines {
 	return result
 }
 
-var (
-	times241 = []string{
-		// 上午 09:30 – 11:29
-		"09:30", "09:31", "09:32", "09:33", "09:34", "09:35", "09:36", "09:37", "09:38", "09:39",
-		"09:40", "09:41", "09:42", "09:43", "09:44", "09:45", "09:46", "09:47", "09:48", "09:49",
-		"09:50", "09:51", "09:52", "09:53", "09:54", "09:55", "09:56", "09:57", "09:58", "09:59",
-		"10:00", "10:01", "10:02", "10:03", "10:04", "10:05", "10:06", "10:07", "10:08", "10:09",
-		"10:10", "10:11", "10:12", "10:13", "10:14", "10:15", "10:16", "10:17", "10:18", "10:19",
-		"10:20", "10:21", "10:22", "10:23", "10:24", "10:25", "10:26", "10:27", "10:28", "10:29",
-		"10:30", "10:31", "10:32", "10:33", "10:34", "10:35", "10:36", "10:37", "10:38", "10:39",
-		"10:40", "10:41", "10:42", "10:43", "10:44", "10:45", "10:46", "10:47", "10:48", "10:49",
-		"10:50", "10:51", "10:52", "10:53", "10:54", "10:55", "10:56", "10:57", "10:58", "10:59",
-		"11:00", "11:01", "11:02", "11:03", "11:04", "11:05", "11:06", "11:07", "11:08", "11:09",
-		"11:10", "11:11", "11:12", "11:13", "11:14", "11:15", "11:16", "11:17", "11:18", "11:19",
-		"11:20", "11:21", "11:22", "11:23", "11:24", "11:25", "11:26", "11:27", "11:28", "11:29",
-		"11:30",
-
-		// 下午 13:01 – 15:00
-		"13:01", "13:02", "13:03", "13:04", "13:05", "13:06", "13:07", "13:08", "13:09", "13:10",
-		"13:11", "13:12", "13:13", "13:14", "13:15", "13:16", "13:17", "13:18", "13:19", "13:20",
-		"13:21", "13:22", "13:23", "13:24", "13:25", "13:26", "13:27", "13:28", "13:29", "13:30",
-		"13:31", "13:32", "13:33", "13:34", "13:35", "13:36", "13:37", "13:38", "13:39", "13:40",
-		"13:41", "13:42", "13:43", "13:44", "13:45", "13:46", "13:47", "13:48", "13:49", "13:50",
-		"13:51", "13:52", "13:53", "13:54", "13:55", "13:56", "13:57", "13:58", "13:59", "14:00",
-		"14:01", "14:02", "14:03", "14:04", "14:05", "14:06", "14:07", "14:08", "14:09", "14:10",
-		"14:11", "14:12", "14:13", "14:14", "14:15", "14:16", "14:17", "14:18", "14:19", "14:20",
-		"14:21", "14:22", "14:23", "14:24", "14:25", "14:26", "14:27", "14:28", "14:29", "14:30",
-		"14:31", "14:32", "14:33", "14:34", "14:35", "14:36", "14:37", "14:38", "14:39", "14:40",
-		"14:41", "14:42", "14:43", "14:44", "14:45", "14:46", "14:47", "14:48", "14:49", "14:50",
-		"14:51", "14:52", "14:53", "14:54", "14:55", "14:56", "14:57", "14:58", "14:59", "15:00",
+// 沪深分钟网格：09:30竞价、09:31～11:30、13:01～15:00。
+var minutes241 = func() []int {
+	out := make([]int, 0, 241)
+	for minute := 9*60 + 30; minute <= 11*60+30; minute++ {
+		out = append(out, minute)
 	}
-
-	timeFormat = "15:04"
-)
+	for minute := 13*60 + 1; minute <= 15*60; minute++ {
+		out = append(out, minute)
+	}
+	return out
+}()

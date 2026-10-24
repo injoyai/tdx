@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 )
@@ -61,7 +62,7 @@ func (companyCat) Decode(bs []byte) ([]CompanyCategory, error) {
 
 // cutAtNull 截取到首个 0x00（GBK 字段名/文件名定长 null 填充）。
 func cutAtNull(b []byte) string {
-	if i := indexByte(b, 0); i >= 0 {
+	if i := bytes.IndexByte(b, 0); i >= 0 {
 		b = b[:i]
 	}
 	return string(b)
@@ -69,19 +70,10 @@ func cutAtNull(b []byte) string {
 
 // decodeGBKName 取首个 null 前的字节并 GBK 解码（去尾随定长填充与杂字节）。
 func decodeGBKName(b []byte) string {
-	if i := indexByte(b, 0); i >= 0 {
+	if i := bytes.IndexByte(b, 0); i >= 0 {
 		b = b[:i]
 	}
 	return string(GBKToUTF8(b))
-}
-
-func indexByte(b []byte, c byte) int {
-	for i := range b {
-		if b[i] == c {
-			return i
-		}
-	}
-	return -1
 }
 
 // Frame 构造 F10 内容请求帧。

@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"github.com/injoyai/conv"
+	"io"
 	"time"
 )
 
@@ -40,6 +41,12 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 
 	//2-4字节是啥?
 	d := wireDecoder{bs: bs[6:]}
+	if int(resp.Count) > len(d.bs)/3 {
+		return nil, io.ErrUnexpectedEOF
+	}
+	if resp.Count > 0 {
+		resp.List = make([]PriceNumber, 0, resp.Count)
+	}
 
 	lastPrice := Price(0)
 	t := time.Date(0, 0, 0, 9, 30, 0, 0, time.Local)

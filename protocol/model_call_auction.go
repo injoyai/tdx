@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"io"
 	"time"
 )
 
@@ -62,6 +63,9 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 	}
 
 	count := Uint16(bs[:2])
+	if int(count) > (len(bs)-2)/16 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	resp := &CallAuctionResp{
 		Count: count,
 		List:  make([]*CallAuction, 0, count),

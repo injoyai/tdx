@@ -3,10 +3,10 @@ package protocol
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/injoyai/base/types"
-	"github.com/injoyai/conv"
 	"io"
 )
 
@@ -60,11 +60,11 @@ func (f *Frame) Bytes() types.Bytes {
 	if f.Prefix != 0 {
 		data[0] = f.Prefix
 	}
-	copy(data[1:], Bytes(f.MsgID))
+	binary.LittleEndian.PutUint32(data[1:5], f.MsgID)
 	data[5] = f.Control.Uint8()
-	copy(data[6:], Bytes(length))
-	copy(data[8:], Bytes(length))
-	copy(data[10:], Bytes(f.Type))
+	binary.LittleEndian.PutUint16(data[6:8], length)
+	binary.LittleEndian.PutUint16(data[8:10], length)
+	binary.LittleEndian.PutUint16(data[10:12], f.Type)
 	copy(data[12:], f.Data)
 	return data
 }
@@ -130,40 +130,25 @@ func Decode(bs []byte) (*Response, error) {
 }
 
 // ReadFrom 这里的r推荐传入*bufio.Reader
-func ReadFrom(r io.Reader) (result []byte, err error) {
-
-	prefix := make([]byte, 4)
-	for {
-		result = []byte(nil)
-
-		//读取帧头
-		_, err := io.ReadFull(r, prefix)
-		if err != nil {
-			return nil, err
-		}
-		if conv.Uint32(prefix) != PrefixResp {
-			continue
-		}
-		result = append(result, prefix...)
-
-		//读取12字节
-		buf := make([]byte, 12)
-		_, err = io.ReadFull(r, buf)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, buf...)
-
-		//获取后续字节长度
-		length := uint16(result[13])<<8 + uint16(result[12])
-		buf = make([]byte, length)
-		_, err = io.ReadFull(r, buf)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, buf...)
-
-		return result, nil
+func ReadFrom(r io.Reader) ([]byte, error) {
+	var header [16]byte
+	if _, err := io.ReadFull(r, header[:4]); err != nil {
+		return nil, err
 	}
-
+	for binary.BigEndian.Uint32(header[:4]) != PrefixResp {
+		copy(header[:3], header[1:4])
+		if _, err := io.ReadFull(r, header[3:4]); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := io.ReadFull(r, header[4:]); err != nil {
+		return nil, err
+	}
+	length := int(binary.LittleEndian.Uint16(header[12:14]))
+	result := make([]byte, len(header)+length)
+	copy(result, header[:])
+	if _, err := io.ReadFull(r, result[len(header):]); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
