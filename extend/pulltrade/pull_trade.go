@@ -1,4 +1,5 @@
-package extend
+// Package pulltrade 按交易日下载历史分笔，并导出分笔及各分钟周期 CSV。
+package pulltrade
 
 import (
 	"context"
@@ -8,6 +9,7 @@ import (
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/export"
 	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -96,79 +98,35 @@ func (p *PullTrade) PullYear(ctx context.Context, m *manage.Manage, year int, co
 	filename60 := filepath.Join(p.Dir, "60分钟", code+"-"+conv.String(year)+".csv")
 	name := m.Codes.GetName(code)
 
-	err = TradesToCSV(filename, tss)
+	err = export.TradesToCSV(filename, tss)
 	if err != nil {
 		return err
 	}
 
-	err = KlinesToCSV(filename1, code, name, kss1)
+	err = export.KlinesToCSV(filename1, code, name, kss1)
 	if err != nil {
 		return err
 	}
 
-	err = KlinesToCSV(filename5, code, name, kss5)
+	err = export.KlinesToCSV(filename5, code, name, kss5)
 	if err != nil {
 		return err
 	}
 
-	err = KlinesToCSV(filename15, code, name, kss15)
+	err = export.KlinesToCSV(filename15, code, name, kss15)
 	if err != nil {
 		return err
 	}
 
-	err = KlinesToCSV(filename30, code, name, kss30)
+	err = export.KlinesToCSV(filename30, code, name, kss30)
 	if err != nil {
 		return err
 	}
 
-	err = KlinesToCSV(filename60, code, name, kss60)
+	err = export.KlinesToCSV(filename60, code, name, kss60)
 	if err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
-	data := [][]any{{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额"}}
-	for _, v := range ks {
-		data = append(data, []any{
-			v.Time.Format("20060102"),
-			v.Time.Format("15:04"),
-			code,
-			name,
-			v.Open.Float64(),
-			v.High.Float64(),
-			v.Low.Float64(),
-			v.Close.Float64(),
-			v.Volume,
-			v.Amount.Float64(),
-		})
-	}
-
-	buf, err := toCSV(data)
-	if err != nil {
-		return err
-	}
-
-	return writeFile(filename, buf)
-}
-
-func TradesToCSV(filename string, ts protocol.Trades) error {
-	data := [][]any{{"日期", "时间", "价格", "成交量(手)", "成交额", "方向(0买,1卖)"}}
-	for _, v := range ts {
-		data = append(data, []any{
-			v.Time.Format(time.DateOnly),
-			v.Time.Format("15:04"),
-			v.Price.Float64(),
-			v.Volume,
-			v.Amount().Float64(),
-			v.Status,
-		})
-	}
-	buf, err := toCSV(data)
-	if err != nil {
-		return err
-	}
-	return writeFile(filename, buf)
 }

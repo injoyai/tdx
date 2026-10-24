@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/v2/extend"
 	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/pulltrade"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		logs.Panic("年份超出范围")
 	}
 
-	pt := extend.NewPullTrade("./output/trade")
+	pt := pulltrade.NewPullTrade("./output/trade")
 
 	m, err := manage.New()
 	logs.PanicErr(err)

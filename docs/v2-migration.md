@@ -448,3 +448,20 @@ pull 的新数据目录带 `.storage-timezone` 标记。无标记且已有 `.db`
 `update` 表的名称与 Key/Time 列、行情数据库表列、`updated.db`、`min/` 数据目录均不变。`Quote.Reserved0..9` 通过显式 JSON tag 保留旧 `ReversedBytes0..9` 键；`Config.Tracker` 的 JSON 键仍为 `Updated`，`Manage` 的匿名 `ClientPool` 字段 JSON 键仍为 `IPool`。行情字段的原始数值、单位、HTTP 路由与返回结构保持不变。此整理不为未知协议字段补充未经确认的业务含义。
 
 源码文件统一使用小写下划线：`codes_server.go`、`pull_trade.go`、`spider_sina.go`、`spider_ths.go`，因子模型为 `extend/factor.go`；扩展 HTTP handler 为 `handler_ex.go`，传输写入为 `conn_writer.go`，ZIP 工具为 `lib/zip/zip.go`，对应测试同步。扩展连接示例路径改为 `examples/client/ExClient`；真实扩展测试名称改为 `TestExLive`，原 `TDX_EXHQ_LIVE` 环境开关保持不变。
+
+## 扩展功能按职责拆包
+
+以下入口从 `extend` 根包迁入职责子包。原函数、类型和常量在 `extend/compat.go` 中保留并标记 Deprecated，现有 Go 源码无需立即迁移；新代码直接使用子包以缩小依赖范围。
+
+| 旧入口 | 新入口（省略相同的函数或类型名） |
+|---|---|
+| `extend.ReadDay/ReadMinute1/ReadMinute5`、`WriteDay/WriteMinute1/WriteMinute5` | `extend/local` |
+| `extend.KlinesToCSV/TradesToCSV` | `extend/export` |
+| `extend.NewPullTrade/PullTrade` | `extend/pulltrade` |
+| `extend.GetSinaFactor*`、`GetTHSDayKline*`、`Factor/Factors` 及新浪/同花顺常量 | `extend/spider` |
+| `extend.ListenCodesHTTP/ListenCodesAndGbbqHTTP` | `extend/httpserver` |
+| `extend.DialCodesHTTP/DialGbbqHTTP`、`CodesHTTP/GbbqHTTP` | `extend/metadatahttp` |
+
+完整 import 前缀为 `github.com/injoyai/tdx/v2/`。函数签名、缓存刷新规则和资源归属不变，类型使用别名保留方法集与赋值兼容；反射或 `%T` 获得的定义包路径会变为新子包。HTTP 路由、原始 JSON、CSV 表头与 BOM、本地文件的价格/量/时间及占位规则保持不变。第三方比例因子仍不等于 `protocol.Factor` 仿射模型。
+
+`extend` 根包继续提供 `DoIncomes`。`protocol/unit.go` 的实现按职责拆入 `encoding.go`、`code.go`、`format.go`、`math.go` 和 `time.go`，包名、公开名称和算法不变。工具基础设施仍位于 `lib`，私有辅助函数跟随所属功能包，不新增通用 `utils` 包。详见 [扩展功能说明](../extend/README.md)。

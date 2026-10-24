@@ -35,7 +35,7 @@ defer cache.Close()
 - `Update()` 串行刷新；完整拉取成功后事务提交数据库，再发布内存快照。失败不发布部分结果。
 - `Close()` 可重复或并发调用，等待在途更新并停止调度，释放自建资源；关闭后 `Update()` 返回 `net.ErrClosed`，已有内存数据仍可查询。
 
-管理器使用 `manage.WithCodes(reader)` 或 `manage.WithDialCodes(factory)` 注入代码表。`extend.CodesHTTP` 同样实现 `codes.Interface`；HTTP 服务入口保留在 `extend`，配置使用 `codes.Option`。
+管理器使用 `manage.WithCodes(reader)` 或 `manage.WithDialCodes(factory)` 注入代码表。`metadatahttp.CodesHTTP`（`extend/metadatahttp`）同样实现 `codes.Interface`；独立 HTTP 服务入口为 `httpserver.ListenCodesHTTP`（`extend/httpserver`），配置使用 `codes.Option`。旧 `extend` 入口保留兼容转发。
 
 `DefaultCodes` 保留为显式共享缓存入口，不由构造函数自动赋值，行情查询不依赖它。根包的标准连接使用内部纯内存元数据校准价格，不会初始化持久化代码缓存。接口和模型通过内部共享实现保持一致，应用只需引用本包。
 

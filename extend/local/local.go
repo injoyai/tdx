@@ -1,4 +1,5 @@
-package extend
+// Package local 读写通达信本地 .day/.lc1/.lc5 文件；Write 函数只返回编码字节。
+package local
 
 import (
 	"encoding/binary"

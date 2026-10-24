@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2/extend/spider"
 )
 
 func main() {
@@ -14,10 +14,10 @@ func main() {
 	logs.PanicErr(err)
 	defer c.Close()
 
-	ks, fs, err := extend.GetTHSDayKlineFactorFull("000001", c)
+	ks, fs, err := spider.GetTHSDayKlineFactorFull("000001", c)
 	logs.PanicErr(err)
 
-	m := map[int64]*extend.Factor{}
+	m := map[int64]*spider.Factor{}
 	for _, v := range fs {
 		m[v.Date] = v
 	}

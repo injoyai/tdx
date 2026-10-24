@@ -1,62 +1,9 @@
 package protocol
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"io"
-	"math"
 	"strings"
-	"time"
-
-	"github.com/injoyai/conv"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
 )
-
-// String 字节先转小端,再转字符
-func String(bs []byte) string {
-	return string(Reverse(bs))
-}
-
-// Bytes 任意类型转小端字节
-func Bytes(n any) []byte {
-	return Reverse(conv.Bytes(n))
-}
-
-// Reverse 字节倒序
-func Reverse(bs []byte) []byte {
-	x := make([]byte, len(bs))
-	for i, v := range bs {
-		x[len(bs)-i-1] = v
-	}
-	return x
-}
-
-// Uint32 字节通过小端方式转为uint32
-func Uint32(bs []byte) uint32 {
-	return conv.Uint32(Reverse(bs))
-}
-
-// Float32 字节通过小端方式转为float32
-func Float32(bs []byte) float32 {
-	var f float32
-	binary.Read(bytes.NewBuffer(bs), binary.LittleEndian, &f)
-	return f
-}
-
-// Uint16 字节通过小端方式转为uint16
-func Uint16(bs []byte) uint16 {
-	return conv.Uint16(Reverse(bs))
-}
-
-// GBKToUTF8 将 GBK 文本解码为 UTF-8，并移除 NUL 字节。
-func GBKToUTF8(text []byte) []byte {
-	r := bytes.NewReader(text)
-	decoder := transform.NewReader(r, simplifiedchinese.GBK.NewDecoder())
-	content, _ := io.ReadAll(decoder)
-	return bytes.ReplaceAll(content, []byte{0x00}, []byte{})
-}
 
 // DecodeCode 解析证券代码,返回(交易所, 去掉前缀的代码主体, 错误)。
 //
@@ -247,67 +194,6 @@ func isFuturesCode(s string) bool {
 	return hasLetter && hasDigit
 }
 
-func FloatUnit(f float64) (float64, string) {
-	m := []string{"万", "亿"}
-	unit := ""
-	for i := 0; f > 1e4 && i < len(m); f /= 1e4 {
-		unit = m[i]
-	}
-	return f, unit
-}
-
-func FloatUnitString(f float64) string {
-	m := []string{"万", "亿", "万亿", "亿亿", "万亿亿", "亿亿亿"}
-	unit := ""
-	for i := 0; f > 1e4 && i < len(m); i++ {
-		unit = m[i]
-		f /= 1e4
-	}
-	if unit == "" {
-		return conv.String(f)
-	}
-	return fmt.Sprintf("%0.2f%s", f, unit)
-}
-
-func IntUnitString(n int) string {
-	return FloatUnitString(float64(n))
-}
-
-func Int64UnitString(n int64) string {
-	return FloatUnitString(float64(n))
-}
-
-func GetHourMinute(bs [2]byte) string {
-	n := Uint16(bs[:])
-	h := n / 60
-	m := n % 60
-	return fmt.Sprintf("%02d:%02d", h, m)
-}
-
-func GetTime(bs [4]byte, category uint8) time.Time {
-	switch category {
-	case TypeKlineMinute, TypeKlineMinute2, TypeKline5Minute, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute:
-
-		yearMonthDay := Uint16(bs[:2])
-		hourMinute := Uint16(bs[2:4])
-		year := int(yearMonthDay>>11 + 2004)
-		month := yearMonthDay % 2048 / 100
-		day := int((yearMonthDay % 2048) % 100)
-		hour := int(hourMinute / 60)
-		minute := int(hourMinute % 60)
-		return time.Date(year, time.Month(month), day, hour, minute, 0, 0, Location())
-
-	default:
-
-		yearMonthDay := Uint32(bs[:4])
-		year := int(yearMonthDay / 10000)
-		month := int((yearMonthDay % 10000) / 100)
-		day := int(yearMonthDay % 100)
-		return time.Date(year, time.Month(month), day, 15, 0, 0, 0, Location())
-
-	}
-}
-
 //func basePrice(code string) Price {
 //	if len(code) < 2 {
 //		return 1
@@ -335,10 +221,6 @@ func basePrice(code string) Price {
 	default:
 		return 1
 	}
-}
-
-func float32Value(val uint32) float64 {
-	return float64(math.Float32frombits(val))
 }
 
 // IsStock 是否是股票,示例sz000001
@@ -553,20 +435,4 @@ func isSZBond(code string) bool {
 		strings.HasPrefix(code, "126") ||
 		strings.HasPrefix(code, "127") ||
 		strings.HasPrefix(code, "128")
-}
-
-func minutes(t time.Time) int {
-	return t.Hour()*60 + t.Minute()
-}
-
-// I64Sqrt int64版的math.Sqrt
-func I64Sqrt(x int64) int64 {
-	r := int64(math.Sqrt(float64(x)))
-	for (r+1)*(r+1) <= x {
-		r++
-	}
-	for r*r > x {
-		r--
-	}
-	return r
 }

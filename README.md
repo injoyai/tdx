@@ -45,6 +45,8 @@
 
 全部示例按主题整理在 [examples](examples/README.md)，包含运行命令、使用条件与输出目录说明。
 
+扩展功能按职责分包：本地文件使用 `extend/local`，CSV 导出使用 `extend/export`，历史分笔下载使用 `extend/pulltrade`，第三方数据源使用 `extend/spider`，HTTP 缓存客户端使用 `extend/metadatahttp`，HTTP 服务使用 `extend/httpserver`。旧 `extend` 入口保留兼容转发；新代码直接导入子包，详见 [包职责说明](extend/README.md)。
+
 跨市场行情可只创建一个业务对象，自动路由标准和扩展连接：
 
 ```go
@@ -376,7 +378,7 @@ go test ./examples/... -run '^$'
 爬虫和扩展行情的实连测试需显式启用：
 
 ```sh
-TDX_SPIDER_LIVE=1 go test ./extend -run '^Test(GetSinaFactor.*|NewSpiderTHS)$'
+TDX_SPIDER_LIVE=1 go test ./extend/spider -run '^Test(GetSinaFactor.*|NewSpiderTHS)$'
 TDX_EXHQ_LIVE=1 go test . -run '^TestExLive$'
 ```
 

@@ -1,4 +1,4 @@
-package extend
+package metadatahttp
 
 import (
 	"reflect"

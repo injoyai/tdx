@@ -1,18 +1,14 @@
-package extend
+package export
 
 import (
 	"bytes"
 	"encoding/csv"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/injoyai/conv"
 )
-
-var dataHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 func toCSV(data [][]interface{}) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)

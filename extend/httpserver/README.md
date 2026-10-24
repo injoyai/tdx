@@ -2,6 +2,12 @@
 
 将通达信(tdx)行情数据通过 HTTP API 对外开放。本包基于 `tdx.Client` 实现,以 RESTful GET 接口暴露股票、指数、扩展行情等数据。
 
+## 独立代码与股本服务
+
+`ListenCodesHTTP(port, ...codes.Option)` 启动独立代码表服务，提供 `/codes`（别名 `/all`）、`/stocks`、`/etfs`、`/indexes`。`ListenCodesAndGbbqHTTP(port, []codes.Option, []gbbq.Option)` 额外提供 `/gbbqs`。这两个入口返回原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不向 `New` 创建的行情服务自动注册路由。
+
+客户端使用 `extend/metadatahttp` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端在初始化、监听失败或退出时关闭自建缓存，原监听地址、查询参数兼容规则及 JSON 结构保持不变。示例见 [CodesHTTP](../../examples/services/CodesHTTP/main.go)。旧 `extend` 包同名入口保留兼容转发。
+
 ## 快速开始
 
 ```go

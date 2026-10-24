@@ -1,4 +1,4 @@
-package extend
+package local
 
 import (
 	"encoding/binary"

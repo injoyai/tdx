@@ -11,6 +11,7 @@ import (
 	"github.com/injoyai/tdx/v2/extend"
 	"github.com/injoyai/tdx/v2/extend/codes"
 	"github.com/injoyai/tdx/v2/extend/gbbq"
+	"github.com/injoyai/tdx/v2/extend/local"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 	"github.com/injoyai/tdx/v2/extend/workday"
@@ -235,7 +236,7 @@ func TestConsistencyIndexConsumers(t *testing.T) {
 	if got := ks.VWAP(); got != protocol.Yuan(10.8) {
 		t.Errorf("20000 shares, amount 216000 yuan: VWAP=%v, want 10.8 yuan", got)
 	}
-	bs, err := extend.WriteDay("sh000001", ks)
+	bs, err := local.WriteDay("sh000001", ks)
 	if err != nil {
 		t.Fatal(err)
 	}

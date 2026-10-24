@@ -7,7 +7,7 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend"
+	"github.com/injoyai/tdx/v2/extend/local"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -45,7 +45,7 @@ func writeMinute1(c tdx.Client, code string, outDir string) {
 	if len(ks) == 0 {
 		logs.Panicf("代码 %s 无1分钟数据", code)
 	}
-	bs, err := extend.WriteMinute1(code, ks)
+	bs, err := local.WriteMinute1(code, ks)
 	if err != nil {
 		logs.PanicErr(err)
 	}
@@ -62,7 +62,7 @@ func writeMinute5(c tdx.Client, code string, outDir string) {
 	if len(ks) == 0 {
 		logs.Panicf("代码 %s 无5分钟数据", code)
 	}
-	bs, err := extend.WriteMinute5(code, ks)
+	bs, err := local.WriteMinute5(code, ks)
 	if err != nil {
 		logs.PanicErr(err)
 	}
