@@ -12,15 +12,10 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// 统一结果的价格使用品种原币种/报价单位，浮点值保留底层解码精度。
-// VolumeUnit 只描述对应接口；unknown 表示保留解码数值且不做推测换算。
-const VolumeUnknown protocol.VolumeUnit = "unknown"
-
 // KlineResp 是统一 K 线结果，Category 为实际协议周期，List 按时间升序排列。
 type KlineResp struct {
 	Instrument protocol.Instrument
-	Category   uint8 // 实际发送的协议周期
-	VolumeUnit protocol.VolumeUnit
+	Category   uint8  // 实际发送的协议周期
 	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Kline
@@ -34,7 +29,7 @@ type Kline struct {
 	High          float64
 	Low           float64
 	Close         float64
-	Volume        int64
+	Volume        int64    // 股票为股，期货为张
 	Amount        *float64 // nil 表示该市场的金额语义未确认
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline
@@ -50,7 +45,7 @@ func (k Kline) Timestamp(loc *time.Location) (int64, error) {
 	return t.Unix(), nil
 }
 
-// Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量以 VolumeUnit 为准。
+// Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量及五档买卖量使用最小单位（股票为股，期货为张）。
 type Quote struct {
 	Instrument protocol.Instrument
 	PreClose   float64
@@ -58,8 +53,7 @@ type Quote struct {
 	High       float64
 	Low        float64
 	Price      float64
-	Volume     int64
-	VolumeUnit protocol.VolumeUnit
+	Volume     int64 // 股票为股，期货为张
 	Bid        [5]float64
 	BidVolume  [5]int64
 	Ask        [5]float64
@@ -72,7 +66,6 @@ type Quote struct {
 type MinuteResp struct {
 	Instrument protocol.Instrument
 	Date       string // 请求日期 YYYYMMDD，不按行号推断夜盘日期
-	VolumeUnit protocol.VolumeUnit
 	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Minute
@@ -82,7 +75,7 @@ type MinuteResp struct {
 type Minute struct {
 	Time     string // HH:MM
 	Price    float64
-	Volume   int64
+	Volume   int64 // 股票为股，期货为张
 	Standard *protocol.PriceNumber
 	Extended *protocol.ExMinuteTick
 }
@@ -91,7 +84,6 @@ type Minute struct {
 type TradeResp struct {
 	Instrument protocol.Instrument
 	Date       string
-	VolumeUnit protocol.VolumeUnit
 	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Trade
@@ -102,8 +94,8 @@ type Trade struct {
 	Date      string   // 历史查询日期 YYYYMMDD；跨日结果逐条保留，不推断当日扩展日期
 	Time      string   // HH:MM:SS，源数据无秒时为 00
 	Price     *float64 // 扩展分笔原始整数价格尺度未确认，保留 Extended.Price，公共价格为 nil
-	Volume    int64
-	Direction int // 1 买，-1 卖，0 中性
+	Volume    int64    // 股票为股，期货为张
+	Direction int      // 1 买，-1 卖，0 中性
 	Standard  *protocol.Trade
 	Extended  *protocol.ExTradeTick
 }
@@ -630,24 +622,20 @@ func standardKline(k *protocol.Kline) Kline {
 }
 
 // Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。
-// 未知单位或不能无损换算的股数返回错误；不修改原始协议记录。
+// 使用统一记录的股数；不能无损换算时返回错误，不修改原始协议记录。
 func (r *KlineResp) Klines() (protocol.Klines, error) {
 	raw, err := r.StandardResponse()
 	if err != nil {
 		return nil, err
 	}
-	if len(raw.List) > 0 && r.VolumeUnit != protocol.VolumeHundredShares && r.VolumeUnit != protocol.VolumeShares {
-		return nil, fmt.Errorf("成交量单位 %q 不能转换为整数手", r.VolumeUnit)
-	}
 	out := make(protocol.Klines, 0, len(raw.List))
-	for _, k := range raw.List {
-		copy := *k
-		if r.VolumeUnit == protocol.VolumeShares {
-			if k.Volume%protocol.SharesPerLot != 0 {
-				return nil, errors.New("成交量股数不能无损转换为整数手")
-			}
-			copy.Volume = protocol.FromShares(k.Volume)
+	for j, k := range raw.List {
+		volume := r.List[j].Volume
+		if volume < 0 || volume%protocol.SharesPerLot != 0 {
+			return nil, errors.New("成交量股数不能无损转换为整数手")
 		}
+		copy := *k
+		copy.Volume = protocol.FromShares(volume)
 		out = append(out, &copy)
 	}
 	return out, nil

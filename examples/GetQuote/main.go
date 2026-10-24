@@ -19,6 +19,6 @@ func main() {
 	resp, err := c.GetQuote(codes...)
 	logs.PanicErr(err)
 	for _, quote := range resp {
-		logs.Debug(quote.Instrument, quote.Price, quote.Volume, quote.VolumeUnit)
+		logs.Debug(quote.Instrument, quote.Price, quote.Volume)
 	}
 }

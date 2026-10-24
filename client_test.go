@@ -79,16 +79,15 @@ func TestMarketClientKlineRouting(t *testing.T) {
 	})
 	for _, tc := range []struct {
 		code string
-		unit protocol.VolumeUnit
 		vol  int64
 	}{
-		{"sz000001", protocol.VolumeHundredShares, 100},
-		{"sh000001", protocol.VolumeShares, 10000},
-		{"hk00700", protocol.VolumeHundredShares, 456},
-		{"cffIF2609", VolumeUnknown, 456}, {"hk.HSI", VolumeUnknown, 456}, {"usAAPL", VolumeUnknown, 456},
+		{"sz000001", 10000},
+		{"sh000001", 10000},
+		{"hk00700", 45600},
+		{"cffIF2609", 456}, {"usAAPL", 456},
 	} {
 		r, err := c.GetKlineDay(tc.code, 0, 1)
-		if err != nil || r.Count != 1 || r.VolumeUnit != tc.unit || r.List[0].Volume != tc.vol {
+		if err != nil || r.Count != 1 || r.List[0].Volume != tc.vol {
 			t.Fatal(tc.code, r, err)
 		}
 		k := r.List[0]
@@ -180,7 +179,7 @@ func TestMarketClientTicks(t *testing.T) {
 		default:
 			return []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 1, 0}
 		}
-	}, func(h, _ []byte) []byte {
+	}, func(h, request []byte) []byte {
 		typ := binary.LittleEndian.Uint16(h[10:12])
 		if typ == protocol.TypeExBars {
 			return testExtendedBar(20261009)
@@ -195,6 +194,7 @@ func TestMarketClientTicks(t *testing.T) {
 			binary.LittleEndian.PutUint16(b[header:header+2], 570)
 			binary.LittleEndian.PutUint32(b[header+2:header+6], math.Float32bits(500))
 			binary.LittleEndian.PutUint32(b[header+6:header+10], math.Float32bits(499))
+			binary.LittleEndian.PutUint32(b[header+10:header+14], 123)
 			binary.LittleEndian.PutUint32(b[header+14:], 123)
 			return b
 		}
@@ -203,10 +203,18 @@ func TestMarketClientTicks(t *testing.T) {
 		binary.LittleEndian.PutUint16(b[16:18], 570)
 		binary.LittleEndian.PutUint32(b[18:22], 500000)
 		binary.LittleEndian.PutUint32(b[22:26], 100)
-		binary.LittleEndian.PutUint16(b[30:32], 256) // 港股卖出
+		market := request[0]
+		if typ == protocol.TypeExHistTrade {
+			market = request[4]
+		}
+		nature := uint16(256)
+		if market != 31 {
+			nature = 10000
+		}
+		binary.LittleEndian.PutUint16(b[30:32], nature)
 		return b
 	})
-	for _, code := range []string{"sz000001", "hk00700"} {
+	for _, code := range []string{"sz000001", "hk00700", "cffIF2609", "usAAPL"} {
 		for _, historical := range []bool{false, true} {
 			minute, err := c.GetMinute(code)
 			if historical {
@@ -222,7 +230,14 @@ func TestMarketClientTicks(t *testing.T) {
 			if err != nil || trade.Count != 1 || trade.List[0].Direction != -1 {
 				t.Fatal(trade, err)
 			}
-			if code == "hk00700" {
+			wantMinute, wantTrade := int64(123), int64(100)
+			if code == "sz000001" {
+				wantMinute, wantTrade = 200, 100
+			}
+			if minute.List[0].Volume != wantMinute || trade.List[0].Volume != wantTrade {
+				t.Fatal("tick minimum units changed", code, minute, trade)
+			}
+			if code != "sz000001" {
 				if minute.List[0].Price != 500 || minute.List[0].Extended.OpenInterest != 123 || trade.List[0].Price != nil || trade.List[0].Extended.Price != 500000 {
 					t.Fatal("extended fields/scales changed", minute, trade)
 				}
@@ -392,10 +407,10 @@ func TestMarketClientCapturedHKDay(t *testing.T) {
 		return data
 	})
 	r, err := c.GetKlineDay("hk00700", 0, 1)
-	if err != nil || r.Count != 1 || r.List[0].Volume != 204225 || r.VolumeUnit != protocol.VolumeHundredShares {
+	if err != nil || r.Count != 1 || r.List[0].Volume != 20422500 {
 		t.Fatal("captured Tencent cross-validation sample changed", r, err)
 	}
-	t.Logf("2026-10-09 HK00700: volume=%d hundred_shares; independent saved sample=20422500 shares", r.List[0].Volume)
+	t.Logf("2026-10-09 HK00700: volume=%d shares; independent saved sample=20422500 shares", r.List[0].Volume)
 }
 
 func TestMarketClientKlinePagination(t *testing.T) {
@@ -416,8 +431,8 @@ func TestMarketClientKlinePagination(t *testing.T) {
 		}
 		return data
 	})
-	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 199 })
-	if err != nil || r.Count != 801 || r.List[0].Volume != 199 || r.List[800].Volume != 999 || calls.Load() != 2 {
+	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 19900 })
+	if err != nil || r.Count != 801 || r.List[0].Volume != 19900 || r.List[800].Volume != 99900 || calls.Load() != 2 {
 		t.Fatal("pagination order/inclusive boundary changed", r, err)
 	}
 }
@@ -927,23 +942,21 @@ func TestMinuteStandardResponse(t *testing.T) {
 
 func TestKlinesVolumeValidation(t *testing.T) {
 	for _, tc := range []struct {
-		unit   protocol.VolumeUnit
-		volume int64
-		want   int64
-		valid  bool
+		volume, raw, want int64
+		valid             bool
 	}{
-		{protocol.VolumeHundredShares, 123, 123, true},
-		{protocol.VolumeShares, 12300, 123, true},
-		{protocol.VolumeShares, 12301, 0, false},
-		{VolumeUnknown, 123, 0, false},
-		{"", 123, 0, false},
+		{12300, 123, 123, true},   // 股票原始量为百股，统一量为股。
+		{12300, 12300, 123, true}, // 指数原始量和统一量均为股。
+		{0, 0, 0, true},
+		{12301, 12301, 0, false},
+		{-100, 0, 0, false},
 	} {
-		r := &KlineResp{VolumeUnit: tc.unit, List: []Kline{{Standard: &protocol.Kline{Volume: tc.volume}}}}
+		r := &KlineResp{List: []Kline{{Volume: tc.volume, Standard: &protocol.Kline{Volume: tc.raw}}}}
 		ks, err := r.Klines()
 		if (err == nil) != tc.valid {
-			t.Fatalf("unit=%s volume=%d: %v", tc.unit, tc.volume, err)
+			t.Fatalf("volume=%d: %v", tc.volume, err)
 		}
-		if tc.valid && (ks[0].Volume != tc.want || r.List[0].Standard.Volume != tc.volume) {
+		if tc.valid && (ks[0].Volume != tc.want || r.List[0].Standard.Volume != tc.raw || r.List[0].Volume != tc.volume) {
 			t.Fatal("incorrect or mutating conversion", ks)
 		}
 	}

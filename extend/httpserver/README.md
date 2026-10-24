@@ -257,7 +257,7 @@ curl "http://localhost:8080/quote?codes=hk00700,cffIF2609"
 | `/count` | `int`，指定交易所的证券数量 |
 | `/code`、`/code/all` | `tdx.CodeResp`；证券代码在 `List[].Instrument.Code` |
 | `/markets` | `[]tdx.Exchange`；发现市场不表示该市场已接入统一查询 |
-| `/quote` | `[]tdx.Quote`；价格为原币种，成交量见 `VolumeUnit` |
+| `/quote` | `[]tdx.Quote`；价格为原币种，成交量及五档量为股/张，不再包含 `VolumeUnit` |
 | `/kline/*` | `tdx.KlineResp`；价格为原币种，`Amount=null` 表示金额语义未确认 |
 | `/minute/*` | `tdx.MinuteResp` |
 | `/trade/*` | `tdx.TradeResp`；扩展价格尺度未确认时 `Price=null` |

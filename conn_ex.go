@@ -22,11 +22,15 @@ type ExConn struct {
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
 func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
-	out, _, err := klineRequest(code, category, count)
+	out, info, err := klineRequest(code, category, count)
 	if err != nil {
 		return nil, err
 	}
-	i, _, err := protocolInstrument(code, true)
+	i, info, err := protocolInstrument(code, true)
+	if err != nil {
+		return nil, err
+	}
+	scale, err := klineVolumeScale(i, out.Category, info)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +40,11 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	}
 	for j := range bars {
 		k := &bars[j]
-		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: int64(k.Trade), Extended: k})
+		volume, err := scaleVolume(int64(k.Trade), scale)
+		if err != nil {
+			return nil, err
+		}
+		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, Extended: k})
 	}
 	if len(out.List) > int(count) {
 		return nil, errors.New("K线响应数量超过请求数量")
@@ -53,6 +61,9 @@ func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 		if err != nil {
 			return nil, err
 		}
+		if _, err := volumeScale(i); err != nil {
+			return nil, err
+		}
 		instruments[j] = i
 	}
 	out := make([]Quote, len(codes))
@@ -64,7 +75,7 @@ func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 		if q.Market != i.Exchange.Uint8() || q.Code != i.Code {
 			return nil, fmt.Errorf("扩展行情响应品种与请求不一致: %s", i)
 		}
-		u := Quote{Instrument: i, PreClose: q.PreClose, Open: q.Open, High: q.High, Low: q.Low, Price: q.Price, Volume: int64(q.ZongLiang), VolumeUnit: VolumeUnknown, Bid: q.Bid, Ask: q.Ask, Extended: q}
+		u := Quote{Instrument: i, PreClose: q.PreClose, Open: q.Open, High: q.High, Low: q.Low, Price: q.Price, Volume: int64(q.ZongLiang), Bid: q.Bid, Ask: q.Ask, Extended: q}
 		for n := 0; n < 5; n++ {
 			u.BidVolume[n], u.AskVolume[n] = int64(q.BidVol[n]), int64(q.AskVol[n])
 		}
@@ -131,7 +142,10 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &MinuteResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	if _, err := volumeScale(i); err != nil {
+		return nil, err
+	}
+	out := &MinuteResp{Instrument: i, Date: date}
 	var ticks []protocol.ExMinuteTick
 	if date == "" {
 		ticks, err = c.getExtendedMinute(i.Exchange.Uint8(), i.Code)
@@ -155,7 +169,10 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	if _, err := volumeScale(i); err != nil {
+		return nil, err
+	}
+	out := &TradeResp{Instrument: i, Date: date}
 	var ticks []protocol.ExTradeTick
 	if date == "" {
 		ticks, err = c.getExtendedTrade(i.Exchange.Uint8(), i.Code, start, count)
@@ -189,7 +206,11 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 	if err != nil {
 		return nil, err
 	}
-	i, _, err := protocolInstrument(code, true)
+	i, info, err := protocolInstrument(code, true)
+	if err != nil {
+		return nil, err
+	}
+	scale, err := klineVolumeScale(i, info.Minute.Category, info)
 	if err != nil {
 		return nil, err
 	}
@@ -197,10 +218,14 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 	if err != nil {
 		return nil, err
 	}
-	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute, VolumeUnit: VolumeUnknown}
+	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute}
 	for j := range r {
 		k := &r[j]
-		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: int64(k.Trade), RangeExtended: k})
+		volume, err := scaleVolume(int64(k.Trade), scale)
+		if err != nil {
+			return nil, err
+		}
+		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, RangeExtended: k})
 	}
 	return filterKlineRange(out, fromDay, toDay), nil
 }

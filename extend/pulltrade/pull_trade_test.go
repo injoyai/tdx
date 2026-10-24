@@ -130,7 +130,7 @@ func TestPullTradePeriods(t *testing.T) {
 			if got, want := len(rows)-1, 2*((241+period-1)/period); got != want {
 				t.Fatalf("data rows=%d, want %d", got, want)
 			}
-			if rows[1][1] != "09:30" || rows[1][8] != "1" || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
+			if rows[1][1] != "09:30" || rows[1][8] != "100" || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
 				t.Fatalf("auction/session boundary changed: first=%v second=%v", rows[1], rows[2])
 			}
 			volume := 0
@@ -150,8 +150,8 @@ func TestPullTradePeriods(t *testing.T) {
 				}
 				amount += a
 			}
-			if volume != 2 {
-				t.Fatalf("volume=%d, want 2 lots", volume)
+			if volume != 200 {
+				t.Fatalf("volume=%d, want 200 shares", volume)
 			}
 			if amount != 2000 {
 				t.Fatalf("amount=%v, want 2000 yuan", amount)

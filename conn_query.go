@@ -59,25 +59,17 @@ func klineRequest(code string, category uint8, count uint16) (*KlineResp, protoc
 	if category > protocol.TypeKlineYear || count == 0 || count > 800 {
 		return nil, info, errors.New("K线周期必须为0..11，单次数量必须为1..800")
 	}
-	unit := VolumeUnknown
 	switch category {
 	case protocol.TypeKlineDay, protocol.TypeKlineDay2:
-		category, unit = info.Day.Category, info.Day.VolumeUnit
+		category = info.Day.Category
 	case protocol.TypeKlineMinute, protocol.TypeKlineMinute2:
-		category, unit = info.Minute.Category, info.Minute.VolumeUnit
-	default:
-		if info.Protocol == protocol.ProtocolStandard {
-			unit = info.Day.VolumeUnit
-		}
-	}
-	if unit == protocol.VolumeDefault || protocol.IsConvertibleBond(standardCode(i)) {
-		unit = VolumeUnknown
+		category = info.Minute.Category
 	}
 	zone := ""
 	if info.Protocol == protocol.ProtocolStandard {
 		zone = protocol.Location().String()
 	}
-	return &KlineResp{Instrument: i, Category: category, VolumeUnit: unit, TimeZone: zone}, info, nil
+	return &KlineResp{Instrument: i, Category: category, TimeZone: zone}, info, nil
 }
 
 func codePage(out *CodeResp, start uint32, count uint16) *CodeResp {

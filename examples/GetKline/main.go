@@ -34,7 +34,7 @@ func main() {
 
 	resp, err := query(c, uint8(*category), *code, uint16(*start), uint16(*count), *all, before)
 	logs.PanicErr(err)
-	logs.Infof("%s: %d 根，成交量单位 %s", resp.Instrument, resp.Count, resp.VolumeUnit)
+	logs.Infof("%s: %d 根，成交量使用最小单位（股票为股，期货为张）", resp.Instrument, resp.Count)
 	for _, k := range resp.List {
 		logs.Debug(k)
 	}

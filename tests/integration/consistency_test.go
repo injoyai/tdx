@@ -227,7 +227,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 
 func TestConsistencyIndexConsumers(t *testing.T) {
 	k := &protocol.Kline{Time: consistencyDay(19), Open: 10800, High: 10800, Low: 10800, Close: 10800, Volume: 20000, Amount: protocol.Yuan(216000)}
-	r := &tdx.KlineResp{Instrument: protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}, VolumeUnit: protocol.VolumeShares, List: []tdx.Kline{{Standard: k, Volume: k.Volume}}}
+	r := &tdx.KlineResp{Instrument: protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}, List: []tdx.Kline{{Standard: k, Volume: k.Volume}}}
 	raw, err := r.StandardResponse()
 	if err != nil {
 		t.Fatal(err)

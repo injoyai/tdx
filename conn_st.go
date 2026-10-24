@@ -38,12 +38,20 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if _, _, err := protocolInstrument(code, false); err != nil {
 		return nil, err
 	}
+	scale, err := klineVolumeScale(out.Instrument, out.Category, info)
+	if err != nil {
+		return nil, err
+	}
 	r, err := c.getStandardKline(out.Category, standardCode(out.Instrument), start, count, info.Kind)
 	if err != nil {
 		return nil, err
 	}
 	for _, k := range r.List {
 		v := standardKline(k)
+		v.Volume, err = scaleVolume(k.Volume, scale)
+		if err != nil {
+			return nil, err
+		}
 		v.Time = protocol.KlineTime(k.Time, out.Category)
 		out.List = append(out.List, v)
 	}
@@ -82,10 +90,32 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 			return nil, fmt.Errorf("标准行情响应品种与请求不一致: %s", i)
 		}
 		k := q.Kline
-		u := Quote{Instrument: i, PreClose: k.Last.Float64(), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Price: k.Close.Float64(), Volume: k.Volume, VolumeUnit: VolumeUnknown, Standard: q}
+		u := Quote{Instrument: i, PreClose: k.Last.Float64(), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Price: k.Close.Float64(), Volume: k.Volume, Standard: q}
 		for n := 0; n < 5; n++ {
 			u.Bid[n], u.BidVolume[n] = q.BuyLevel[n].Price.Float64(), int64(q.BuyLevel[n].Number)
 			u.Ask[n], u.AskVolume[n] = q.SellLevel[n].Price.Float64(), int64(q.SellLevel[n].Number)
+		}
+		scale, scaleErr := volumeScale(i)
+		if scaleErr != nil {
+			// 零量不需要倍率；保留无成交品种的价格和精度元数据查询。
+			if u.Volume != 0 || u.BidVolume != [5]int64{} || u.AskVolume != [5]int64{} {
+				return nil, scaleErr
+			}
+			scale = 1
+		}
+		u.Volume, err = scaleVolume(u.Volume, scale)
+		if err != nil {
+			return nil, err
+		}
+		for n := 0; n < 5; n++ {
+			u.BidVolume[n], err = scaleVolume(u.BidVolume[n], scale)
+			if err != nil {
+				return nil, err
+			}
+			u.AskVolume[n], err = scaleVolume(u.AskVolume[n], scale)
+			if err != nil {
+				return nil, err
+			}
 		}
 		out[j] = u
 	}
@@ -185,7 +215,11 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &MinuteResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown, TimeZone: protocol.Location().String()}
+	scale, err := volumeScale(i)
+	if err != nil {
+		return nil, err
+	}
+	out := &MinuteResp{Instrument: i, Date: date, TimeZone: protocol.Location().String()}
 	var r *protocol.MinuteResp
 	if date == "" {
 		r, err = c.getStandardMinute(standardCode(i))
@@ -197,7 +231,11 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	}
 	for j := range r.List {
 		k := &r.List[j]
-		out.List = append(out.List, Minute{Time: k.Time, Price: k.Price.Float64(), Volume: int64(k.Number), Standard: k})
+		volume, err := scaleVolume(int64(k.Number), scale)
+		if err != nil {
+			return nil, err
+		}
+		out.List = append(out.List, Minute{Time: k.Time, Price: k.Price.Float64(), Volume: volume, Standard: k})
 	}
 
 	out.Count = len(out.List)
@@ -209,7 +247,11 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown, TimeZone: protocol.Location().String()}
+	scale, err := volumeScale(i)
+	if err != nil {
+		return nil, err
+	}
+	out := &TradeResp{Instrument: i, Date: date, TimeZone: protocol.Location().String()}
 	var r *protocol.TradeResp
 	if date == "" {
 		r, err = c.getStandardTrade(standardCode(i), start, count)
@@ -220,6 +262,10 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 		return nil, err
 	}
 	for _, k := range r.List {
+		volume, err := scaleVolume(int64(k.Volume), scale)
+		if err != nil {
+			return nil, err
+		}
 		price := k.Price.Float64()
 		direction := 0
 		if k.IsBuy() {
@@ -227,7 +273,7 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 		} else if k.IsSell() {
 			direction = -1
 		}
-		out.List = append(out.List, Trade{Date: date, Time: k.Time.Format("15:04:05"), Price: &price, Volume: int64(k.Volume), Direction: direction, Standard: k})
+		out.List = append(out.List, Trade{Date: date, Time: k.Time.Format("15:04:05"), Price: &price, Volume: volume, Direction: direction, Standard: k})
 	}
 
 	out.Count = len(out.List)

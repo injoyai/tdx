@@ -13,7 +13,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("%s: %d 根，成交量单位 %s\n", r.Instrument, r.Count, r.VolumeUnit)
+		fmt.Printf("%s: %d 根，成交量使用最小单位（股票为股，期货为张）\n", r.Instrument, r.Count)
 		for _, k := range r.List {
 			fmt.Printf("%s 开 %.3f 收 %.3f 量 %d\n", k.Time, k.Open, k.Close, k.Volume)
 		}

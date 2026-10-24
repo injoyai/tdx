@@ -32,26 +32,17 @@ const (
 	ProtocolExtended MarketProtocol = "extended"
 )
 
-// VolumeUnit 是 K 线 API 解码后的单位，不适用于报价、分笔或本地文件。
-type VolumeUnit string
-
-const (
-	VolumeDefault       VolumeUnit = "default"        // 未确认，暂按百股换算
-	VolumeShares        VolumeUnit = "shares"         // 股
-	VolumeHundredShares VolumeUnit = "hundred_shares" // 百股（协议中的手，不是交易所买卖单位）
-)
-
-// KlineInfo 记录请求类型及解码后的成交量单位。
+// KlineInfo 记录请求类型及原始解码量转为最小单位的倍率。
 type KlineInfo struct {
-	Category   uint8
-	VolumeUnit VolumeUnit
+	Category    uint8
+	VolumeScale int64 // 1=已经是股/张，100=百股；0=尚未确认
 }
 
-// ToStorageVolume 换算为 pull 存储数值；默认单位沿用旧的 ×100 行为。
-// shortcut: 未确认单位暂按百股，取得该市场及周期的交叉验证样本后调整。
+// ToStorageVolume 换算为 pull 存储数值；未确认项保留旧的 ×100 行为。
+// shortcut: 港股指数单位未确认，取得交叉验证样本后移除默认倍率。
 func (k KlineInfo) ToStorageVolume(volume int64) int64 {
-	if k.VolumeUnit == VolumeShares {
-		return volume
+	if k.VolumeScale > 0 {
+		return volume * k.VolumeScale
 	}
 	return ToShares(volume)
 }
@@ -71,34 +62,36 @@ func (m Market) Info() (MarketInfo, bool) {
 		return MarketInfo{
 			Protocol: ProtocolStandard,
 			Kind:     KindStock,
-			Day:      KlineInfo{TypeKlineDay, VolumeHundredShares},
-			Minute:   KlineInfo{TypeKlineMinute, VolumeHundredShares},
+			Day:      KlineInfo{TypeKlineDay, SharesPerLot},
+			Minute:   KlineInfo{TypeKlineMinute, SharesPerLot},
 		}, true
 	case MarketIndex, MarketBlock:
 		// GetIndex 的解码器在日线、分钟线中均已将成交量乘 100。
 		return MarketInfo{
 			Protocol: ProtocolStandard,
 			Kind:     KindIndex,
-			Day:      KlineInfo{TypeKlineDay, VolumeShares},
-			Minute:   KlineInfo{TypeKlineMinute, VolumeShares},
+			Day:      KlineInfo{TypeKlineDay, 1},
+			Minute:   KlineInfo{TypeKlineMinute, 1},
 		}, true
 	case MarketHK:
 		return MarketInfo{
 			Protocol: ProtocolExtended,
-			Day:      KlineInfo{TypeKlineDay2, VolumeHundredShares},
-			Minute:   KlineInfo{TypeKlineMinute2, VolumeDefault},
+			Day:      KlineInfo{TypeKlineDay2, SharesPerLot},
+			Minute:   KlineInfo{TypeKlineMinute2, SharesPerLot},
 		}, true
 	case MarketFuture:
 		return MarketInfo{
 			Protocol: ProtocolExtended,
-			Day:      KlineInfo{TypeKlineDay2, VolumeDefault},
-			Minute:   KlineInfo{TypeKlineMinute2, VolumeDefault},
+			Day:      KlineInfo{TypeKlineDay2, 1},
+			Minute:   KlineInfo{TypeKlineMinute2, 1},
 		}, true
-	case MarketHKIndex, MarketUS:
+	case MarketUS:
+		return MarketInfo{Protocol: ProtocolExtended, Day: KlineInfo{TypeKlineDay, 1}, Minute: KlineInfo{TypeKlineMinute2, 1}}, true
+	case MarketHKIndex:
 		return MarketInfo{
 			Protocol: ProtocolExtended,
-			Day:      KlineInfo{TypeKlineDay, VolumeDefault},
-			Minute:   KlineInfo{TypeKlineMinute2, VolumeDefault},
+			Day:      KlineInfo{TypeKlineDay, 0},
+			Minute:   KlineInfo{TypeKlineMinute2, 0},
 		}, true
 	default:
 		return MarketInfo{}, false

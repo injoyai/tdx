@@ -194,18 +194,18 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 	for _, code := range []string{"sz000001", "hk00700"} {
 		for _, path := range []string{"/minute?", "/minute/history?date=20261009&"} {
 			r := httpData[tdx.MinuteResp](t, mux, path+"code="+code)
-			if r.Count != 1 || len(r.List) != 1 || r.List[0].Price != 10 || r.VolumeUnit == "" {
+			if r.Count != 1 || len(r.List) != 1 || r.List[0].Price != 10 {
 				t.Fatal(path, r)
 			}
 		}
 		for _, path := range []string{"/trade?", "/trade/all?", "/trade/history?date=20261009&", "/trade/history/day?date=20261009&"} {
 			r := httpData[tdx.TradeResp](t, mux, path+"code="+code+"&start=0&count=1")
-			if r.Count != 1 || len(r.List) != 1 || r.VolumeUnit == "" {
+			if r.Count != 1 || len(r.List) != 1 {
 				t.Fatal(path, r)
 			}
 			row := r.List[0]
 			if code == "sz000001" {
-				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10000 {
+				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10000 || row.Volume != 100 || row.Standard.Volume != 1 {
 					t.Fatal(row)
 				}
 			} else if row.Price != nil || row.Extended.Price != 10000 {
@@ -218,7 +218,7 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 		t.Fatal(empty)
 	}
 	r := httpData[tdx.KlineResp](t, mux, "/kline/range?code=hk00700&date=20261009&date2=20261009")
-	if r.Count != 1 || r.List[0].Close != 10 || r.List[0].RangeExtended.Position != 123 || r.List[0].RangeExtended.Trade != 456 || r.List[0].RangeExtended.SettlementPrice != 9 {
+	if r.Count != 1 || r.List[0].Close != 10 || r.List[0].Volume != 45600 || r.List[0].RangeExtended.Position != 123 || r.List[0].RangeExtended.Trade != 456 || r.List[0].RangeExtended.SettlementPrice != 9 {
 		t.Fatal(r)
 	}
 }

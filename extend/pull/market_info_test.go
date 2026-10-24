@@ -11,21 +11,21 @@ import (
 
 func TestMarketInfoRouting(t *testing.T) {
 	for _, tc := range []struct {
-		code             string
-		market           protocol.Market
-		protocol         protocol.MarketProtocol
-		kind             string
-		day, min         uint8
-		dayUnit, minUnit protocol.VolumeUnit
+		code               string
+		market             protocol.Market
+		protocol           protocol.MarketProtocol
+		kind               string
+		day, min           uint8
+		dayScale, minScale int64
 	}{
-		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.VolumeHundredShares, protocol.VolumeHundredShares},
-		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.VolumeHundredShares, protocol.VolumeHundredShares},
-		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.VolumeShares, protocol.VolumeShares},
-		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.VolumeShares, protocol.VolumeShares},
-		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.VolumeHundredShares, protocol.VolumeDefault},
-		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, protocol.VolumeDefault, protocol.VolumeDefault},
-		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 9, 8, protocol.VolumeDefault, protocol.VolumeDefault},
-		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 9, 8, protocol.VolumeDefault, protocol.VolumeDefault},
+		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
+		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
+		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 9, 8, 0, 0},
+		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 9, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			code, err := ParseCode(tc.code)
@@ -34,7 +34,7 @@ func TestMarketInfoRouting(t *testing.T) {
 			}
 			info, ok := code.Market.Info()
 			if !ok || info.Protocol != tc.protocol || info.Kind != tc.kind ||
-				info.Day != (protocol.KlineInfo{Category: tc.day, VolumeUnit: tc.dayUnit}) || info.Minute != (protocol.KlineInfo{Category: tc.min, VolumeUnit: tc.minUnit}) {
+				info.Day != (protocol.KlineInfo{Category: tc.day, VolumeScale: tc.dayScale}) || info.Minute != (protocol.KlineInfo{Category: tc.min, VolumeScale: tc.minScale}) {
 				t.Fatal("unexpected market configuration", info, ok)
 			}
 		})
@@ -48,9 +48,17 @@ func TestMarketInfoRouting(t *testing.T) {
 	if unchanged.Day.Category != 4 {
 		t.Fatal("editing a copy changed the built-in configuration")
 	}
-	for _, unit := range []protocol.VolumeUnit{protocol.VolumeDefault, protocol.VolumeHundredShares, ""} {
-		if got := (protocol.KlineInfo{VolumeUnit: unit}).ToStorageVolume(123); got != 12300 {
-			t.Fatal("default conversion", unit, got)
+	for _, scale := range []int64{0, 100} {
+		if got := (protocol.KlineInfo{VolumeScale: scale}).ToStorageVolume(123); got != 12300 {
+			t.Fatal("default conversion", scale, got)
+		}
+	}
+	for _, market := range []protocol.Market{protocol.MarketFuture, protocol.MarketUS} {
+		info, _ := market.Info()
+		for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
+			if got := spec.ToStorageVolume(123); got != 123 {
+				t.Fatal("minimum units multiplied twice", market, got)
+			}
 		}
 	}
 }

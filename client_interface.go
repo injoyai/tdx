@@ -17,7 +17,7 @@ type DialClientFunc func() (Client, error)
 //
 // code 推荐使用带市场前缀的证券代码，如 sh600000、hk00700、usAAPL、cffIF2609；
 // 显式传入 exchange 的方法使用该市场的代码主体。date 使用有效 YYYYMMDD。
-// 统一结果的价格按品种原币种/报价单位表示，成交量以 VolumeUnit 为准；
+// 统一结果的价格按品种原币种/报价单位表示，成交量和五档买卖量使用最小单位：股票为股，期货为张；
 // Standard、Extended 和 RangeExtended 保留原始协议数据，未知尺度不推测换算。
 // 标准专用方法仍保留原 protocol 返回类型及单位，不支持扩展品种。
 type Client interface {

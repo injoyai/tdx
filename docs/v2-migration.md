@@ -2,6 +2,14 @@
 
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
+## 成交量统一为最小单位
+
+`Quote`、`KlineResp`、`MinuteResp`、`TradeResp` 移除 `VolumeUnit`，`VolumeUnknown` 和 `protocol.VolumeUnit` 枚举也移除。统一成交量及五档买卖量使用股票股数、期货合约张数；HTTP、分页结果和停止回调使用相同口径。调用方删除原先依据单位再乘 100 的代码，避免重复转换。原始 `Standard/Extended/RangeExtended` 与 `StandardResponse()` 保留各自的协议单位；指标或本地文件编码使用 `KlineResp.Klines()`，由它将统一股数转为整数手。
+
+`protocol.KlineInfo.VolumeUnit` 改为原始量的换算倍率 `VolumeScale`（1=已经是股/张，100=百股，0=尚未确认）。期货与美股 pull 存储从旧默认 ×100 改为直接保留张数/股数；港股分钟 K 线确认采用 ×100。已有数据库不自动修改，旧期货/美股记录可能与新记录相差 100 倍，应保留旧库后重新拉取，或核实来源再单独迁移。
+
+可转债、港股指数及标准指数/板块分时、分笔等接口的单位尚未确认，统一接口改为报错；成交量及五档量全部为零的标准报价仍可查询价格。港股 K 线的源数据只到百股精度，转换不能恢复零股。底层 `ToStorageVolume` 对零倍率仍保留旧默认 ×100，不能据此认定未知品种的单位。完整边界见 [数据契约](unified-client.md#数据契约)。以下历史迁移条目中的量单位说明以本节为准。
+
 ## Client 接口与单协议连接
 
 `tdx.Client` 是统一业务接口，`NewClient()` 返回按市场路由的 `*MarketClient`。标准 `Dial/DialDefault/DialWith/DialHosts*` 直接返回 `*StConn`；`DialEx/DialExDefault/DialExHosts` 直接返回 `*ExConn`。两种连接均实现 `Client`，单协议连接不会建立另一类连接。
@@ -105,9 +113,9 @@ vwap := ks.VWAP()
 _ = vwap
 ```
 
-`Klines()` 返回记录副本，标准股票/ETF 保持整数手，标准指数从股换为手，原始记录及 HTTP 响应不变。未知单位、缺少标准来源、旧数量上限或不能无损换算的股数会报错，不能把未知转债或扩展单位猜成手数。
+`Klines()` 返回记录副本，将统一 `Kline.Volume` 的股数转为整数手，原始记录及 HTTP 响应不变。缺少标准来源、旧数量上限或不能无损换算的股数会报错，不能把未知转债或扩展单位猜成手数。
 
-`GetKlineRange(code,startDate,endDate)` 固定查询一分钟线，日期使用 YYYYMMDD，包含两端日期。扩展保留原区间协议的固定请求周期 7（与普通扩展一分钟查询的周期映射不同），持仓和结算价等字段在 `RangeExtended`，金额及量单位未确认时保持未知；标准通过分页筛选日期区间，超出可读取分页范围时报错。未接入的协议市场仍须使用 `SendFrame`。`GetKlineMinute241Until` 在两种 Client 上使用同一签名及统一返回类型，仅适用于标准股票/ETF；指数或扩展品种明确报错，普通分钟查询使用 `GetKlineMinuteUntil`。
+`GetKlineRange(code,startDate,endDate)` 固定查询一分钟线，日期使用 YYYYMMDD，包含两端日期。扩展保留原区间协议的固定请求周期 7（与普通扩展一分钟查询的周期映射不同），持仓和结算价等字段在 `RangeExtended`，金额未确认时保持未知，成交量转换为股/张，无法确认单位时报错；标准通过分页筛选日期区间，超出可读取分页范围时报错。未接入的协议市场仍须使用 `SendFrame`。`GetKlineMinute241Until` 在两种 Client 上使用同一签名及统一返回类型，仅适用于标准股票/ETF；指数或扩展品种明确报错，普通分钟查询使用 `GetKlineMinuteUntil`。
 
 代码查询在 `Client` 与 `MarketClient` 上使用相同签名：`GetCount(exchange) (int, error)`、`GetCode(exchange, start uint32, count uint16) (*CodeResp, error)`、`GetCodeAll(exchange) (*CodeResp, error)`。原标准 `GetCode(exchange, start)` 需增加 `count`（旧分页大小为 1000）；`code.Code` 改为 `code.Instrument.Code`，小数位等特有元数据从 `code.Standard` 读取。分页 `count` 为 1..1000；扩展协议需扫描全局列表再按市场过滤，偏移按过滤后的列表计算。北交所数量和分页使用与完整列表相同的报表来源。
 
@@ -328,7 +336,7 @@ import (
 
 日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。将标准价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/PullV2/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
-内置市场的 K 线参数和成交量换算现集中于 `Market.Info()`；由 `ParseCode` 得到市场后可直接查询。未知单位设为 `VolumeDefault`，暂按旧倍率 ×100，不能据此认定这些扩展市场的量单位为股或合约。配置只覆盖日线和 1 分钟线。
+内置市场的 K 线参数和成交量换算现集中于 `Market.Info()`；由 `ParseCode` 得到市场后可直接查询。`VolumeScale` 为原始量的换算倍率：股票/ETF、港股主板为 100，标准指数/板块、美股及期货为 1。港股指数为 0，统一接口会拒绝未知单位；底层存储换算对零倍率暂保留旧的 ×100，不能据此认定单位。配置覆盖日线和 1 分钟线。
 
 港股主板日线由 category=9 改为 4，修正成交量请求口径；标准行情指数及板块分钟线直接使用解码后的股数，取消拉取层重复 ×100。已有数据库不会自动修正历史记录；旧港股日线首条的异常量不能靠整体乘倍数恢复，重新获取时请保留旧库，并考虑服务器历史保留范围。
 
