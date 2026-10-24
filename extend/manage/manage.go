@@ -208,10 +208,10 @@ type Manage struct {
 	dialWorkday workday.DialFunc
 	dialGbbq    gbbq.DialFunc
 
-	tdx.ClientPool `json:"IPool"`
-	Codes          codes.Interface
-	Workday        *workday.Workday
-	Gbbq           gbbq.Interface
+	tdx.ClientPool
+	Codes   codes.Interface
+	Workday *workday.Workday
+	Gbbq    gbbq.Interface
 
 	cron      *cron.Cron
 	mu        sync.Mutex

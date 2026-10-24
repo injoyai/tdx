@@ -8,7 +8,7 @@ import (
 )
 
 // MinuteCoverage 记录已处理的请求范围；不保证服务器提供的数据没有缺笔。
-// TradeFallback 区分旧的原生扫描标记，Through 是已处理范围的右开端点。
+// TradeFallback 区分原生扫描与分笔补充，Through 是已处理范围的右开端点。
 type MinuteCoverage struct {
 	ID            int `xorm:"pk"`
 	From          int64
@@ -16,10 +16,10 @@ type MinuteCoverage struct {
 	TradeFallback bool
 }
 
-// TableName 保持已有历史库的表名。
+// TableName 指定分钟覆盖记录表。
 func (MinuteCoverage) TableName() string { return "minuteCoverage" }
 
-// QueryMinuteCoverage 查询分钟覆盖记录；旧库会补齐字段，缺少记录时返回 nil。
+// QueryMinuteCoverage 查询分钟覆盖记录；缺少记录时返回 nil。
 func (s *Service) QueryMinuteCoverage(code Code, year int) (*MinuteCoverage, error) {
 	if !s.MinuteExists(code, year) {
 		return nil, nil

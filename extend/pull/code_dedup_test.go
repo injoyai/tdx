@@ -1,6 +1,9 @@
 package pull
 
-import "testing"
+import (
+	"github.com/injoyai/tdx/v2/protocol"
+	"testing"
+)
 
 type discoveryTestUnit struct {
 	mockUnit
@@ -48,10 +51,10 @@ func TestDiscoveredCodesDeduplicateByMarketAndCode(t *testing.T) {
 	}
 	first.Name, alias.Name = "first", "other name"
 	u := &discoveryTestUnit{mockUnit: mockUnit{name: "discovery"}, list: []Code{
-		first, alias, {Market: MarketUS, Code: first.Code},
+		first, alias, {Market: protocol.MarketUS, Code: first.Code},
 	}}
 	codes, err := s.codes(u)
-	if err != nil || len(codes) != 2 || codes[0] != first || codes[1].Market != MarketUS {
+	if err != nil || len(codes) != 2 || codes[0] != first || codes[1].Market != protocol.MarketUS {
 		t.Fatal("重复代码未去重、名称丢失或不同市场被合并", codes, err)
 	}
 	if u.list[1] != alias {
@@ -63,7 +66,7 @@ func TestUSCodeCaseDedup(t *testing.T) {
 	var codes []Code
 	for _, input := range []string{"aapl", "AAPL", "usaapl", "us.AAPL", "us/stock.aapl"} {
 		code, err := ParseCode(input)
-		if err != nil || code.Code != "AAPL" || code.Market != MarketUS {
+		if err != nil || code.Code != "AAPL" || code.Market != protocol.MarketUS {
 			t.Fatal(input, code, err)
 		}
 		codes = append(codes, code)

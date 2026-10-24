@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"github.com/injoyai/tdx/v2/protocol"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestQueryMinuteUsesStorageTimezone(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := testService(t)
 			s.start = tt.at
-			code := Code{Market: MarketFuture, Code: "shf/cu2601"}
+			code := Code{Market: protocol.MarketFuture, Code: "shf/cu2601"}
 			if err := s.SaveMinute(code, tt.at.Year(), 0, []*KlineMinute{{Unix: tt.at.Unix(), Close: 10}}); err != nil {
 				t.Fatal(err)
 			}

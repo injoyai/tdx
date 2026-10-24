@@ -1,6 +1,8 @@
-package pull
+package protocol
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestToShares(t *testing.T) {
 	cases := []struct {

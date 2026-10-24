@@ -4,9 +4,9 @@
 
 ## 独立代码与股本服务
 
-`ListenCodesHTTP(port, ...codes.Option)` 启动独立代码表服务，提供 `/codes`（别名 `/all`）、`/stocks`、`/etfs`、`/indexes`。`ListenCodesAndGbbqHTTP(port, []codes.Option, []gbbq.Option)` 额外提供 `/gbbqs`。这两个入口返回原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不向 `New` 创建的行情服务自动注册路由。
+`ListenCodesHTTP(port, ...codes.Option)` 启动独立代码表服务，提供 `/codes`、`/stocks`、`/etfs`、`/indexes`。`ListenCodesAndGbbqHTTP(port, []codes.Option, []gbbq.Option)` 额外提供 `/gbbqs`。这两个入口返回原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不向 `New` 创建的行情服务自动注册路由。
 
-客户端使用 `extend/metadatahttp` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端在初始化、监听失败或退出时关闭自建缓存，原监听地址、查询参数兼容规则及 JSON 结构保持不变。示例见 [CodesHTTP](../../examples/services/CodesHTTP/main.go)。旧 `extend` 包同名入口保留兼容转发。
+客户端使用 `extend/metadatahttp` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端在初始化、监听失败或退出时关闭自建缓存，路由按路径匹配，允许携带查询参数。示例见 [CodesHTTP](../../examples/services/CodesHTTP/main.go)。
 
 ## 快速开始
 
@@ -31,7 +31,7 @@ func main() {
 	s, err = httpserver.New(
 		httpserver.WithAddr(":8080"),
 		httpserver.WithPoolSize(2),
-		httpserver.WithExHosts(tdx.ExHosts...), // 可选,启用扩展行情 /ex/* 路由
+		httpserver.WithExHosts(tdx.ExHosts...), // 可选,启用统一接口的扩展市场查询
 		httpserver.WithClientOptions(tdx.WithRedial()),
 	)
 	if err != nil {
@@ -60,7 +60,7 @@ func main() {
 
 > `Default()` 会自动添加 `tdx.WithRedial()` 断线重连选项。
 
-使用完成后调用 `s.Close()`，同时关闭 HTTP 服务及其标准、扩展行情连接池。初始化失败会释放已创建的连接池。启动时只创建配置的连接池，不再初始化全局 `tdx.DefaultCodes`、元数据数据库或额外定时任务；报价所需的精度元数据由标准连接按需获取。
+使用完成后调用 `s.Close()`，同时关闭 HTTP 服务及其标准、扩展行情连接池。初始化失败会释放已创建的连接池。启动时只创建配置的连接池，不再初始化全局 `全局代码缓存`、元数据数据库或额外定时任务；报价所需的精度元数据由标准连接按需获取。
 
 客户端断开或取消请求后，会退出连接池等待，不会继续占用排队名额。已经开始的上游查询仍受通达信客户端请求超时约束。
 
@@ -100,8 +100,9 @@ func main() {
 
 | 路径 | 参数 | 说明 |
 | --- | --- | --- |
+| `GET /markets` | 无 | 合并标准与已启用扩展池的市场发现结果 |
 | `GET /count` | `exchange` | 获取指定交易所的证券数量 |
-| `GET /code` | `exchange`, `start` | 获取指定交易所的证券代码(分页) |
+| `GET /code` | `exchange`, `start`, `count` | 获取指定交易所的证券代码(分页) |
 | `GET /code/all` | `exchange` | 获取指定交易所的全部证券代码 |
 | `GET /code/stocks` | 无 | 获取全部股票代码 |
 | `GET /code/etfs` | 无 | 获取全部 ETF 代码 |
@@ -129,10 +130,11 @@ func main() {
 | `GET /trade/history` | `date`, `code`, `start`, `count` | 获取历史分笔成交明细(分页) |
 | `GET /trade/history/day` | `date`, `code` | 获取指定日期全部分笔成交明细 |
 
-### K线(股票)
+### K线（股票、指数与扩展品种）
 
 | 路径 | 参数 | 说明 |
 | --- | --- | --- |
+| `GET /kline/range` | `code`, `date`, `date2` | 获取包含两端日期的固定一分钟区间 |
 | `GET /kline` | `type`, `code`, `start`, `count` | 获取指定类型的 K 线(分页) |
 | `GET /kline/all` | `type`, `code` | 获取指定类型的全部 K 线 |
 | `GET /kline/minute` | `code`, `start`, `count` | 获取 1 分钟 K 线(分页) |
@@ -156,23 +158,7 @@ func main() {
 | `GET /kline/year` | `code`, `start`, `count` | 获取年 K 线(分页) |
 | `GET /kline/year/all` | `code` | 获取全部年 K 线 |
 
-### 指数K线
-
-| 路径 | 参数 | 说明 |
-| --- | --- | --- |
-| `GET /index` | `type`, `code`, `start`, `count` | 获取指定类型的指数 K 线(分页) |
-| `GET /index/all` | `type`, `code` | 获取指定类型的全部指数 K 线 |
-| `GET /index/minute` | `code`, `start`, `count` | 获取指数 1 分钟 K 线(分页) |
-| `GET /index/5minute` | `code`, `start`, `count` | 获取指数 5 分钟 K 线(分页) |
-| `GET /index/15minute` | `code`, `start`, `count` | 获取指数 15 分钟 K 线(分页) |
-| `GET /index/30minute` | `code`, `start`, `count` | 获取指数 30 分钟 K 线(分页) |
-| `GET /index/60minute` | `code`, `start`, `count` | 获取指数 60 分钟 K 线(分页) |
-| `GET /index/day` | `code`, `start`, `count` | 获取指数日 K 线(分页) |
-| `GET /index/day/all` | `code` | 获取全部指数日 K 线 |
-| `GET /index/week/all` | `code` | 获取全部指数周 K 线 |
-| `GET /index/month/all` | `code` | 获取全部指数月 K 线 |
-| `GET /index/quarter/all` | `code` | 获取全部指数季 K 线 |
-| `GET /index/year/all` | `code` | 获取全部指数年 K 线 |
+指数与股票共用 `/kline/*`，按证券代码自动选择解码。
 
 ### 板块/报表
 
@@ -191,29 +177,21 @@ func main() {
 | `GET /tdx/hy` | 无 | 获取通达信行业信息 |
 | `GET /spblock` | 无 | 获取特殊板块信息 |
 
-### 扩展行情
+### 扩展协议专用接口
 
 > 需要通过 `WithExHosts()` 选项启用,否则返回 404。
 
 | 路径 | 参数 | 说明 |
 | --- | --- | --- |
-| `GET /ex/markets` | 无 | 获取扩展行情市场列表 |
-| `GET /ex/count` | 无 | 获取扩展行情证券数量 |
-| `GET /ex/instruments` | `start`, `count` | 获取扩展行情证券列表(分页) |
-| `GET /ex/quote` | `market`, `code` | 获取扩展行情实时报价 |
+| `GET /ex/count` | 无 | 获取扩展协议全市场证券总数 |
+| `GET /ex/instruments` | `start`, `count` | 获取扩展协议全市场证券列表（全局分页） |
 | `GET /ex/quote_list` | `market`, `category`, `start`, `count` | 获取扩展行情报价列表(分页) |
-| `GET /ex/bars` | `category`, `market`, `code`, `start`, `count` | 获取扩展行情 K 线(分页) |
-| `GET /ex/minute` | `market`, `code` | 获取扩展行情分时数据 |
-| `GET /ex/minute/hist` | `market`, `code`, `date` | 获取扩展行情历史分时数据 |
-| `GET /ex/trade` | `market`, `code`, `start`, `count` | 获取扩展行情分笔成交(分页) |
-| `GET /ex/trade/hist` | `market`, `code`, `date`, `start`, `count` | 获取扩展行情历史分笔成交(分页) |
-| `GET /ex/bars/range` | `market`, `code`, `date`, `date2` | 获取扩展行情指定日期区间 K 线 |
 
 ## 参数说明
 
 | 参数 | 说明 | 示例 |
 | --- | --- | --- |
-| `exchange` | 交易所代码,可选 `sh`(上海)、`sz`(深圳)、`bj`(北京) | `sh` |
+| `exchange` | 交易所代码,基础行情支持 `sh`、`sz`、`bj`、`hk`、`hi`、`us`、期货交易所；财务/F10 仍限沪深北 | `sh` |
 | `code` | 证券代码,可带交易所前缀 | `600519` 或 `sh600519` |
 | `codes` | 多个证券代码,逗号分隔 | `sz000001,sh600008` |
 | `type` | K 线类型(数字),见下表 | `9` |
@@ -235,7 +213,7 @@ func main() {
 | `1` | 15 分钟 |
 | `2` | 30 分钟 |
 | `3` | 60 分钟 |
-| `4` | 日K(变体,数值需除以 100) |
+| `4` | 日K别名；统一结果无需再次缩放价格 |
 | `5` | 周 |
 | `6` | 月 |
 | `7` | 1 分钟 |
@@ -266,14 +244,28 @@ curl "http://localhost:8080/kline/day?code=600519&start=0&count=100"
 
 ```bash
 # 获取扩展行情市场列表
-curl "http://localhost:8080/ex/markets"
+curl "http://localhost:8080/markets"
 
 # 获取扩展行情报价
-curl "http://localhost:8080/ex/quote?market=47&code=600519"
+curl "http://localhost:8080/quote?codes=hk00700,cffIF2609"
 ```
 
-Go Client 业务接口的代码查询已统一为 `GetCount/GetCode/GetCodeAll/GetMarkets`。HTTP 仍保留原路由和响应结构；`/ex/count` 返回扩展全局总数，`/ex/instruments` 使用全局分页偏移，与新的按市场 Go 查询语义不同。
+基础行情 HTTP 的 `data` 直接使用 Go Client 的统一模型，不转换回旧协议响应：
 
-Go 的独立指数 K线入口和 `ExBarsRange` 已移除；历史 `/index/*`、`/ex/bars/range` 路由仍保留原字段格式，内部改用统一 K线函数。`/ex/bars/range` 仍查询固定一分钟区间，统一路由仅支持已接入市场。
+| 查询 | data 类型与单位 |
+|---|---|
+| `/count` | `int`，指定交易所的证券数量 |
+| `/code`、`/code/all` | `tdx.CodeResp`；证券代码在 `List[].Instrument.Code` |
+| `/markets` | `[]tdx.Exchange`；发现市场不表示该市场已接入统一查询 |
+| `/quote` | `[]tdx.Quote`；价格为原币种，成交量见 `VolumeUnit` |
+| `/kline/*` | `tdx.KlineResp`；价格为原币种，`Amount=null` 表示金额语义未确认 |
+| `/minute/*` | `tdx.MinuteResp` |
+| `/trade/*` | `tdx.TradeResp`；扩展价格尺度未确认时 `Price=null` |
 
-标准 K 线、分时及分笔的响应统一经 `StandardResponse()` 转换，`Count` 等于实际 `List` 长度。后端缺少标准原始记录或结果超过 uint16 上限时返回业务错误（HTTP 200，`code=1`）。沪深北 `exchange` 参数共用协议解析器，支持 `Sh` 等混合大小写。
+单代码查询按证券前缀选择标准或扩展连接池；混合报价保持输入顺序与重复项，任一查询失败返回错误，不返回部分结果。取消请求会退出连接池等待。扩展池未配置时拒绝扩展品种查询。
+
+`/code` 的 `count` 必填且为 1..1000，`start` 为 uint32，表示指定交易所内的偏移。`/count`、`/code` 与原始 `/ex/count`、`/ex/instruments` 的全市场语义不同，后两者是独立的协议发现能力。
+
+`Standard`、`Extended`、`RangeExtended` 保留原始协议数据及其单位；调用方应使用统一字段，只有需要协议细节时才读取原始字段。`code/msg/data` 包装保持一致；原始记录不是成功返回的前提。
+
+已移除 `/index/*`、`/ex/markets`、`/ex/quote`、`/ex/bars`、`/ex/minute*`、`/ex/trade*`、`/ex/bars/range`，不提供重定向。指数改用 `/kline/*`，扩展品种改用带前缀代码的统一接口。

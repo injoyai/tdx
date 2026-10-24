@@ -168,67 +168,58 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 	return p
 }
 
-func TestUnifiedQueriesPreserveHTTPPayloads(t *testing.T) {
+func httpData[T any](t *testing.T, mux *http.ServeMux, path string) T {
+	t.Helper()
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+	var result struct {
+		Code int
+		Msg  string
+		Data T
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || w.Code != 200 {
+		t.Fatalf("%s: %d %s (%v)", path, w.Code, w.Body, err)
+	}
+	return result.Data
+}
+
+func TestUnifiedHTTPQueries(t *testing.T) {
 	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
-	for _, tc := range []struct {
-		url, field string
-		value      float64
-		list       bool
-	}{
-		{"/quote?codes=sz000001", "Close", 10000, true},
-		{"/minute?code=sz000001", "Price", 10000, false},
-		{"/minute/history?date=20261009&code=sz000001", "Price", 10000, false},
-		{"/trade?code=sz000001&start=0&count=1", "Price", 10000, false},
-		{"/trade/history?date=20261009&code=sz000001&start=0&count=1", "Price", 10000, false},
-		{"/kline?type=9&code=sz000001&start=0&count=1", "Close", 10000, false},
-		{"/ex/quote?market=31&code=00700", "price", 10, false},
-		{"/ex/minute?market=31&code=00700", "price", 10, true},
-		{"/ex/minute/hist?market=31&code=00700&date=20261009", "price", 10, true},
-		{"/ex/trade?market=31&code=00700&start=0&count=1", "price", 10000, true},
-	} {
-		t.Run(tc.url, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
-			var result struct {
-				Code int
-				Data json.RawMessage
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 {
-				t.Fatal(w.Body.String(), err)
-			}
-			var item map[string]any
-			if tc.list {
-				var list []map[string]any
-				if err := json.Unmarshal(result.Data, &list); err != nil || len(list) != 1 {
-					t.Fatal(string(result.Data), err)
-				}
-				item = list[0]
-				if tc.field == "Close" {
-					item = item["Kline"].(map[string]any)
-				}
-			} else {
-				if err := json.Unmarshal(result.Data, &item); err != nil {
-					t.Fatal(err)
-				}
-				if list, ok := item["List"].([]any); ok {
-					item = list[0].(map[string]any)
-				}
-			}
-			if item[tc.field] != tc.value {
-				t.Fatalf("payload or units changed: %s", result.Data)
-			}
-		})
+	quotes := httpData[[]tdx.Quote](t, mux, "/quote?codes=hk00700,sz000001,hk00700")
+	if len(quotes) != 3 || quotes[0].Price != 10 || quotes[0].Extended == nil || quotes[1].Price != 10 || quotes[1].Standard.Kline.Close != 10000 || quotes[2].Instrument != quotes[0].Instrument {
+		t.Fatal("mixed quotes lost order, price or raw data", quotes)
 	}
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest("GET", "/ex/bars?category=4&market=31&code=00700&start=0&count=1", nil))
-	var result struct {
-		Code int
-		Data json.RawMessage
+	for _, code := range []string{"sz000001", "hk00700"} {
+		for _, path := range []string{"/minute?", "/minute/history?date=20261009&"} {
+			r := httpData[tdx.MinuteResp](t, mux, path+"code="+code)
+			if r.Count != 1 || len(r.List) != 1 || r.List[0].Price != 10 || r.VolumeUnit == "" {
+				t.Fatal(path, r)
+			}
+		}
+		for _, path := range []string{"/trade?", "/trade/all?", "/trade/history?date=20261009&", "/trade/history/day?date=20261009&"} {
+			r := httpData[tdx.TradeResp](t, mux, path+"code="+code+"&start=0&count=1")
+			if r.Count != 1 || len(r.List) != 1 || r.VolumeUnit == "" {
+				t.Fatal(path, r)
+			}
+			row := r.List[0]
+			if code == "sz000001" {
+				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10000 {
+					t.Fatal(row)
+				}
+			} else if row.Price != nil || row.Extended.Price != 10000 {
+				t.Fatal("unknown extended price scale was guessed", row)
+			}
+		}
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || string(result.Data) != "[]" {
-		t.Fatal("empty extended list changed", w.Body.String(), err)
+	empty := httpData[tdx.KlineResp](t, mux, "/kline/day?code=hk00700&start=0&count=1")
+	if empty.Count != 0 || len(empty.List) != 0 {
+		t.Fatal(empty)
+	}
+	r := httpData[tdx.KlineResp](t, mux, "/kline/range?code=hk00700&date=20261009&date2=20261009")
+	if r.Count != 1 || r.List[0].Close != 10 || r.List[0].RangeExtended.Position != 123 || r.List[0].RangeExtended.Trade != 456 || r.List[0].RangeExtended.SettlementPrice != 9 {
+		t.Fatal(r)
 	}
 }
 
@@ -236,104 +227,76 @@ func TestHistoryTradeHTTPWithoutDailyKline(t *testing.T) {
 	s := &Server{exPool: migrationPool(t, true, false)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest("GET", "/ex/trade/hist?market=31&code=00700&date=20261009&start=0&count=1", nil))
-	var result struct {
-		Code int
-		Data json.RawMessage
-	}
-	// 模拟服务器没有日线，但分笔接口非空，HTTP 应返回空列表。
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || string(result.Data) != "[]" {
-		t.Fatal(w.Body.String(), err)
+	r := httpData[tdx.TradeResp](t, mux, "/trade/history?code=hk00700&date=20261009&start=0&count=1")
+	if r.Count != 0 || len(r.List) != 0 {
+		t.Fatal("history without a daily kline was accepted", r)
 	}
 }
 
-func TestUnifiedCodesPreserveHTTPPayloads(t *testing.T) {
+func TestUnifiedHTTPCodes(t *testing.T) {
 	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
-	for _, tc := range []struct{ url, want string }{
-		{"/count?exchange=sz", `{"Count":1}`},
-		{"/code?exchange=sz&start=0", `{"Count":1,"List":[{"Name":"NAME","Code":"000001","Multiple":100,"Decimal":4,"LastPrice":0}]}`},
-		{"/code/all?exchange=sz", `{"Count":1,"List":[{"Name":"NAME","Code":"000001","Multiple":100,"Decimal":4,"LastPrice":0}]}`},
-		{"/code?exchange=sz&start=1", `{"Count":0,"List":null}`},
-		{"/ex/count", `3`},
-		{"/ex/instruments?start=1&count=1", `[{"category":13,"market":74,"code":"AAPL","name":"Apple","desc":"desc"}]`},
-		{"/ex/markets", `[{"market":74,"category":13,"name":"US","shortName":"US"}]`},
-	} {
-		t.Run(tc.url, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, httptest.NewRequest("GET", tc.url, nil))
-			var result struct {
-				Code int
-				Data json.RawMessage
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || string(result.Data) != tc.want {
-				t.Fatal(w.Body.String(), err)
-			}
-		})
+	if n := httpData[int](t, mux, "/count?exchange=sz"); n != 1 {
+		t.Fatal(n)
+	}
+	for _, path := range []string{"/code?exchange=sz&start=0&count=1", "/code/all?exchange=sz", "/code?exchange=us&start=0&count=1", "/code/all?exchange=us"} {
+		r := httpData[tdx.CodeResp](t, mux, path)
+		want := 1
+		if path == "/code/all?exchange=us" {
+			want = 3
+		}
+		if r.Count != want || len(r.List) != want || r.List[0].Instrument.Code == "" {
+			t.Fatal(path, r)
+		}
+	}
+	r := httpData[tdx.CodeResp](t, mux, "/code?exchange=sz&start=1&count=1")
+	if r.Count != 0 || len(r.List) != 0 {
+		t.Fatal(r)
+	}
+	markets := httpData[[]tdx.Exchange](t, mux, "/markets")
+	if len(markets) != 4 || markets[0].Protocol != protocol.ProtocolStandard || markets[3].Extended.Market != 74 {
+		t.Fatal(markets)
+	}
+	// These raw endpoints expose distinct global discovery, rather than per-market queries.
+	if n := httpData[int](t, mux, "/ex/count"); n != 3 {
+		t.Fatal(n)
+	}
+	raw := httpData[[]protocol.ExInstrument](t, mux, "/ex/instruments?start=1&count=1")
+	if len(raw) != 1 || raw[0].Code != "AAPL" {
+		t.Fatal(raw)
 	}
 }
 
-func TestUnifiedConveniencePreserveHTTPPayloads(t *testing.T) {
-	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
+func TestUnifiedHTTPKlinePeriods(t *testing.T) {
+	s := &Server{pool: migrationPool(t, false, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
-	paths := []string{"/kline/all?type=9", "/index?type=9", "/index/all?type=9"}
+	paths := []string{"/kline?type=9&", "/kline/all?type=9&"}
 	for _, period := range []string{"minute", "5minute", "15minute", "30minute", "60minute", "day", "week", "month", "quarter", "year"} {
 		paths = append(paths, "/kline/"+period+"?", "/kline/"+period+"/all?")
-		if period == "week" || period == "month" || period == "quarter" || period == "year" {
-			paths = append(paths, "/index/"+period+"/all?")
-		} else {
-			paths = append(paths, "/index/"+period+"?")
+	}
+	for _, code := range []string{"sz000001", "sh000001"} {
+		for _, path := range paths {
+			r := httpData[tdx.KlineResp](t, mux, path+"code="+code+"&start=0&count=1")
+			if r.Count != 1 || len(r.List) != 1 || r.List[0].Close != 10 || r.List[0].Standard.Close != 10000 {
+				t.Fatal(path, r)
+			}
+			if code == "sh000001" && r.List[0].Standard.UpCount != 3 {
+				t.Fatal("index fields lost", r)
+			}
 		}
 	}
-	paths = append(paths, "/index/day/all?")
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			code := "sz000001"
-			if len(path) >= 6 && path[:6] == "/index" {
-				code = "sh000001"
-			}
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, httptest.NewRequest("GET", path+"&code="+code+"&start=0&count=1", nil))
-			var result struct {
-				Code int
-				Data struct {
-					Count int
-					List  []map[string]any
-				}
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || result.Data.Count != 1 || result.Data.List[0]["Close"] != float64(10000) {
-				t.Fatal(w.Body.String(), err)
-			}
-			if code == "sh000001" && result.Data.List[0]["UpCount"] != float64(3) {
-				t.Fatal("index fields lost", w.Body.String())
-			}
-		})
-	}
-	for _, path := range []string{"/trade/all?code=sz000001", "/trade/history/day?date=20261009&code=sz000001"} {
+}
+
+func TestRemovedHTTPAliases(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Server{}).registerRoutes(mux)
+	for _, path := range []string{"/index", "/index/day", "/index/day/all", "/ex/quote", "/ex/bars", "/ex/minute", "/ex/minute/hist", "/ex/trade", "/ex/trade/hist", "/ex/bars/range", "/ex/markets", "/all", "/unknown"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-		var result struct {
-			Code int
-			Data struct {
-				Count int
-				List  []map[string]any
-			}
+		if w.Code != http.StatusNotFound {
+			t.Fatal(path, w.Code, w.Body)
 		}
-		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || result.Data.Count != 1 || result.Data.List[0]["Price"] != float64(10000) {
-			t.Fatal(w.Body.String(), err)
-		}
-	}
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest("GET", "/ex/bars/range?market=31&code=00700&date=20261009&date2=20261009", nil))
-	var result struct {
-		Code int
-		Data json.RawMessage
-	}
-	want := `[{"datetime":"2026-10-09 09:31","open":10,"high":10,"low":10,"close":10,"position":123,"trade":456,"settlementPrice":9}]`
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || string(result.Data) != want {
-		t.Fatal(w.Body.String(), err)
 	}
 }

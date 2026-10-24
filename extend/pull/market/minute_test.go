@@ -19,7 +19,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	var data []*pull.KlineMinute
 	for y := 2024; y <= 2026; y++ {
@@ -80,7 +80,7 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 2; i++ {
 		if err := pullMinutes(s, c, now, func(from time.Time) ([]*pull.KlineMinute, error) {
@@ -110,7 +110,7 @@ func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	old := &pull.KlineMinute{Unix: time.Date(2026, 3, 2, 15, 0, 0, 0, time.Local).Unix(), Close: 10}
 	if err := s.SaveMinute(c, 2026, 0, []*pull.KlineMinute{old}); err != nil {
 		t.Fatal(err)
@@ -178,18 +178,18 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	u := &exUnit{name: pull.MarketUS, markets: []uint8{marketUS}}
-	rows, err := u.bars(s, pull.Code{Market: pull.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base)
+	u := &exUnit{name: protocol.MarketUS, markets: []uint8{marketUS}}
+	rows, err := u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base)
 	if err != nil || len(rows) != 2 || rows[0].Datetime != c.rows[1].Time || c.calls != 1 {
 		t.Fatal(rows, c.calls, err)
 	}
 	c.err = errors.New("page failed")
-	if _, err = u.bars(s, pull.Code{Market: pull.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); !errors.Is(err, c.err) {
+	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); !errors.Is(err, c.err) {
 		t.Fatal("lost paging error", err)
 	}
 	c.err = nil
 	c.rows = []tdx.Kline{{Time: "invalid"}}
-	if _, err = u.bars(s, pull.Code{Market: pull.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); err == nil {
+	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); err == nil {
 		t.Fatal("accepted invalid source time")
 	}
 }
@@ -202,7 +202,7 @@ func TestManageDoesNotInitializeGbbq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, name := range []pull.Market{pull.MarketAStock, pull.MarketIndex, pull.MarketEtfLof} {
+	for _, name := range []protocol.Market{protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof} {
 		u := &stdUnit{name: name}
 		if _, err := u.Manage(s); err != nil {
 			t.Fatal(err)
@@ -219,7 +219,7 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	row := &pull.KlineMinute{Unix: now.Add(-time.Hour).Unix(), Close: 10}
 	failed := errors.New("scan failed")

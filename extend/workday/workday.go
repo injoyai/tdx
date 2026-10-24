@@ -72,10 +72,6 @@ func WithOptions(op ...Option) Option {
 	}
 }
 
-func NewSQLite(op ...Option) (*Workday, error) {
-	return New(op...)
-}
-
 // New 创建并立即刷新历史交易日缓存，再启动定时更新。
 func New(op ...Option) (result *Workday, err error) {
 

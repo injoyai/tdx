@@ -90,7 +90,7 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 	return out, nil
 }
 
-// standardQuotes 在需要价格精度校准时取元数据，避免全局 DefaultCodes 和额外数据库/连接。
+// standardQuotes 在需要价格精度校准时取元数据，避免额外数据库/连接。
 func (c *StConn) standardQuotes(codes []string) (protocol.QuotesResp, error) {
 	c.quoteMu.Lock()
 	defer c.quoteMu.Unlock()
@@ -543,7 +543,7 @@ func (c *StConn) GetBlockData(file string) ([]*protocol.Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	return protocol.ParseBlockFile(buf), nil
+	return protocol.ParseBlockFile(buf)
 }
 
 // GetReportFile 下载通达信服务器任意报表/数据文件（report file，指令 0x06B9）原始字节。
@@ -792,7 +792,7 @@ func (*StConn) decode(f *protocol.Response, val any) (resp any, err error) {
 		resp, err = protocol.MCode.Decode(f.Data)
 
 	case protocol.TypeQuote:
-		resp, err = protocol.MQuote.DecodeChecked(f.Data)
+		resp, err = protocol.MQuote.Decode(f.Data)
 
 	case protocol.TypeMinute:
 		resp, err = protocol.MMinute.Decode(f.Data)

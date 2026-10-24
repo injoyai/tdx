@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"github.com/injoyai/tdx/v2/protocol"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,7 +45,7 @@ func (*mockUnit) FetchMinute(s *Service, code Code) error {
 
 func TestStoreDay(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 首次插入 3 根
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
@@ -99,7 +100,7 @@ func TestStoreDay(t *testing.T) {
 
 func TestStoreDayUpsert(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketIndex, Code: "sh000001"}
+	code := Code{Market: protocol.MarketIndex, Code: "sh000001"}
 
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*KlineDay{
@@ -141,7 +142,7 @@ func TestStoreDayUpsert(t *testing.T) {
 
 func TestStoreMinute(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sz000001"}
+	code := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 
 	year := 2026
 	base := time.Date(year, 1, 5, 9, 31, 0, 0, time.Local)
@@ -196,14 +197,14 @@ func TestCodeFileLayout(t *testing.T) {
 		dayFile string
 		minFile string
 	}{
-		{Code{Market: MarketAStock, Code: "sh600000"}, "cn/stock/day/sh600000.db", "cn/stock/min/sh600000/sh600000-2026.db"},
-		{Code{Market: MarketIndex, Code: "sh000001"}, "cn/index/day/sh000001.db", "cn/index/min/sh000001/sh000001-2026.db"},
-		{Code{Market: MarketEtfLof, Code: "sh510300"}, "cn/etf/day/sh510300.db", "cn/etf/min/sh510300/sh510300-2026.db"},
-		{Code{Market: MarketBlock, Code: "sh880001"}, "cn/block/day/sh880001.db", "cn/block/min/sh880001/sh880001-2026.db"},
-		{Code{Market: MarketHK, Code: "00700"}, "hk/stock/day/00700.db", "hk/stock/min/00700/00700-2026.db"},
-		{Code{Market: MarketHKIndex, Code: "HSI"}, "hk/index/day/HSI.db", "hk/index/min/HSI/HSI-2026.db"},
-		{Code{Market: MarketUS, Code: "AAPL"}, "us/stock/day/AAPL.db", "us/stock/min/AAPL/AAPL-2026.db"},
-		{Code{Market: MarketFuture, Code: "cff/IF2609"}, "cn/future/day/cff-IF2609.db", "cn/future/min/cff-IF2609/cff-IF2609-2026.db"},
+		{Code{Market: protocol.MarketAStock, Code: "sh600000"}, "cn/stock/day/sh600000.db", "cn/stock/min/sh600000/sh600000-2026.db"},
+		{Code{Market: protocol.MarketIndex, Code: "sh000001"}, "cn/index/day/sh000001.db", "cn/index/min/sh000001/sh000001-2026.db"},
+		{Code{Market: protocol.MarketEtfLof, Code: "sh510300"}, "cn/etf/day/sh510300.db", "cn/etf/min/sh510300/sh510300-2026.db"},
+		{Code{Market: protocol.MarketBlock, Code: "sh880001"}, "cn/block/day/sh880001.db", "cn/block/min/sh880001/sh880001-2026.db"},
+		{Code{Market: protocol.MarketHK, Code: "00700"}, "hk/stock/day/00700.db", "hk/stock/min/00700/00700-2026.db"},
+		{Code{Market: protocol.MarketHKIndex, Code: "HSI"}, "hk/index/day/HSI.db", "hk/index/min/HSI/HSI-2026.db"},
+		{Code{Market: protocol.MarketUS, Code: "AAPL"}, "us/stock/day/AAPL.db", "us/stock/min/AAPL/AAPL-2026.db"},
+		{Code{Market: protocol.MarketFuture, Code: "cff/IF2609"}, "cn/future/day/cff-IF2609.db", "cn/future/min/cff-IF2609/cff-IF2609-2026.db"},
 	}
 	for _, c := range cases {
 		if got := c.code.DayFile(dir); got != filepath.Join(dir, c.dayFile) {
@@ -215,72 +216,51 @@ func TestCodeFileLayout(t *testing.T) {
 	}
 }
 
-func TestSplitKey(t *testing.T) {
-	cases := []struct {
-		key    string
-		market Market
-		code   string
-	}{
-		{"US.AAPL", MarketUS, "AAPL"},
-		{"HK00700", MarketHK, "00700"},
-		{"cn/future.cff/IF2609", MarketFuture, "cff/IF2609"},
-		{"cn/stock.sh600000", MarketAStock, "sh600000"},
-		{"hk/index.HSI", MarketHKIndex, "HSI"},
-		{"sh600000", MarketAStock, "sh600000"},
-	}
-	for _, c := range cases {
-		got := SplitKey(c.key)
-		if got.Market != c.market || got.Code != c.code {
-			t.Errorf("SplitKey(%q) = %+v, want market=%q code=%q", c.key, got, c.market, c.code)
-		}
-	}
-}
-
 func TestParseCode(t *testing.T) {
 	cases := []struct {
 		in     string
-		market Market
+		market protocol.Market
 		code   string
 	}{
 		// 沪深：带前缀
-		{"sh600000", MarketAStock, "sh600000"},
-		{"sz000001", MarketAStock, "sz000001"},
-		{"sz300750", MarketAStock, "sz300750"},
-		{"bj920001", MarketAStock, "bj920001"},
-		{"SH600000", MarketAStock, "sh600000"}, // 大小写归一
+		{"sh600000", protocol.MarketAStock, "sh600000"},
+		{"sz000001", protocol.MarketAStock, "sz000001"},
+		{"sz300750", protocol.MarketAStock, "sz300750"},
+		{"bj920001", protocol.MarketAStock, "bj920001"},
+		{"SH600000", protocol.MarketAStock, "sh600000"}, // 大小写归一
 		// 沪深：6 位裸数字（自动补前缀）
-		{"600000", MarketAStock, "sh600000"},
-		{"000001", MarketAStock, "sz000001"},
-		{"300750", MarketAStock, "sz300750"},
-		{"920001", MarketAStock, "bj920001"},
+		{"600000", protocol.MarketAStock, "sh600000"},
+		{"000001", protocol.MarketAStock, "sz000001"},
+		{"300750", protocol.MarketAStock, "sz300750"},
+		{"920001", protocol.MarketAStock, "bj920001"},
 		// ETF/LOF
-		{"sh510300", MarketEtfLof, "sh510300"},
-		{"sz159915", MarketEtfLof, "sz159915"},
-		{"510300", MarketEtfLof, "sh510300"},
+		{"sh510300", protocol.MarketEtfLof, "sh510300"},
+		{"sz159915", protocol.MarketEtfLof, "sz159915"},
+		{"510300", protocol.MarketEtfLof, "sh510300"},
 		// 指数/板块
-		{"sh000001", MarketIndex, "sh000001"},
-		{"sz399001", MarketIndex, "sz399001"},
-		{"399001", MarketIndex, "sz399001"},
-		{"sh880001", MarketBlock, "sh880001"},
-		{"880001", MarketBlock, "sh880001"},
-		{"899050", MarketIndex, "bj899050"}, // 北交所指数，补不上交易所前缀，特判
+		{"sh000001", protocol.MarketIndex, "sh000001"},
+		{"sz399001", protocol.MarketIndex, "sz399001"},
+		{"399001", protocol.MarketIndex, "sz399001"},
+		{"sh880001", protocol.MarketBlock, "sh880001"},
+		{"880001", protocol.MarketBlock, "sh880001"},
+		{"899050", protocol.MarketIndex, "bj899050"}, // 北交所指数，补不上交易所前缀，特判
 		// 港股
-		{"HK00700", MarketHK, "00700"},
-		{"00700", MarketHK, "00700"},
+		{"HK00700", protocol.MarketHK, "00700"},
+		{"00700", protocol.MarketHK, "00700"},
 		// 港股指数（白名单）
-		{"HSI", MarketHKIndex, "HSI"},
-		{"VHSI", MarketHKIndex, "VHSI"},
+		{"HSI", protocol.MarketHKIndex, "HSI"},
+		{"VHSI", protocol.MarketHKIndex, "VHSI"},
 		// 美股
-		{"AAPL", MarketUS, "AAPL"},
+		{"AAPL", protocol.MarketUS, "AAPL"},
 		// 期货
-		{"cff/IF2609", MarketFuture, "cff/IF2609"},
-		{"shf/cu2609", MarketFuture, "shf/cu2609"},
+		{"cff/IF2609", protocol.MarketFuture, "cff/IF2609"},
+		{"shf/cu2609", protocol.MarketFuture, "shf/cu2609"},
 		// 完整键
-		{"cn/future.cff/IF2609", MarketFuture, "cff/IF2609"},
-		{"hk/stock.00700", MarketHK, "00700"},
-		{"US.AAPL", MarketUS, "AAPL"},
-		{"hk/index.HSI", MarketHKIndex, "HSI"},
-		{"hk/index.CES120", MarketHKIndex, "CES120"},
+		{"cn/future.cff/IF2609", protocol.MarketFuture, "cff/IF2609"},
+		{"hk/stock.00700", protocol.MarketHK, "00700"},
+		{"US.AAPL", protocol.MarketUS, "AAPL"},
+		{"hk/index.HSI", protocol.MarketHKIndex, "HSI"},
+		{"hk/index.CES120", protocol.MarketHKIndex, "CES120"},
 	}
 	for _, c := range cases {
 		got, err := ParseCode(c.in)
@@ -312,7 +292,7 @@ func TestDirCreation(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 	if err := s.SaveDay(code, 0, []*KlineDay{{Unix: 1, Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
@@ -324,7 +304,7 @@ func TestDirCreation(t *testing.T) {
 
 func TestQueryDay(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 未建库：返回空且不创建文件
 	ls, err := s.QueryDay(code, time.Time{}, time.Time{})
@@ -369,7 +349,7 @@ func TestQueryDay(t *testing.T) {
 
 func TestQueryMinute(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sz000001"}
+	code := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 
 	year := 2025
 	base := time.Date(year, 1, 5, 9, 31, 0, 0, time.Local)
@@ -406,7 +386,7 @@ func TestQueryMinute(t *testing.T) {
 
 func TestEngineCache(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	db1, release1, err := s.openDay(code)
 	if err != nil {
@@ -436,7 +416,7 @@ func TestEngineCache(t *testing.T) {
 
 func TestSaveEmptySkipsWrite(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 空数据写入应跳过，不创建库文件
 	if err := s.SaveDay(code, 0, nil); err != nil {
@@ -451,7 +431,7 @@ func TestSaveEmptySkipsWrite(t *testing.T) {
 // （999 变量）时自动分批，不报 "too many SQL variables"。
 func TestInsertBatchOverLimit(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: MarketAStock, Code: "sh600000"}
+	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 200 根日线 × 10 字段 = 2000 变量 > 999，必然触发分批
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)

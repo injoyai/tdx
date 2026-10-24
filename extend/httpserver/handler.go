@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -8,17 +9,14 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func standardCodePayload(r *tdx.CodeResp) *protocol.CodeResp {
-	out := &protocol.CodeResp{Count: uint16(r.Count)}
-	for _, k := range r.List {
-		out.List = append(out.List, k.Standard)
-	}
-	return out
-}
-
 func respond[T any](s *Server, w http.ResponseWriter, r *http.Request, fetch func(tdx.Client) (T, error)) {
 	var resp T
-	err := s.pool.DoContext(r.Context(), func(c tdx.Client) error {
+	pool, err := s.requestPool(r)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	err = pool.DoContext(r.Context(), func(c tdx.Client) error {
 		var err error
 		resp, err = fetch(c)
 		return err
@@ -33,86 +31,40 @@ func respond[T any](s *Server, w http.ResponseWriter, r *http.Request, fetch fun
 // ---- 代码/数量 ----
 
 func (s *Server) handleCount(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
+	ex, err := queryExchange(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ex, err := parseExchange(exStr)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	var resp *protocol.CountResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		n, err := c.GetCount(ex)
-		if err == nil {
-			resp = &protocol.CountResp{Count: uint16(n)}
-		}
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (int, error) { return c.GetCount(ex) })
 }
 
 func (s *Server) handleCode(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
+	ex, err := queryExchange(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ex, err := parseExchange(exStr)
+	start, err := queryUint32(r, "start")
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	start, err := queryUint16(r, "start")
+	count, err := queryUint16(r, "count")
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.CodeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetCode(ex, uint32(start), 1000)
-		if err == nil {
-			resp = standardCodePayload(r)
-		}
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.CodeResp, error) { return c.GetCode(ex, start, count) })
 }
 
 func (s *Server) handleCodeAll(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
+	ex, err := queryExchange(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ex, err := parseExchange(exStr)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	var resp *protocol.CodeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetCodeAll(ex)
-		if err == nil {
-			resp = standardCodePayload(r)
-		}
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.CodeResp, error) { return c.GetCodeAll(ex) })
 }
 
 func (s *Server) handleStockCodeAll(w http.ResponseWriter, r *http.Request) {
@@ -136,20 +88,51 @@ func (s *Server) handleQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	codes := strings.Split(codesStr, ",")
-	var resp protocol.QuotesResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		quotes, err := c.GetQuote(codes...)
+	var groups [2][]string
+	var positions [2][]int
+	for pos, code := range codes {
+		instrument, err := protocol.ParseInstrument(code)
 		if err != nil {
-			return err
+			respondErr(w, http.StatusBadRequest, err.Error())
+			return
 		}
-		for _, q := range quotes {
-			resp = append(resp, q.Standard)
+		group := 0
+		if instrument.Exchange > protocol.ExchangeBJ {
+			group = 1
 		}
-		return nil
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
+		groups[group] = append(groups[group], code)
+		positions[group] = append(positions[group], pos)
+	}
+	resp := make([]tdx.Quote, len(codes))
+	for group, batch := range groups {
+		if len(batch) == 0 {
+			continue
+		}
+		pool := s.pool
+		if group == 1 {
+			pool = s.exPool
+		}
+		if pool == nil {
+			respondErr(w, http.StatusBadRequest, "行情连接池未启用")
+			return
+		}
+		err = pool.DoContext(r.Context(), func(c tdx.Client) error {
+			quotes, err := c.GetQuote(batch...)
+			if err != nil {
+				return err
+			}
+			if len(quotes) != len(batch) {
+				return fmt.Errorf("报价数量与请求不一致")
+			}
+			for i, q := range quotes {
+				resp[positions[group][i]] = q
+			}
+			return nil
+		})
+		if err != nil {
+			respondErr(w, http.StatusOK, err.Error())
+			return
+		}
 	}
 	respondOK(w, resp)
 }
@@ -269,20 +252,7 @@ func (s *Server) handleMinute(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.MinuteResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetMinute(code)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.MinuteResp, error) { return c.GetMinute(code) })
 }
 
 func (s *Server) handleHistoryMinute(w http.ResponseWriter, r *http.Request) {
@@ -296,20 +266,7 @@ func (s *Server) handleHistoryMinute(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.MinuteResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetHistoryMinute(date, code)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.MinuteResp, error) { return c.GetHistoryMinute(date, code) })
 }
 
 func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request) {
@@ -328,20 +285,7 @@ func (s *Server) handleTrade(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.TradeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetTrade(code, start, count)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.TradeResp, error) { return c.GetTrade(code, start, count) })
 }
 
 func (s *Server) handleTradeAll(w http.ResponseWriter, r *http.Request) {
@@ -350,20 +294,7 @@ func (s *Server) handleTradeAll(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.TradeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetTradeAll(code)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.TradeResp, error) { return c.GetTradeAll(code) })
 }
 
 func (s *Server) handleHistoryTrade(w http.ResponseWriter, r *http.Request) {
@@ -387,20 +318,7 @@ func (s *Server) handleHistoryTrade(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.TradeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetHistoryTrade(date, code, start, count)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.TradeResp, error) { return c.GetHistoryTrade(date, code, start, count) })
 }
 
 func (s *Server) handleHistoryTradeDay(w http.ResponseWriter, r *http.Request) {
@@ -414,23 +332,9 @@ func (s *Server) handleHistoryTradeDay(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp *protocol.TradeResp
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		r, err := c.GetHistoryTradeDay(date, code)
-		if err != nil {
-			return err
-		}
-		resp, err = r.StandardResponse()
-		return err
-	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
+	respond(s, w, r, func(c tdx.Client) (*tdx.TradeResp, error) { return c.GetHistoryTradeDay(date, code) })
 }
 
-// K线和指数共用参数校验与标准响应转换；指数解码由客户端按证券选择。
 func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 	typ, err := queryUint8(r, "type")
 	if err != nil {
@@ -469,8 +373,13 @@ func (s *Server) klineHandler(typ uint8, all bool) http.HandlerFunc {
 				return
 			}
 		}
-		var resp *protocol.KlineResp
-		err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
+		var resp *tdx.KlineResp
+		pool, err := s.requestPool(r)
+		if err != nil {
+			respondErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		err = pool.DoContext(r.Context(), func(c tdx.Client) error {
 			var result *tdx.KlineResp
 			var err error
 			if all {
@@ -481,8 +390,8 @@ func (s *Server) klineHandler(typ uint8, all bool) http.HandlerFunc {
 			if err != nil {
 				return err
 			}
-			resp, err = result.StandardResponse()
-			return err
+			resp = result
+			return nil
 		})
 		if err != nil {
 			respondErr(w, http.StatusOK, err.Error())

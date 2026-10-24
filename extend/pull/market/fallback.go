@@ -105,7 +105,7 @@ func hasMinuteDay(rows map[int64]*pull.KlineMinute, day time.Time) bool {
 }
 
 // tradesToMinutes 复用 Trades.Klines 的 241 根规则；合成值是近似值。
-// 按请求交易日的钟面值构造，兼容旧调用方携带 UTC 标签的分笔。
+// 按请求交易日的时区校验时间，不重新标记分笔的时区。
 func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute, error) {
 	if len(trades) == 0 {
 		return nil, errors.New("历史分笔为空，保留缺口")
@@ -116,15 +116,16 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 		if trade == nil {
 			return nil, errors.New("历史分笔包含空记录")
 		}
-		y, m, d := trade.Time.Date()
-		minute := trade.Time.Hour()*60 + trade.Time.Minute()
+		at := trade.Time.In(day.Location())
+		y, m, d := at.Date()
+		minute := at.Hour()*60 + at.Minute()
 		if y != day.Year() || m != day.Month() || d != day.Day() ||
 			trade.Price <= 0 || trade.Volume < 0 ||
 			!((minute >= 565 && minute <= 690) || (minute >= 780 && minute <= 900)) {
 			return nil, errors.New("历史分笔日期、时间或量价无效")
 		}
 		copy := *trade
-		copy.Time = time.Date(y, m, d, trade.Time.Hour(), trade.Time.Minute(), 0, 0, day.Location())
+		copy.Time = at.Truncate(time.Minute)
 		normalized = append(normalized, &copy)
 		volume += int64(trade.Volume)
 	}
@@ -137,7 +138,7 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	for _, k := range ks {
 		out = append(out, &pull.KlineMinute{
 			Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
-			Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: pull.ToShares(k.Volume),
+			Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: protocol.ToShares(k.Volume),
 			Amount: k.Amount.Float64(), Source: pull.MinuteSourceTrade,
 		})
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/codes"
 )
 
 type closeTestClient struct {
@@ -62,9 +61,6 @@ func TestNewFailureClosesPool(t *testing.T) {
 }
 
 func TestNewOnlyCreatesConfiguredConnections(t *testing.T) {
-	previous := codes.DefaultCodes
-	codes.DefaultCodes = nil
-	t.Cleanup(func() { codes.DefaultCodes = previous })
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -87,8 +83,8 @@ func TestNewOnlyCreatesConfiguredConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if created.Load() != 1 || codes.DefaultCodes != nil {
-		t.Fatal("created an unsolicited metadata client", created.Load(), codes.DefaultCodes)
+	if created.Load() != 1 {
+		t.Fatal("created an unsolicited metadata client", created.Load())
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)

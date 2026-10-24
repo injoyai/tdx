@@ -640,7 +640,7 @@ func (r *KlineResp) Klines() (protocol.Klines, error) {
 	return out, nil
 }
 
-// StandardResponse 保留原始记录及其单位，供复权和旧 HTTP 数据契约使用。
+// StandardResponse 保留原始记录及其单位，供复权、指标适配与协议数据处理使用。
 // 指标与本地文件编码需要整数手，使用 Klines；指数原始量为股。
 func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {

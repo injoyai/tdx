@@ -3,6 +3,7 @@ package main
 
 import (
 	"flag"
+	"github.com/injoyai/tdx/v2/protocol"
 	"time"
 
 	"github.com/injoyai/logs"
@@ -37,7 +38,7 @@ func main() {
 		code, err := pull.ParseCode(raw)
 		logs.PanicErr(err)
 		switch code.Market {
-		case pull.MarketFuture, pull.MarketHK, pull.MarketHKIndex, pull.MarketUS:
+		case protocol.MarketFuture, protocol.MarketHK, protocol.MarketHKIndex, protocol.MarketUS:
 			needsEx = true
 		}
 	}

@@ -14,7 +14,7 @@ defer calendar.Close()
 isTradingDay := calendar.TodayIs()
 ```
 
-`New` 默认打开 `./output/data/database/workday.db`、建连并立即刷新，再启动定时更新，因此可能返回数据库或网络错误。`NewSQLite` 提供同一构造行为。默认按固定东八区每天 09:03 刷新；`Is`、`TodayIs`、`Range`、`RangeYear`、`Iter` 和 `IterYear` 用于日期判断与遍历。
+`New` 默认打开 `./output/data/database/workday.db`、建连并立即刷新，再启动定时更新，因此可能返回数据库或网络错误。默认按固定东八区每天 09:03 刷新；`Is`、`TodayIs`、`Range`、`RangeYear`、`Iter` 和 `IterYear` 用于日期判断与遍历。
 
 `Range` 与 `Iter` 使用 `[start,end)`，从 start 起每隔 24 小时判断交易日。`Iter(...,true)` 只改变顺序，返回相同的日期集合，支持重复遍历；旧倒序曾错误地包含 end 并排除 start，升级后会修正这两个边界。`IterYear` 的倒序同样与正序互为逆序。
 

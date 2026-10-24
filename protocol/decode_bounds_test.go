@@ -32,7 +32,7 @@ func TestCheckedDecodersRejectTruncatedRecords(t *testing.T) {
 			_, err := MKline.Decode(b, KlineCache{Type: TypeKlineDay, Kind: KindIndex})
 			return err
 		}},
-		{"quotes", quote, func(b []byte) error { _, err := MQuote.DecodeChecked(b); return err }},
+		{"quotes", quote, func(b []byte) error { _, err := MQuote.Decode(b); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := tc.decode(tc.data); err != nil {
@@ -50,16 +50,13 @@ func TestCheckedDecodersRejectTruncatedRecords(t *testing.T) {
 	if b.Open != 10 || b.Close != 12 || b.High != 14 || b.Low != 9 || b.UpCount != 3 || b.DownCount != 5 {
 		t.Fatalf("index fields changed: %+v", b)
 	}
-	q, _ := MQuote.DecodeChecked(quote)
+	q, _ := MQuote.Decode(quote)
 	if len(q) != 1 || q[0].Code != "600000" || q[0].Kline.Close != 100 || q[0].BuyLevel[0].Price != 100 {
 		t.Fatalf("quote fields changed: %+v", q)
 	}
-	if got := MQuote.Decode(quote[:len(quote)-1]); got != nil {
-		t.Fatal("legacy API returned partial quotes")
-	}
 	// A valid first record must not mask a truncated second record.
 	binary.LittleEndian.PutUint16(quote[2:], 2)
-	if got, err := MQuote.DecodeChecked(quote); err == nil || got != nil {
+	if got, err := MQuote.Decode(quote); err == nil || got != nil {
 		t.Fatal("partial response accepted", got, err)
 	}
 }
@@ -72,7 +69,7 @@ func TestCheckedDecodersRejectInvalidIntegers(t *testing.T) {
 		}
 		quote := append(make([]byte, 13), bad...)
 		quote[2] = 1
-		if _, err := MQuote.DecodeChecked(quote); err == nil {
+		if _, err := MQuote.Decode(quote); err == nil {
 			t.Fatalf("accepted malformed quote integer %x", bad)
 		}
 	}
@@ -138,7 +135,7 @@ func TestCheckedQuoteCapturedSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	quotes, err := MQuote.DecodeChecked(data)
+	quotes, err := MQuote.Decode(data)
 	if err != nil || len(quotes) != 2 {
 		t.Fatal("captured quote decoding", len(quotes), err)
 	}
@@ -146,7 +143,7 @@ func TestCheckedQuoteCapturedSample(t *testing.T) {
 		t.Fatal("quote record boundaries or prices changed", quotes)
 	}
 	for n := 0; n < len(data); n++ {
-		if _, err := MQuote.DecodeChecked(data[:n]); err == nil {
+		if _, err := MQuote.Decode(data[:n]); err == nil {
 			t.Fatalf("accepted captured quote truncated at byte %d", n)
 		}
 	}

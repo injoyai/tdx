@@ -36,7 +36,7 @@ func WithPoolSize(n int) Option {
 	return func(c *serverConfig) { c.poolSize = n }
 }
 
-// WithExHosts 设置扩展行情服务器列表,启用扩展行情 /ex/* 路由
+// WithExHosts 设置扩展行情服务器列表,启用统一接口的扩展市场查询
 func WithExHosts(hosts ...string) Option {
 	return func(c *serverConfig) { c.exHosts = hosts }
 }
@@ -137,7 +137,9 @@ func (s *Server) Close() error {
 // registerRoutes 注册所有路由
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// 健康检查
-	mux.HandleFunc("GET /", s.handleHealth)
+	mux.HandleFunc("GET /{$}", s.handleHealth)
+	mux.HandleFunc("GET /markets", s.handleMarkets)
+	mux.HandleFunc("GET /kline/range", s.handleKlineRange)
 
 	// 代码/数量
 	mux.HandleFunc("GET /count", s.handleCount)
@@ -187,21 +189,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /kline/year", s.klineHandler(protocol.TypeKlineYear, false))
 	mux.HandleFunc("GET /kline/year/all", s.klineHandler(protocol.TypeKlineYear, true))
 
-	// 指数K线
-	mux.HandleFunc("GET /index", s.handleKline)
-	mux.HandleFunc("GET /index/all", s.handleKlineAll)
-	mux.HandleFunc("GET /index/minute", s.klineHandler(protocol.TypeKlineMinute, false))
-	mux.HandleFunc("GET /index/5minute", s.klineHandler(protocol.TypeKline5Minute, false))
-	mux.HandleFunc("GET /index/15minute", s.klineHandler(protocol.TypeKline15Minute, false))
-	mux.HandleFunc("GET /index/30minute", s.klineHandler(protocol.TypeKline30Minute, false))
-	mux.HandleFunc("GET /index/60minute", s.klineHandler(protocol.TypeKline60Minute, false))
-	mux.HandleFunc("GET /index/day", s.klineHandler(protocol.TypeKlineDay, false))
-	mux.HandleFunc("GET /index/day/all", s.klineHandler(protocol.TypeKlineDay, true))
-	mux.HandleFunc("GET /index/week/all", s.klineHandler(protocol.TypeKlineWeek, true))
-	mux.HandleFunc("GET /index/month/all", s.klineHandler(protocol.TypeKlineMonth, true))
-	mux.HandleFunc("GET /index/quarter/all", s.klineHandler(protocol.TypeKlineQuarter, true))
-	mux.HandleFunc("GET /index/year/all", s.klineHandler(protocol.TypeKlineYear, true))
-
 	// 板块/报表
 	mux.HandleFunc("GET /block/data", s.handleBlockData)
 	mux.HandleFunc("GET /block/data/index", s.handleBlockDataWithIndex)
@@ -218,17 +205,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// 扩展行情
 	if s.exPool != nil {
-		mux.HandleFunc("GET /ex/markets", s.handleExMarkets)
+
 		mux.HandleFunc("GET /ex/count", s.handleExCount)
 		mux.HandleFunc("GET /ex/instruments", s.handleExInstruments)
-		mux.HandleFunc("GET /ex/quote", s.handleExQuote)
+
 		mux.HandleFunc("GET /ex/quote_list", s.handleExQuoteList)
-		mux.HandleFunc("GET /ex/bars", s.handleExBars)
-		mux.HandleFunc("GET /ex/minute", s.handleExMinute)
-		mux.HandleFunc("GET /ex/minute/hist", s.handleExHistMinute)
-		mux.HandleFunc("GET /ex/trade", s.handleExTrade)
-		mux.HandleFunc("GET /ex/trade/hist", s.handleExHistTrade)
-		mux.HandleFunc("GET /ex/bars/range", s.handleExBarsRange)
+
 	}
 }
 

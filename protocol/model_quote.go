@@ -22,23 +22,23 @@ type Quote struct {
 	Active1    uint16   // 活跃度
 	Kline      *Kline   //k线,这里的时间取得是当前时间,昨收盘好像不太对
 	ServerTime string   // 时间
-	Reserved0  int      `json:"ReversedBytes0"` // 保留(时间 ServerTime)
-	Reserved1  int      `json:"ReversedBytes1"` // 保留 这个等于 负的收盘价格?
+	Reserved0  int      // 保留(时间 ServerTime)
+	Reserved1  int      // 保留 这个等于 负的收盘价格?
 	Intuition  int      // 现量（东财的盘口-现量）现在成交量
 	InsideDish int      // 内盘（东财的盘口-内盘）（和东财对不上）
 	OuterDisc  int      // 外盘（东财的盘口-外盘）（和东财对不上）
 
-	Reserved2 int         `json:"ReversedBytes2"` // 保留，未知
-	Reserved3 int         `json:"ReversedBytes3"` // 保留，未知,基金的昨收净值?
+	Reserved2 int         // 保留，未知
+	Reserved3 int         // 保留，未知,基金的昨收净值?
 	BuyLevel  PriceLevels // 5档买盘(买1-5)
 	SellLevel PriceLevels // 5档卖盘(卖1-5)
 
-	Reserved4 uint16  `json:"ReversedBytes4"` // 保留，未知
-	Reserved5 int     `json:"ReversedBytes5"` // 保留，未知
-	Reserved6 int     `json:"ReversedBytes6"` // 保留，未知
-	Reserved7 int     `json:"ReversedBytes7"` // 保留，未知
-	Reserved8 int     `json:"ReversedBytes8"` // 保留，未知
-	Reserved9 uint16  `json:"ReversedBytes9"` // 保留，未知
+	Reserved4 uint16  // 保留，未知
+	Reserved5 int     // 保留，未知
+	Reserved6 int     // 保留，未知
+	Reserved7 int     // 保留，未知
+	Reserved8 int     // 保留，未知
+	Reserved9 uint16  // 保留，未知
 	Rate      float64 // 涨速，好像都是0
 	Active2   uint16  // 活跃度
 }
@@ -105,13 +105,8 @@ b212 昨天收盘价1186
 8defd10c 服务时间
 c005bed2668e05be15804d8ba12cb3b13a0083c3034100badc029d014201bc990384f70443029da503b7af074403a6e501b9db044504a6e2028dd5048d050000000000005909
 */
-// Decode 保留原接口；畸形数据返回 nil。需要错误详情时使用 DecodeChecked。
-func (q quote) Decode(bs []byte) QuotesResp {
-	resp, _ := q.DecodeChecked(bs)
-	return resp
-}
-
-func (quote) DecodeChecked(bs []byte) (QuotesResp, error) {
+// Decode 解码报价，畸形数据返回错误。
+func (quote) Decode(bs []byte) (QuotesResp, error) {
 	d := wireDecoder{bs: bs}
 	d.take(2) // 响应前缀
 	number := d.uint16()

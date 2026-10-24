@@ -22,7 +22,7 @@ type Config struct {
 	MaxCachedEngines int              // 空闲时最多缓存的行情数据库引擎数，默认 32；使用中的引擎不淘汰
 	StartAt          string           // 起始日期 YYYYMMDD，首次全量的最早日期；空 = 只拉最近两年
 	Retry            int              // 每个代码的日线/分钟线各自最大尝试次数，默认 3
-	Tracker          *update.Tracker  `json:"Updated"` // 增量去重库（可选，不传则自动创建于 Dir/updated.db）
+	Tracker          *update.Tracker  // 增量去重库（可选，不传则自动创建于 Dir/updated.db）
 	Manage           *manage.Manage   // 标准行情(7709)连接源（可选）。沪深股票/指数/ETF/板块 Unit 使用
 	ExPool           tdx.ClientPool   // 扩展行情(7727)连接池（可选）。期货/港股/美股 Unit 使用
 	Workday          *workday.Workday // 交易日历（可选，不传则不判断交易日）

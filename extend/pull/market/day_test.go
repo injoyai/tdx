@@ -1,6 +1,7 @@
 package market
 
 import (
+	"github.com/injoyai/tdx/v2/protocol"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	old := &pull.KlineDay{Unix: s.Start().Add(15 * time.Hour).Unix(), Close: 10}
 	if err := s.SaveDay(code, 0, []*pull.KlineDay{old}); err != nil {
 		t.Fatal(err)
@@ -44,7 +45,7 @@ func TestSaveDaysFiltersStartAndEmptyResult(t *testing.T) {
 	}
 	defer s.Close()
 	from := s.Start().Unix()
-	code := pull.Code{Market: pull.MarketIndex, Code: "sh000001"}
+	code := pull.Code{Market: protocol.MarketIndex, Code: "sh000001"}
 	if err := saveDays(s, code, from, []*pull.KlineDay{{Unix: from - 1}, {Unix: from, Close: 10}}); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestSaveDaysFiltersStartAndEmptyResult(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Close != 10 {
 		t.Fatal("空结果侵蚀旧记录", rows, err)
 	}
-	empty := pull.Code{Market: pull.MarketHK, Code: "00700"}
+	empty := pull.Code{Market: protocol.MarketHK, Code: "00700"}
 	if err := saveDays(s, empty, from+86400, []*pull.KlineDay{{Unix: from}}); err != nil {
 		t.Fatal(err)
 	}

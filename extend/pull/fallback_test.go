@@ -1,42 +1,25 @@
 package pull
 
 import (
+	"github.com/injoyai/tdx/v2/protocol"
 	"testing"
 	"time"
-
-	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestMinuteFallbackSchemaAndSource(t *testing.T) {
 	s := testService(t)
-	c := Code{Market: MarketAStock, Code: "sz000001"}
+	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := time.Date(2025, 1, 6, 0, 0, 0, 0, time.Local)
-	db, err := xorms.NewSQLite(s.MinuteFile(c, 2025))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 模拟升级前七列分钟表及只有 From 的覆盖表。
-	_, err = db.Exec("CREATE TABLE KlineMinute (Unix INTEGER PRIMARY KEY, Open REAL, High REAL, Low REAL, Close REAL, Volume INTEGER, Amount REAL)")
-	if err == nil {
-		_, err = db.Exec("INSERT INTO KlineMinute VALUES (?,1,1,1,1,100,100)", day.Unix())
-	}
-	if err == nil {
-		_, err = db.Exec("CREATE TABLE minuteCoverage (ID INTEGER PRIMARY KEY, [From] INTEGER)")
-	}
-	if err == nil {
-		_, err = db.Exec("INSERT INTO minuteCoverage VALUES (1,?)", day.Unix())
-	}
-	db.Close()
-	if err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, day.Unix(), []*KlineMinute{{Unix: day.Unix(), Open: 1, High: 1, Low: 1, Close: 1, Volume: 100, Amount: 100}}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.QueryMinute(c, day, day.AddDate(0, 0, 1))
 	if err != nil || len(rows) != 1 || rows[0].Source != "" {
-		t.Fatal("旧库原生来源迁移失败", rows, err)
+		t.Fatal("原生来源记录错误", rows, err)
 	}
 	coverage, err := s.QueryMinuteCoverage(c, 2025)
 	if err != nil || coverage == nil || coverage.TradeFallback || coverage.Through != 0 {
-		t.Fatal("旧标记误判兜底完成", coverage, err)
+		t.Fatal("原生扫描误判兜底完成", coverage, err)
 	}
 	through := day.AddDate(0, 0, 1).Unix()
 	ks := []*KlineMinute{{Unix: day.Unix(), Source: MinuteSourceTrade}}

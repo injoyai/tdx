@@ -11,9 +11,9 @@ import (
 
 // Code 统一的代码模型，跨市场通用。
 type Code struct {
-	Market Market // 市场标识，如 MarketAStock/MarketHK/MarketUS/MarketFuture；用于定位 Unit 与存储目录
-	Code   string // 原始代码，如 600000 / 00700 / AAPL / IF2609
-	Name   string // 名称（可选）
+	Market protocol.Market // 市场标识，如 protocol.MarketAStock/protocol.MarketHK/protocol.MarketUS/protocol.MarketFuture；用于定位 Unit 与存储目录
+	Code   string          // 原始代码，如 600000 / 00700 / AAPL / IF2609
+	Name   string          // 名称（可选）
 }
 
 // Key 返回带完整市场前缀的唯一键，如 sh600000 / HK00700 / US.AAPL /
@@ -21,12 +21,12 @@ type Code struct {
 // 注意存储文件名不用它（见 FileName，目录已含市场信息，文件名用原始代码）。
 func (c Code) Key() string {
 	switch c.Market {
-	case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock:
 		// 标准行情代码自带交易所前缀（sh/sz/bj），直接使用
 		return c.Code
-	case MarketHK:
+	case protocol.MarketHK:
 		return "HK" + c.Code
-	case MarketUS:
+	case protocol.MarketUS:
 		return "US." + c.Code
 	default:
 		return c.Market.String() + "." + c.Code
@@ -70,28 +70,9 @@ func yearToString(year int) string {
 	return string(buf)
 }
 
-// SplitKey 从完整键还原 Market 与 Code；无法识别时返回原样。
-// 支持市场前缀的直接拼接和点分隔形式，以及原有的完整市场键。
-func SplitKey(key string) Code {
-	key = strings.TrimSpace(key)
-	if code, err := ParseCode(key); err == nil {
-		return code
-	}
-	if i := strings.IndexByte(key, '.'); i > 0 {
-		if _, err := protocol.ParseExchange(key[:i]); err == nil {
-			return Code{Code: key}
-		}
-		if _, matched, _ := parseMarketPrefix(key); matched {
-			return Code{Code: key}
-		}
-		return Code{Market: Market(strings.ToLower(key[:i])), Code: key[i+1:]}
-	}
-	return Code{Code: key}
-}
-
 var marketPrefixes = []string{
-	MarketAStock.String(), MarketIndex.String(), MarketEtfLof.String(), MarketBlock.String(),
-	MarketFuture.String(), MarketHK.String(), MarketHKIndex.String(), MarketUS.String(),
+	protocol.MarketAStock.String(), protocol.MarketIndex.String(), protocol.MarketEtfLof.String(), protocol.MarketBlock.String(),
+	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
 }
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
@@ -122,21 +103,21 @@ func parseMarketPrefix(s string) (Code, bool, error) {
 func codeInMarket(prefix, body string) (Code, error) {
 	lower := strings.ToLower(prefix)
 	query := lower + "." + body
-	explicit := Market(lower)
+	explicit := protocol.Market(lower)
 	switch explicit {
-	case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock, MarketFuture:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketFuture:
 		query = body
-	case MarketHK:
+	case protocol.MarketHK:
 		query = "hk." + body
-	case MarketHKIndex:
+	case protocol.MarketHKIndex:
 		query = "hi." + body
-	case MarketUS:
+	case protocol.MarketUS:
 		query = "us." + body
 	default:
 		if body == "" {
 			return Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
 		}
-		return Code{Market: Market(prefix), Code: body}, nil
+		return Code{Market: protocol.Market(prefix), Code: body}, nil
 	}
 	i, err := protocol.ParseInstrument(query)
 	if err != nil {
@@ -145,23 +126,19 @@ func codeInMarket(prefix, body string) (Code, error) {
 	return codeForInstrument(i, explicit, body)
 }
 
-func codeForInstrument(i protocol.Instrument, explicit Market, body string) (Code, error) {
+func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body string) (Code, error) {
 	market, err := i.Market()
 	if err != nil {
 		return Code{}, err
 	}
 	code := i.Code
 	switch market {
-	case MarketAStock, MarketIndex, MarketEtfLof, MarketBlock:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock:
 		code = i.Exchange.String() + i.Code
-		if market == MarketAStock && !protocol.IsStock(code) {
+		if market == protocol.MarketAStock && !protocol.IsStock(code) {
 			return Code{}, fmt.Errorf("pull: 不支持的标准行情品种 %q", body)
 		}
-		if explicit != "" {
-			// 完整市场键沿用已有文件名，避免裸数字旧库被另建一份。
-			code = strings.ToLower(body)
-		}
-	case MarketFuture:
+	case protocol.MarketFuture:
 		code = i.Exchange.String() + "/" + i.Code
 	}
 	if explicit != "" && explicit != market {
@@ -177,8 +154,8 @@ func codeForInstrument(i protocol.Instrument, explicit Market, body string) (Cod
 //	600000                               6 位裸数字，自动补交易所前缀后再分类
 //	hk00700 / hk.HSI / 00700              港股股票或指数
 //	usAAPL / us.BRK.B / AAPL              美股
-//	cffIF2609 / cff.IF2609 / cff/IF2609   期货（兼容原有斜线形式）
-//	cn/future.cff/IF2609 / hk/stock.00700 / US.AAPL / hk/index.HSI  完整键（SplitKey 也可解析）
+//	cffIF2609 / cff.IF2609 / cff/IF2609   期货
+//	cn/future.cff/IF2609 / hk/stock.00700 / US.AAPL / hk/index.HSI  完整市场键
 //
 // 无法识别时返回错误。
 func ParseCode(s string) (Code, error) {

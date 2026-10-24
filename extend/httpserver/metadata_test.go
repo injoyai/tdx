@@ -46,7 +46,7 @@ func TestCodesHandlerRoutes(t *testing.T) {
 			path string
 			want codes.CodeModels
 		}{
-			{"/codes", codes.CodeModels{stock, etf, index}}, {"/all", codes.CodeModels{stock, etf, index}},
+			{"/codes", codes.CodeModels{stock, etf, index}},
 			{"/stocks", codes.CodeModels{stock}}, {"/etfs", codes.CodeModels{etf}}, {"/indexes", codes.CodeModels{index}},
 		} {
 			for _, method := range []string{"GET", "POST"} {
@@ -61,7 +61,7 @@ func TestCodesHandlerRoutes(t *testing.T) {
 				}
 			}
 		}
-		for _, path := range []string{"/gbbqs?v=1", "/missing"} {
+		for _, path := range []string{"/gbbqs?v=1", "/missing", "/all"} {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 			want := 404

@@ -17,9 +17,12 @@ func main() {
 	logs.PanicErr(err)
 	records, err := gbbq.Decode(bs)
 	logs.PanicErr(err)
-	stocks := records.GetStocks()[*code]
-	for _, record := range stocks {
-		logs.Debug(record.Date.Format(time.DateOnly), record.Float, record.Total)
+	stocks := 0
+	for _, record := range records {
+		if record.Code == *code {
+			logs.Debug(record.Date.Format(time.DateOnly), record.Category, record.C1, record.C2, record.C3, record.C4)
+			stocks++
+		}
 	}
-	logs.Debug("总数:", len(stocks))
+	logs.Debug("总数:", stocks)
 }

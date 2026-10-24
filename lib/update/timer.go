@@ -14,12 +14,6 @@ type Updater interface {
 	Update() error
 }
 
-// NewTimer 启动进程级定时更新。需要释放任务时使用 StartTimer。
-func NewTimer(spec string, retry int, up Updater) error {
-	_, err := StartTimer(spec, retry, up)
-	return err
-}
-
 // StartTimer 立即更新后启动定时任务；stop 可重复或并发调用，并等待在途任务退出。
 // 同一任务不重叠执行，停止时取消重试等待；up.Update 自身应有有限超时。
 func StartTimer(spec string, retry int, up Updater) (stop func(), err error) {

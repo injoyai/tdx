@@ -3,6 +3,8 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -222,31 +224,32 @@ func ParseTdxHy(data []byte) []*TdxHy {
 	return out
 }
 
-// ParseBlockFile 解析完整板块文件 → 板块列表。
+// ParseBlockFile 解析完整板块文件；畸形文件返回错误，不返回部分结果。
 // 格式：偏移 384 处 uint16 板块数；每块 = 名称(9,GBK) + 成分数(2) + 类型(2) + 成分(400×7)，定长 2813。
-func ParseBlockFile(data []byte) []*Block {
+// 每块最多 400 个成分。
+func ParseBlockFile(data []byte) ([]*Block, error) {
 	if len(data) < 386 {
-		return nil
+		return nil, io.ErrUnexpectedEOF
 	}
 	pos := 384
 	num := int(Uint16(data[pos : pos+2]))
 	pos += 2
+	if num > (len(data)-pos)/2813 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	out := make([]*Block, 0, num)
 	for i := 0; i < num; i++ {
-		if pos+13 > len(data) {
-			break
-		}
 		name := strings.TrimRight(string(GBKToUTF8(data[pos:pos+9])), "\x00")
 		pos += 9
 		stockCount := int(Uint16(data[pos : pos+2]))
+		if stockCount > 400 {
+			return nil, fmt.Errorf("板块 %d 成分数量 %d 超过400", i, stockCount)
+		}
 		blockType := Uint16(data[pos+2 : pos+4])
 		pos += 4
 		begin := pos
 		codes := make([]string, 0, stockCount)
 		for j := 0; j < stockCount; j++ {
-			if pos+7 > len(data) {
-				break
-			}
 			c := strings.TrimRight(string(data[pos:pos+7]), "\x00")
 			if c != "" {
 				codes = append(codes, c)
@@ -256,5 +259,5 @@ func ParseBlockFile(data []byte) []*Block {
 		pos = begin + 400*7 // 每块成分区固定 2800 字节
 		out = append(out, &Block{Name: name, Type: blockType, Codes: codes})
 	}
-	return out
+	return out, nil
 }

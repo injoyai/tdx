@@ -33,7 +33,7 @@ type Service struct {
 	start     time.Time
 
 	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
-	overrides map[Market][]Code
+	overrides map[protocol.Market][]Code
 
 	mu          sync.Mutex               // 保护 engines 缓存
 	engines     map[string]*cachedEngine // 有引用计数的 sqlite 引擎缓存
@@ -86,7 +86,7 @@ func New(cfg *Config) (*Service, error) {
 	// 代码列表：一次性解析并按市场分组。
 	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
 	// Codes 为空 = 全量模式：全部注册市场各自自动发现代码。
-	overrides := map[Market][]Code{}
+	overrides := map[protocol.Market][]Code{}
 	if len(cfg.Codes) > 0 {
 		for _, s := range cfg.Codes {
 			c, err := ParseCode(s)
@@ -393,7 +393,7 @@ func (s *Service) updateUnit(u Unit) error {
 // codes 获取市场代码列表；Config.Codes 指定时优先使用（已按市场分组）。
 // 注意：overrides 只包含用户显式列出的市场；其他市场仍走自动发现。
 func (s *Service) codes(u Unit) ([]Code, error) {
-	if override, ok := s.overrides[Market(u.Name())]; ok {
+	if override, ok := s.overrides[protocol.Market(u.Name())]; ok {
 		return override, nil
 	}
 	codes, err := u.Codes(s)
@@ -447,12 +447,7 @@ func (s *Service) QueryDay(code Code, start, end time.Time) ([]*KlineDay, error)
 	}
 	defer release()
 	rows, err := queryDay(db, start, end)
-	info, _ := code.Market.Info()
 	for _, k := range rows {
-		// 旧扩展库也可能存有持仓字节的浮点解释；查询时隔离，不重写历史数据。
-		if info.Protocol == protocol.ProtocolExtended {
-			k.AmountUnknown = true
-		}
 		if k.AmountUnknown {
 			k.Amount = 0
 		}
@@ -523,7 +518,6 @@ func (s *Service) MinuteExists(code Code, year int) bool {
 // start/end 为零值时表示不限制该端。
 func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, error) {
 	out := []*KlineMinute{}
-	info, _ := code.Market.Info()
 	startYear, endYear := minMaxYear(start, end, s.Start().Location())
 	for y := startYear; y <= endYear; y++ {
 		file := code.MinuteFile(s.cfg.Dir, y)
@@ -540,9 +534,6 @@ func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, 
 			return nil, err
 		}
 		for _, k := range ls {
-			if info.Protocol == protocol.ProtocolExtended {
-				k.AmountUnknown = true
-			}
 			if k.AmountUnknown {
 				k.Amount = 0
 			}

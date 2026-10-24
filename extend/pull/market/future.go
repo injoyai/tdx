@@ -36,7 +36,7 @@ var futureMarketNames = map[uint8]string{
 // 品种代码列表中，同一 Unit 可能覆盖多个扩展市场（如期货多个交易所），
 // 此时交易所简称作为 Code.Code 前缀（"cff/IF2609"），由 marketOf 解析。
 type exUnit struct {
-	name pull.Market // 市场标识（pull.Market 枚举）
+	name protocol.Market // 市场标识（protocol.Market 枚举）
 	// markets 该 Unit 覆盖的扩展市场编码（用于从 GetInstruments 过滤）
 	markets []uint8
 }
@@ -205,7 +205,7 @@ var _ pull.Unit = (*Future)(nil)
 
 func init() {
 	pull.Register(&Future{exUnit{
-		name:    pull.MarketFuture,
+		name:    protocol.MarketFuture,
 		markets: []uint8{marketCFF, marketCZC, marketDCE, marketSHF, marketGFE, marketQHZ},
 	}})
 }

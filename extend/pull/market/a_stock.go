@@ -16,7 +16,7 @@ import (
 // stdUnit 标准行情(7709)市场的基础实现：通过 manage.Manage 连接源取连接。
 // 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
-	name pull.Market // 市场标识（pull.Market 枚举）
+	name protocol.Market // 市场标识（protocol.Market 枚举）
 }
 
 func (u *stdUnit) Name() string { return u.name.String() }
@@ -129,9 +129,9 @@ var (
 )
 
 func init() {
-	pull.Register(&AStock{stdUnit{name: pull.MarketAStock}})
-	pull.Register(&Index{stdUnit{name: pull.MarketIndex}})
-	pull.Register(&EtfLof{stdUnit{name: pull.MarketEtfLof}})
+	pull.Register(&AStock{stdUnit{name: protocol.MarketAStock}})
+	pull.Register(&Index{stdUnit{name: protocol.MarketIndex}})
+	pull.Register(&EtfLof{stdUnit{name: protocol.MarketEtfLof}})
 }
 
 // ---- Codes 实现 ----
@@ -184,7 +184,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		return err
 	}
 	var equity gbbq.Interface
-	if u.name == pull.MarketAStock {
+	if u.name == protocol.MarketAStock {
 		equity, err = m.InitGbbq()
 		if err != nil {
 			return err
@@ -245,7 +245,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		return err
 	}
 	var fallback *minuteFallback
-	if s.TradeFallbackEnabled() && (u.name == pull.MarketAStock || u.name == pull.MarketEtfLof) {
+	if s.TradeFallbackEnabled() && (u.name == protocol.MarketAStock || u.name == protocol.MarketEtfLof) {
 		fallback = &minuteFallback{
 			days: func(from time.Time) (protocol.Klines, error) {
 				var days protocol.Klines

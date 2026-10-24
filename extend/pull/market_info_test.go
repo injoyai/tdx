@@ -12,20 +12,20 @@ import (
 func TestMarketInfoRouting(t *testing.T) {
 	for _, tc := range []struct {
 		code             string
-		market           Market
-		protocol         MarketProtocol
+		market           protocol.Market
+		protocol         protocol.MarketProtocol
 		kind             string
 		day, min         uint8
-		dayUnit, minUnit VolumeUnit
+		dayUnit, minUnit protocol.VolumeUnit
 	}{
-		{"sz000001", MarketAStock, ProtocolStandard, protocol.KindStock, 9, 7, VolumeHundredShares, VolumeHundredShares},
-		{"sh510300", MarketEtfLof, ProtocolStandard, protocol.KindStock, 9, 7, VolumeHundredShares, VolumeHundredShares},
-		{"sh000001", MarketIndex, ProtocolStandard, protocol.KindIndex, 9, 7, VolumeShares, VolumeShares},
-		{"sh880001", MarketBlock, ProtocolStandard, protocol.KindIndex, 9, 7, VolumeShares, VolumeShares},
-		{"hk00700", MarketHK, ProtocolExtended, "", 4, 8, VolumeHundredShares, VolumeDefault},
-		{"cffIF2609", MarketFuture, ProtocolExtended, "", 4, 8, VolumeDefault, VolumeDefault},
-		{"hk.HSI", MarketHKIndex, ProtocolExtended, "", 9, 8, VolumeDefault, VolumeDefault},
-		{"usAAPL", MarketUS, ProtocolExtended, "", 9, 8, VolumeDefault, VolumeDefault},
+		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.VolumeHundredShares, protocol.VolumeHundredShares},
+		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.VolumeHundredShares, protocol.VolumeHundredShares},
+		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.VolumeShares, protocol.VolumeShares},
+		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.VolumeShares, protocol.VolumeShares},
+		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.VolumeHundredShares, protocol.VolumeDefault},
+		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, protocol.VolumeDefault, protocol.VolumeDefault},
+		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 9, 8, protocol.VolumeDefault, protocol.VolumeDefault},
+		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 9, 8, protocol.VolumeDefault, protocol.VolumeDefault},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			code, err := ParseCode(tc.code)
@@ -34,30 +34,30 @@ func TestMarketInfoRouting(t *testing.T) {
 			}
 			info, ok := code.Market.Info()
 			if !ok || info.Protocol != tc.protocol || info.Kind != tc.kind ||
-				info.Day != (KlineInfo{Category: tc.day, VolumeUnit: tc.dayUnit}) || info.Minute != (KlineInfo{Category: tc.min, VolumeUnit: tc.minUnit}) {
+				info.Day != (protocol.KlineInfo{Category: tc.day, VolumeUnit: tc.dayUnit}) || info.Minute != (protocol.KlineInfo{Category: tc.min, VolumeUnit: tc.minUnit}) {
 				t.Fatal("unexpected market configuration", info, ok)
 			}
 		})
 	}
-	if _, ok := Market("custom").Info(); ok {
+	if _, ok := protocol.Market("custom").Info(); ok {
 		t.Fatal("custom market received a built-in configuration")
 	}
-	info, _ := MarketHK.Info()
+	info, _ := protocol.MarketHK.Info()
 	info.Day.Category = 9
-	unchanged, _ := MarketHK.Info()
+	unchanged, _ := protocol.MarketHK.Info()
 	if unchanged.Day.Category != 4 {
 		t.Fatal("editing a copy changed the built-in configuration")
 	}
-	for _, unit := range []VolumeUnit{VolumeDefault, VolumeHundredShares, ""} {
-		if got := (KlineInfo{VolumeUnit: unit}).ToStorageVolume(123); got != 12300 {
+	for _, unit := range []protocol.VolumeUnit{protocol.VolumeDefault, protocol.VolumeHundredShares, ""} {
+		if got := (protocol.KlineInfo{VolumeUnit: unit}).ToStorageVolume(123); got != 12300 {
 			t.Fatal("default conversion", unit, got)
 		}
 	}
 }
 
 func TestStandardIndexVolumeIsNotConvertedTwice(t *testing.T) {
-	info, _ := MarketIndex.Info()
-	for _, spec := range []KlineInfo{info.Day, info.Minute} {
+	info, _ := protocol.MarketIndex.Info()
+	for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 		// 一条指数记录：价格差值为零，原始量 123400，额和涨跌家数为零。
 		data := make([]byte, 22)
 		binary.LittleEndian.PutUint16(data, 1)
@@ -85,7 +85,7 @@ func TestHKDailyCapturedVolume(t *testing.T) {
 	// 腾讯独立源的不复权日线（2026-10-05 至 10-09），来自：
 	// https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00700,day,2026-10-05,2026-10-09,5,
 	shares := []int64{8709438, 10030081, 12436640, 30202875, 20422500}
-	info, _ := MarketHK.Info()
+	info, _ := protocol.MarketHK.Info()
 	var latest protocol.ExKline
 	for _, raw := range []string{five, single} {
 		data, err := hex.DecodeString(raw)

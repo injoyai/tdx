@@ -39,7 +39,7 @@ func codesHandler(code codes.Interface, equity *gbbq.Gbbq) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var data any
 		switch r.URL.Path {
-		case "/codes", "/all":
+		case "/codes":
 			ls := code.GetStocks()
 			ls = append(ls, code.GetETFs()...)
 			data = append(ls, code.GetIndexes()...)

@@ -24,9 +24,6 @@ type (
 	DialFunc func(c tdx.Client) (Interface, error)
 )
 
-// DefaultCodes 保留旧调用方的共享缓存入口；行情查询不再依赖它。
-var DefaultCodes Interface
-
 func WithDB(db *xorms.Engine) Option {
 	return func(c *Codes) {
 		c.db = db
@@ -71,11 +68,6 @@ func WithOptions(op ...Option) Option {
 			}
 		}
 	}
-}
-
-// NewSQLite 是 New 的 SQLite 缓存入口。
-func NewSQLite(op ...Option) (*Codes, error) {
-	return New(op...)
 }
 
 // New 创建并立即刷新代码缓存，再启动定时更新。自建资源由 Close 释放。

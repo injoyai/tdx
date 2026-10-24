@@ -3,6 +3,7 @@ package pull
 import (
 	"errors"
 	"fmt"
+	"github.com/injoyai/tdx/v2/protocol"
 	"sync"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 
 func TestMinuteCoverageRollback(t *testing.T) {
 	s := testService(t)
-	c := Code{Market: MarketAStock, Code: "sz000001"}
+	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	if last, err := s.LastMinuteUnix(c, 2025); err != nil || last != 0 || s.MinuteExists(c, 2025) {
 		t.Fatalf("读取空库创建了文件或返回异常: %d %v", last, err)
 	}
@@ -71,14 +72,14 @@ func TestMinuteCoverageRollback(t *testing.T) {
 func TestEngineLimitAndBorrow(t *testing.T) {
 	s := testService(t)
 	s.engineLimit = 2
-	c := Code{Market: MarketAStock, Code: "sz000001"}
+	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	db, release, err := s.openDay(c)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
 	for i := 0; i < 8; i++ {
-		if err := s.SaveDay(Code{Market: MarketAStock, Code: fmt.Sprintf("sz%06d", i+10)}, 0, []*KlineDay{{Unix: 1}}); err != nil {
+		if err := s.SaveDay(Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i+10)}, 0, []*KlineDay{{Unix: 1}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -111,7 +112,7 @@ func TestEngineConcurrentEviction(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			c := Code{Market: MarketAStock, Code: fmt.Sprintf("sz%06d", i)}
+			c := Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i)}
 			for j := 0; j < 3; j++ {
 				if err := s.SaveDay(c, 0, []*KlineDay{{Unix: 1, Close: float64(i)}}); err != nil {
 					t.Error(err)

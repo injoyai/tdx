@@ -1,6 +1,6 @@
 # 统一行情 Client
 
-`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组统一结果类型。标准与拓展连接分别由 `*tdx.StConn`、`*tdx.ExConn` 实现业务接口；原 `Conn` 已移除，连接池使用 `Client`；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和统一返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 路由及原响应形状保持兼容。
+`tdx.NewClient()` 返回统一业务接口 `tdx.Client`，默认实现为 `*tdx.MarketClient`。一个业务对象按证券代码自动选择标准行情或扩展行情，返回同一组统一结果类型。标准与拓展连接分别由 `*tdx.StConn`、`*tdx.ExConn` 实现业务接口；原 `Conn` 已移除，连接池使用 `Client`；单连接的基础行情、全部 K线便捷方法及完整分笔查询统一为同名 `Get*` 和统一返回类型。公开 `ExQuote/ExBars/ExMinute/ExHistMinute/ExTrade/ExHistTrade` 已移除，`ExQuoteList` 改名为 `GetQuoteList`；代码列表与数量使用统一 `GetCode/GetCodeAll/GetCount`，`ExMarkets` 改为 `GetMarkets`，`ExBarsRange` 收敛为 `GetKlineRange`，指数 K线查询并入 `GetKline*`；HTTP 查询直接返回同一套统一模型，见 [HTTP 服务](../extend/httpserver/README.md)。
 
 ## 使用
 
@@ -26,7 +26,7 @@ for _, q := range quotes {
 
 构造不联网，因此没有构造错误返回值；首次访问某类协议时建连，连接错误由查询方法返回。两类协议各复用一条连接，默认服务器和重连策略沿用 `DialDefault`/`DialExDefault`；`client.Option` 同时应用于两类连接。可并发查询；`SetTimeout` 覆盖当前和未来连接，默认仍为标准 2 秒、扩展 10 秒。`Close` 先取消首次建连、退避重试及后续连接生命周期，释放已建立的连接，再等待建连结束并释放晚到的连接，允许重复/并发调用，关闭后不会重新建连。两类连接各自控制初始化；一类建连变慢不会阻塞另一类查询或 `SetTimeout`。每个 TCP 地址的建连超时为 5 秒，请求超时不控制建连重试时长；默认自动重试可以通过 `WithRedial(false)` 关闭，进行中的首次重试也可以通过门面的 `Close` 取消。必须通过构造函数使用，零值不用于查询。
 
-ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StConn` 实现中，不依赖 `codes.DefaultCodes`、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
+ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StConn` 实现中，不依赖全局缓存、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
 
 代码缓存服务位于独立的 [`extend/codes`](../extend/codes/README.md) 包，对外接口为 `codes.Interface`。标准连接的价格精度缓存与扩展代码服务共享内部纯内存实现，不会反向引用扩展包或触发数据库、定时任务初始化。
 
@@ -90,7 +90,7 @@ _ = quotes; _ = err
 
 日期为有效 `YYYYMMDD`。K 线单次数量 1..800，实时/历史分笔单次数量分别为 1..1800/1..2000。K 线周期使用既有 `protocol.TypeKline*` 常量；`Day/Day2` 和 `Minute/Minute2` 在业务入口分别视作日线、一分钟别名，实际周期按市场配置映射，记录在返回的 `Category` 中。其他周期沿用协议编号，能否取得数据取决于服务器，不能把成功路由视为每个市场/周期已经通过实盘验证。
 
-标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。日线/一分钟的协议、分类与量单位配置下沉到 `protocol.Market.Info()`，`pull.Market` 等保留类型别名和原存储转换行为。
+标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。日线/一分钟的协议、分类与量单位配置下沉到 `protocol.Market.Info()`，pull 直接使用 `protocol` 的市场类型、常量和量单位换算。
 
 报价先解析全部输入再发送，标准品种合并请求，扩展品种顺序请求；结果保留原输入顺序与重复项。任何连接、请求或响应品种校验失败返回错误，不返回部分报价；标准请求超过 `uint16` 帧长上限会提前报错。混合结果不保证来自同一瞬间。
 
@@ -119,7 +119,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 ## 指标与本地文件的量单位适配
 
-`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于旧 HTTP 响应和只处理价格的复权；标准指数的原始成交量仍为股。`VWAP()` 与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`：
+`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于需要协议原始字段的复权等处理；标准指数的原始成交量仍为股。`VWAP()` 与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`：
 
 ```go
 r, err := c.GetKlineDay("sh000001", 0, 100)

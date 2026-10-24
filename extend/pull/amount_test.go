@@ -4,68 +4,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func TestLegacyExtendedAmountQuery(t *testing.T) {
+func TestAmountUsesStoredStatus(t *testing.T) {
 	s := testService(t)
-	c := Code{Market: MarketFuture, Code: "cff/IF2609"}
+	c := Code{Market: protocol.MarketFuture, Code: "cff/IF2609"}
 	at := time.Date(2026, 10, 20, 15, 0, 0, 0, protocol.Location())
-	for _, tc := range []struct{ file, table string }{
-		{s.DayFile(c), "KlineDay"}, {s.MinuteFile(c, 2026), "KlineMinute"},
-	} {
-		db, err := xorms.NewSQLite(tc.file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec("CREATE TABLE " + tc.table + " (Unix INTEGER PRIMARY KEY, Amount REAL)"); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec("INSERT INTO "+tc.table+" (Unix,Amount) VALUES (?,?)", at.Unix(), 123.5); err != nil {
-			t.Fatal(err)
-		}
-		db.Close()
+	if err := s.SaveDay(c, 0, []*KlineDay{{Unix: at.Unix(), Amount: 123}, {Unix: at.Unix() + 1, Amount: 456, AmountUnknown: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMinute(c, 2026, 0, []*KlineMinute{{Unix: at.Unix(), Amount: 123}, {Unix: at.Unix() + 1, Amount: 456, AmountUnknown: true}}); err != nil {
+		t.Fatal(err)
 	}
 	days, err := s.QueryDay(c, time.Time{}, time.Time{})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(days) != 2 || days[0].AmountUnknown || days[0].Amount != 123 || !days[1].AmountUnknown || days[1].Amount != 0 {
+		t.Fatal(days, err)
 	}
-	minutes, err := s.QueryMinute(c, at.Add(-time.Hour), at)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(days) != 1 || !days[0].AmountUnknown || days[0].Amount != 0 {
-		t.Fatal("old day amount exposed", days)
-	}
-	if len(minutes) != 1 || !minutes[0].AmountUnknown || minutes[0].Amount != 0 {
-		t.Fatal("old minute amount exposed", minutes)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ file, table string }{
-		{s.DayFile(c), "KlineDay"}, {s.MinuteFile(c, 2026), "KlineMinute"},
-	} {
-		db, err := xorms.NewSQLite(tc.file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var raw struct {
-			Amount        float64
-			AmountUnknown bool
-		}
-		has, err := db.Table(tc.table).Get(&raw)
-		db.Close()
-		if err != nil || !has || raw.Amount != 123.5 || raw.AmountUnknown {
-			t.Fatalf("query changed original row: %+v %v", raw, err)
-		}
+	minutes, err := s.QueryMinute(c, at, at.Add(time.Minute))
+	if err != nil || len(minutes) != 2 || minutes[0].AmountUnknown || minutes[0].Amount != 123 || !minutes[1].AmountUnknown || minutes[1].Amount != 0 {
+		t.Fatal(minutes, err)
 	}
 }
 
 func TestAmountUnknownStorageAndAggregation(t *testing.T) {
 	s := testService(t)
-	c := Code{Market: MarketAStock, Code: "sz000001"}
+	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	at := time.Date(2026, 10, 19, 9, 31, 0, 0, protocol.Location())
 	days := []*KlineDay{{Unix: at.Unix(), Amount: 100}, {Unix: at.AddDate(0, 0, 1).Unix(), AmountUnknown: true}}
 	minutes := []*KlineMinute{{Unix: at.Unix(), Amount: 100}, {Unix: at.Add(time.Minute).Unix(), AmountUnknown: true}}

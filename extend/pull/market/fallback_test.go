@@ -10,9 +10,9 @@ import (
 )
 
 func fallbackTrades(day time.Time) protocol.Trades {
-	// 模拟历史协议：钟面时间属于交易日，但 Go 时间标记为 UTC。
+	// 当前协议解码时间使用请求交易日的时区。
 	stamp := func(h, m int) time.Time {
-		return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, time.UTC)
+		return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, day.Location())
 	}
 	return protocol.Trades{
 		{Time: stamp(9, 30), Price: 12000, Volume: 2},
@@ -26,6 +26,8 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 	loc := time.FixedZone("test-CN", 8*3600)
 	day := time.Date(2025, 1, 6, 0, 0, 0, 0, loc)
 	trades := fallbackTrades(day)
+	// 同一瞬间的 UTC 表示应转换到市场时区，而不是改写钟面值。
+	trades[0].Time = trades[0].Time.UTC()
 	before := *trades[0]
 	rows, err := tradesToMinutes(day, trades)
 	if err != nil || len(rows) != 241 {
@@ -85,7 +87,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	day2 := day.AddDate(0, 0, 1)
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
@@ -169,7 +171,7 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := s.Start().AddDate(0, 0, 2).Add(16 * time.Hour)
 	calls := 0
 	fallback := &minuteFallback{
@@ -213,7 +215,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	now := day.AddDate(0, 0, 4).Add(16 * time.Hour)
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
@@ -268,7 +270,7 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	if got := s.Config(); !got.TradeFallback || got.Codes[0] != "sz000001" {
 		t.Fatal("Service 配置被调用方修改", got)
 	}
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
 	if err != nil {
@@ -299,7 +301,7 @@ func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: pull.MarketAStock, Code: "sz000001"}
+	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
 	if err := s.SaveMinuteEmptyScan(code, 2025, day.Unix(), now); err != nil {

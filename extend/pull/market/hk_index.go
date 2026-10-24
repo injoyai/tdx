@@ -4,6 +4,7 @@ package market
 
 import (
 	"github.com/injoyai/tdx/v2/extend/pull"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 港股指数市场编码（扩展行情 ExInstrument.Market）。
@@ -19,7 +20,7 @@ var _ pull.Unit = (*HKIndex)(nil)
 
 func init() {
 	pull.Register(&HKIndex{exUnit{
-		name:    pull.MarketHKIndex,
+		name:    protocol.MarketHKIndex,
 		markets: []uint8{marketHKIndex},
 	}})
 }

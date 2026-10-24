@@ -86,16 +86,16 @@ func main() {
 
 | 枚举常量 | 值（即存储目录） | 市场 | 连接 | 说明 |
 |---|---|---|---|---|
-| `pull.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
-| `pull.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
-| `pull.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
-| `pull.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
-| `pull.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
-| `pull.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
-| `pull.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
-| `pull.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
+| `protocol.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
+| `protocol.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
+| `protocol.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
+| `protocol.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
+| `protocol.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
+| `protocol.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
+| `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
+| `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
 
-> 市场标识统一用 `pull.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
+> 市场标识统一用 `protocol.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
 ### 市场 K 线配置
 
@@ -181,7 +181,7 @@ Codes: []string{
 }
 ```
 
-内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。合法代码沿用现有存储文件名，自定义市场保留自身代码规则。
+内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
 > 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
 > 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。
@@ -219,11 +219,11 @@ Codes: []string{
 | Volume | 已确认的股票/ETF/指数/板块及港股日线为**股**；其他项按市场配置的默认倍率存储，单位待确认 |
 | Amount | 证券原币种成交额；`AmountUnknown=true` 时为 0，不代表真实零成交额 |
 | AmountUnknown | 金额是否未确认；当前全部内置扩展市场为 true，标准市场为 false |
-| Source（分钟线） | 空字符串=原生数据（含旧库）；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
+| Source（分钟线） | 空字符串=原生数据；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 
 > 与本地 `.day/.lc1/.lc5` 文件的量单位不同。使用 `VolumeDefault` 的扩展市场及周期尚未确认单位，不能仅依据存储字段名宣称其成交量为股。
 
-扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 新增 `AmountUnknown` 列（默认 false），已有 SQLite 库由现有建表同步流程增加该列。查询内置扩展市场的旧库时，也返回 `Amount=0, AmountUnknown=true`，原始金额数值不批量重写；直接 SQL 读取旧 Amount 列仍可能读到未经确认的旧值。需要原始字段时使用行情记录的 `Extended`。
+扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 新增 `AmountUnknown` 列（默认 false），已有 SQLite 库由现有建表同步流程增加该列。查询按记录中的 `AmountUnknown` 标记返回金额，不根据市场修补旧数据。旧库需另行转换或重新拉取。需要原始字段时使用行情记录的 `Extended`。
 
 周期合并遇到任意未知金额，合并结果也为 `Amount=0, AmountUnknown=true`，避免将部分金额之和冒充完整成交额。价格和金额都不做汇率换算；只有人民币证券的已确认金额才能解释为人民币元。
 
@@ -248,7 +248,7 @@ Codes: []string{
 
 分笔为空、无有效成交或请求失败时，返回带代码与日期的错误，保留缺口；已获取的原生分钟及其他日期合成结果仍按年落库，失败不会阻止其他年份提交覆盖范围。完整 241 根的已存日期重跑时跳过分笔请求。失败日期所在年份不提交本次兜底覆盖标记，市场也不会记为完成。
 
-`MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；旧标记不能跳过首次兜底检查。可用 `QueryMinuteCoverage` 查询、`SaveMinuteFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。已有表通过 Sync2 增加字段，旧数据保留；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
+`MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；原生扫描不能跳过分笔兜底检查。可用 `QueryMinuteCoverage` 查询、`SaveMinuteFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。表结构由统一建表流程初始化；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
 
 `must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以本地时间 15:01 分界。
 
@@ -273,13 +273,13 @@ Codes: []string{
 
 ```go
 // 日线（升序）；start/end 零值 = 不限制该端
-ks, _ := s.QueryDay(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
+ks, _ := s.QueryDay(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"}, start, end)
 
 // 1分钟线：自动按年定位文件并拼接，不存在的年份跳过
-ms, _ := s.QueryMinute(pull.Code{Market: pull.MarketAStock, Code: "sh600000"}, start, end)
+ms, _ := s.QueryMinute(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"}, start, end)
 
 // 库内最后一条时间戳（空库返回 0）
-last, _ := s.LastDayUnix(pull.Code{Market: pull.MarketAStock, Code: "sh600000"})
+last, _ := s.LastDayUnix(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"})
 ```
 
 ---
@@ -338,4 +338,4 @@ go test ./extend/pull/... -count=1
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/data/PullV2`。
 
-内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键继续沿用原有文件命名。
+内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键与简称使用相同的规范化文件名，例如 `cn/stock.600000` 和 `sh600000` 均使用 `sh600000.db`。

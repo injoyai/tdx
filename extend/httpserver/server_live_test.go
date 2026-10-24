@@ -45,12 +45,12 @@ func TestServerLive(t *testing.T) {
 	var result struct {
 		Code int
 		Msg  string
-		Data struct{ Count uint16 }
+		Data int
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || result.Data.Count == 0 {
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 0 || result.Data == 0 {
 		t.Fatal("HTTP real data response", w.Body.String(), err)
 	}
-	t.Logf("server=%s concurrency=1 write_interval=1s SZ codes=%d", host, result.Data.Count)
+	t.Logf("server=%s concurrency=1 write_interval=1s SZ codes=%d", host, result.Data)
 	if err := s.Close(); err != nil {
 		t.Fatal("HTTP Close", err)
 	}

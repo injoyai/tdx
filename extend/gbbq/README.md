@@ -25,6 +25,6 @@ ks, err := cache.QFQKlineDay("sh600519")
 
 缓存查询和复权使用同一证券解析规则：`sz000001`、`SZ000001`、`sz.000001`、`000001.SZ` 与裸 `000001` 等价。HTTP 股本缓存也采用此规则。非法代码或非标准市场查询为空，不会误用其他市场的股本。
 
-`manage.WithGbbq` 接收 `gbbq.Interface`，`manage.WithDialGbbq` 接收 `gbbq.DialFunc`。管理器仅懒初始化自己创建的占位对象，显式传入 `&gbbq.Gbbq{}` 可禁用股本回填。`metadatahttp.GbbqHTTP`（`extend/metadatahttp`）同样实现本接口，独立代码/股本 HTTP 服务入口为 `httpserver.ListenCodesAndGbbqHTTP`。旧 `extend` 入口保留兼容转发。
+`manage.WithGbbq` 接收 `gbbq.Interface`，`manage.WithDialGbbq` 接收 `gbbq.DialFunc`。管理器仅懒初始化自己创建的占位对象，显式传入 `&gbbq.Gbbq{}` 可禁用股本回填。`metadatahttp.GbbqHTTP`（`extend/metadatahttp`）同样实现本接口，独立代码/股本 HTTP 服务入口为 `httpserver.ListenCodesAndGbbqHTTP`。
 
 `lib/gbbq` 负责离线文件下载和解密，与本包的网络记录缓存不同；文件单位未独立核实，不能按同名字段直接换算。旧根包入口对应关系见 [迁移指南](../../docs/v2-migration.md#股本缓存与默认配置归位)。

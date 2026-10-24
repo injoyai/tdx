@@ -14,7 +14,7 @@
 | `extend/manage` | 组合缓存、连接池与工作日任务 | `New` |
 | `extend/pull`、`extend/pull/market` | 多市场 K 线拉取、存储与市场适配 | `pull.New`；空导入 `market` 注册内置市场 |
 
-根包 `extend` 保留 `DoIncomes` 收益计算；上述迁出的公开入口在 `compat.go` 中保留兼容函数、类型别名和常量，并标记 Deprecated。原调用仍可编译，迁移时替换 import 和包限定名即可，参数和返回值不变。
+根包 `extend` 只提供 `DoIncomes` 收益计算。其余功能直接导入职责子包，不提供旧入口、转发函数或类型别名。
 
 ```go
 import (

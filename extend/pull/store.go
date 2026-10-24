@@ -8,7 +8,7 @@ import (
 	"xorm.io/xorm"
 )
 
-// KlineDay 日线；价格/金额使用证券原币种或报价单位，成交量按 Market.Info 换算。
+// KlineDay 日线；价格/金额使用证券原币种或报价单位，成交量按 protocol.Market.Info 换算。
 // 一代码一个文件 day/{key}.db。
 type KlineDay struct {
 	Unix          int64 `xorm:"pk"` // 秒级时间戳，日线固定 15:00
@@ -35,7 +35,7 @@ type KlineMinute struct {
 	Volume        int64   // 已确认市场为股；其他市场按默认倍率存储，单位待确认
 	Amount        float64 // 原币种成交额，AmountUnknown=true 时为 0
 	AmountUnknown bool    `xorm:"default 0"`
-	Source        string  `xorm:"default ''"` // 空=原生分钟线（含旧库），trade=分笔合成
+	Source        string  `xorm:"default ''"` // 空=原生分钟线，trade=分笔合成
 }
 
 // MinuteSourceTrade 标识分笔合成的近似分钟线。
