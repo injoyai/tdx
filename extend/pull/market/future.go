@@ -104,14 +104,8 @@ func (u *exUnit) marketOf(code pull.Code) (uint8, string, error) {
 	return u.markets[0], codeStr, nil
 }
 
-// parseExTime 仅转换 bars 已验证的钟面时间，统一采用固定东八区。
-func parseExTime(dt string) time.Time {
-	at, _ := time.ParseInLocation("2006-01-02 15:04", dt, protocol.Location())
-	return at
-}
-
 // bars 复用客户端分页；过滤 Until 包含的界外停止记录。
-func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time.Time) ([]protocol.ExKline, error) {
+func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from string) ([]protocol.ExKline, error) {
 	p, err := u.Ex(s)
 	if err != nil {
 		return nil, err
@@ -124,9 +118,16 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 	err = p.Do(func(c tdx.Client) error {
 		var parseErr error
 		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), func(k tdx.Kline) bool {
-			var at time.Time
-			at, parseErr = time.ParseInLocation("2006-01-02 15:04", k.Time, protocol.Location())
-			return parseErr != nil || !at.After(from)
+			layout := protocol.TimeLayout
+			if !protocol.IsIntraday(category) {
+				layout = time.DateOnly
+			}
+			at, err := time.Parse(layout, k.Time)
+			parseErr = err
+			if err == nil && at.Format(layout) != k.Time {
+				parseErr = fmt.Errorf("无效源时间 %q", k.Time)
+			}
+			return parseErr != nil || k.Time <= from
 		})
 		if err != nil {
 			return err
@@ -135,11 +136,21 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from time
 			return parseErr
 		}
 		for _, k := range r.List {
-			at, err := time.ParseInLocation("2006-01-02 15:04", k.Time, protocol.Location())
+			layout := protocol.TimeLayout
+			if !protocol.IsIntraday(category) {
+				layout = time.DateOnly
+			}
+			at, err := time.Parse(layout, k.Time)
 			if err != nil {
 				return err
 			}
-			if !at.Before(from) {
+			if at.Format(layout) != k.Time {
+				return fmt.Errorf("无效源时间 %q", k.Time)
+			}
+			if k.Extended == nil {
+				return fmt.Errorf("缺少扩展 K 线原始记录")
+			}
+			if k.Time >= from {
 				out = append(out, *k.Extended)
 			}
 		}
@@ -154,14 +165,11 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	last, err := s.LastDayUnix(code)
+	last, err := s.LastDayTime(code)
 	if err != nil {
 		return err
 	}
-	from := s.Start()
-	if last > from.Unix() {
-		from = time.Unix(last, 0)
-	}
+	from := max(last, s.Start().Format(time.DateOnly))
 	bars, err := u.bars(s, code, info.Day.Category, from)
 	if err != nil {
 		return err
@@ -169,11 +177,11 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	out := make([]*pull.KlineDay, 0, len(bars))
 	for _, k := range bars {
 		out = append(out, &pull.KlineDay{
-			Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
+			Time: k.Datetime, Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: info.Day.ToStorageVolume(int64(k.Trade)), AmountUnknown: true,
 		})
 	}
-	return saveDays(s, code, from.Unix(), out)
+	return saveDays(s, code, from, out)
 }
 
 // FetchMinute 多年份共用一次分页，成功扫描后才提交年度完成标记。
@@ -182,7 +190,7 @@ func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
+	return pullMinutes(s, code, time.Now(), func(from string) ([]*pull.KlineMinute, error) {
 		bars, err := u.bars(s, code, info.Minute.Category, from)
 		if err != nil {
 			return nil, err
@@ -190,7 +198,7 @@ func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		out := make([]*pull.KlineMinute, 0, len(bars))
 		for _, k := range bars {
 			out = append(out, &pull.KlineMinute{
-				Unix: parseExTime(k.Datetime).Unix(), Open: k.Open, High: k.High,
+				Time: k.Datetime, Open: k.Open, High: k.High,
 				Low: k.Low, Close: k.Close, Volume: info.Minute.ToStorageVolume(int64(k.Trade)), AmountUnknown: true,
 			})
 		}

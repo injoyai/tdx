@@ -26,7 +26,7 @@ func main() {
 	var before time.Time
 	if *until != "" {
 		var err error
-		before, err = time.ParseInLocation("20060102", *until, time.Local)
+		before, err = time.Parse("20060102", *until)
 		logs.PanicErr(err)
 	}
 	c := tdx.NewClient(tdx.WithRedial(false))
@@ -42,7 +42,10 @@ func main() {
 
 func query(c tdx.Client, category uint8, code string, start, count uint16, all bool, before time.Time) (*tdx.KlineResp, error) {
 	if !before.IsZero() {
-		boundary := before.Format("2006-01-02 15:04")
+		boundary := before.Format(protocol.TimeLayout)
+		if !protocol.IsIntraday(category) {
+			boundary = before.Format(time.DateOnly)
+		}
 		return c.GetKlineUntil(category, code, func(k tdx.Kline) bool { return k.Time < boundary })
 	}
 	if all {

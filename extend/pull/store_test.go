@@ -50,33 +50,33 @@ func TestStoreDay(t *testing.T) {
 	// 首次插入 3 根
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*KlineDay{
-		{Unix: base.Unix(), Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 100, Amount: 150},
-		{Unix: base.AddDate(0, 0, 1).Unix(), Open: 1.5, High: 2.5, Low: 1, Close: 2, Volume: 200, Amount: 400},
-		{Unix: base.AddDate(0, 0, 2).Unix(), Open: 2, High: 3, Low: 1.5, Close: 2.5, Volume: 300, Amount: 750},
+		{Time: base.Format("2006-01-02"), Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 100, Amount: 150},
+		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 1.5, High: 2.5, Low: 1, Close: 2, Volume: 200, Amount: 400},
+		{Time: base.AddDate(0, 0, 2).Format("2006-01-02"), Open: 2, High: 3, Low: 1.5, Close: 2.5, Volume: 300, Amount: 750},
 	}
-	if err := s.SaveDay(code, 0, ks); err != nil {
+	if err := s.SaveDay(code, "", ks); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
 
-	last, err := s.LastDayUnix(code)
+	last, err := s.LastDayTime(code)
 	if err != nil {
-		t.Fatalf("LastDayUnix: %v", err)
+		t.Fatalf("LastDayTime: %v", err)
 	}
-	if last != ks[2].Unix {
-		t.Errorf("LastDayUnix = %d, want %d", last, ks[2].Unix)
+	if last != ks[2].Time {
+		t.Errorf("LastDayTime = %s, want %s", last, ks[2].Time)
 	}
 
 	// 增量：从 last 之后追加一根，模拟当天更新的最新 K 线
-	next := &KlineDay{Unix: base.AddDate(0, 0, 3).Unix(), Open: 2.5, High: 3.5, Low: 2, Close: 3, Volume: 400, Amount: 1200}
+	next := &KlineDay{Time: base.AddDate(0, 0, 3).Format("2006-01-02"), Open: 2.5, High: 3.5, Low: 2, Close: 3, Volume: 400, Amount: 1200}
 	if err := s.SaveDay(code, last, []*KlineDay{next}); err != nil {
 		t.Fatalf("SaveDay 增量: %v", err)
 	}
-	last2, err := s.LastDayUnix(code)
+	last2, err := s.LastDayTime(code)
 	if err != nil {
-		t.Fatalf("LastDayUnix2: %v", err)
+		t.Fatalf("LastDayTime2: %v", err)
 	}
-	if last2 != next.Unix {
-		t.Errorf("LastDayUnix 增量后 = %d, want %d", last2, next.Unix)
+	if last2 != next.Time {
+		t.Errorf("LastDayTime 增量后 = %s, want %s", last2, next.Time)
 	}
 
 	// 查询区间（第 3 根被增量替换为 base+3，库里共 3 根）
@@ -86,15 +86,15 @@ func TestStoreDay(t *testing.T) {
 		t.Fatalf("openDB: %v", err)
 	}
 	defer db.Close()
-	ls, err := queryDay(db, base, base.AddDate(0, 0, 3))
+	ls, err := queryDay(db, base.Format("2006-01-02"), base.AddDate(0, 0, 3).Format("2006-01-02"))
 	if err != nil {
 		t.Fatalf("queryDay: %v", err)
 	}
 	if len(ls) != 3 {
 		t.Fatalf("queryDay = %d 根, want 3", len(ls))
 	}
-	if ls[0].Unix != ks[0].Unix {
-		t.Errorf("queryDay 升序: first = %d, want %d", ls[0].Unix, ks[0].Unix)
+	if ls[0].Time != ks[0].Time {
+		t.Errorf("queryDay 升序: first = %s, want %s", ls[0].Time, ks[0].Time)
 	}
 }
 
@@ -104,26 +104,26 @@ func TestStoreDayUpsert(t *testing.T) {
 
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*KlineDay{
-		{Unix: base.Unix(), Open: 1, Close: 2, Volume: 100},
-		{Unix: base.AddDate(0, 0, 1).Unix(), Open: 2, Close: 3, Volume: 200},
+		{Time: base.Format("2006-01-02"), Open: 1, Close: 2, Volume: 100},
+		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 2, Close: 3, Volume: 200},
 	}
-	if err := s.SaveDay(code, 0, ks); err != nil {
+	if err := s.SaveDay(code, "", ks); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
 
 	// 用 from=第一根 重新写入（幂等覆盖），数据量多一根且改动第一根
 	ks2 := []*KlineDay{
-		{Unix: base.Unix(), Open: 9, Close: 99, Volume: 999},
-		{Unix: base.AddDate(0, 0, 1).Unix(), Open: 2, Close: 3, Volume: 200},
-		{Unix: base.AddDate(0, 0, 2).Unix(), Open: 3, Close: 4, Volume: 300},
+		{Time: base.Format("2006-01-02"), Open: 9, Close: 99, Volume: 999},
+		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 2, Close: 3, Volume: 200},
+		{Time: base.AddDate(0, 0, 2).Format("2006-01-02"), Open: 3, Close: 4, Volume: 300},
 	}
-	if err := s.SaveDay(code, ks[0].Unix, ks2); err != nil {
+	if err := s.SaveDay(code, ks[0].Time, ks2); err != nil {
 		t.Fatalf("SaveDay upsert: %v", err)
 	}
 
-	last, _ := s.LastDayUnix(code)
-	if last != ks2[2].Unix {
-		t.Errorf("upsert 后 LastDayUnix = %d, want %d", last, ks2[2].Unix)
+	last, _ := s.LastDayTime(code)
+	if last != ks2[2].Time {
+		t.Errorf("upsert 后 LastDayTime = %s, want %s", last, ks2[2].Time)
 	}
 	dayFile := code.DayFile(s.Config().Dir)
 	db, err := openDB(dayFile, new(KlineDay))
@@ -131,7 +131,7 @@ func TestStoreDayUpsert(t *testing.T) {
 		t.Fatalf("openDB: %v", err)
 	}
 	defer db.Close()
-	ls, _ := queryDay(db, time.Time{}, time.Now().AddDate(0, 0, 10))
+	ls, _ := queryDay(db, "", time.Now().AddDate(0, 0, 10).Format(time.DateOnly))
 	if len(ls) != 3 {
 		t.Fatalf("upsert 后 = %d 根, want 3", len(ls))
 	}
@@ -149,22 +149,22 @@ func TestStoreMinute(t *testing.T) {
 	ks := make([]*KlineMinute, 0, 3)
 	for i := 0; i < 3; i++ {
 		ks = append(ks, &KlineMinute{
-			Unix:   base.Add(time.Duration(i) * time.Minute).Unix(),
+			Time:   base.Add(time.Duration(i) * time.Minute).Format("2006-01-02 15:04"),
 			Open:   float64(i + 1),
 			Close:  float64(i + 1),
 			Volume: int64(i+1) * 100,
 		})
 	}
-	if err := s.SaveMinute(code, year, 0, ks); err != nil {
+	if err := s.SaveMinute(code, year, "", ks); err != nil {
 		t.Fatalf("SaveMinute: %v", err)
 	}
 
-	last, err := s.LastMinuteUnix(code, year)
+	last, err := s.LastMinuteTime(code, year)
 	if err != nil {
-		t.Fatalf("LastMinuteUnix: %v", err)
+		t.Fatalf("LastMinuteTime: %v", err)
 	}
-	if last != ks[2].Unix {
-		t.Errorf("LastMinuteUnix = %d, want %d", last, ks[2].Unix)
+	if last != ks[2].Time {
+		t.Errorf("LastMinuteTime = %s, want %s", last, ks[2].Time)
 	}
 
 	if !s.MinuteExists(code, year) {
@@ -181,7 +181,7 @@ func TestStoreMinute(t *testing.T) {
 		t.Fatalf("openDB: %v", err)
 	}
 	defer db.Close()
-	ls, err := queryMin(db, base, base.Add(2*time.Minute))
+	ls, err := queryMin(db, base.Format("2006-01-02 15:04"), base.Add(2*time.Minute).Format("2006-01-02 15:04"))
 	if err != nil {
 		t.Fatalf("queryMin: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestDirCreation(t *testing.T) {
 	}
 	defer s.Close()
 	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
-	if err := s.SaveDay(code, 0, []*KlineDay{{Unix: 1, Open: 1, Close: 1, Volume: 100}}); err != nil {
+	if err := s.SaveDay(code, "", []*KlineDay{{Time: "2026-01-05", Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
 	// 地区/资产两级目录应自动创建
@@ -307,7 +307,7 @@ func TestQueryDay(t *testing.T) {
 	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 未建库：返回空且不创建文件
-	ls, err := s.QueryDay(code, time.Time{}, time.Time{})
+	ls, err := s.QueryDay(code, "", "")
 	if err != nil {
 		t.Fatalf("QueryDay 空库: %v", err)
 	}
@@ -321,16 +321,16 @@ func TestQueryDay(t *testing.T) {
 	// 写入后按范围查询
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*KlineDay{
-		{Unix: base.Unix(), Open: 1, Close: 1, Volume: 100},
-		{Unix: base.AddDate(0, 0, 1).Unix(), Open: 2, Close: 2, Volume: 200},
-		{Unix: base.AddDate(0, 0, 2).Unix(), Open: 3, Close: 3, Volume: 300},
+		{Time: base.Format("2006-01-02"), Open: 1, Close: 1, Volume: 100},
+		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 2, Close: 2, Volume: 200},
+		{Time: base.AddDate(0, 0, 2).Format("2006-01-02"), Open: 3, Close: 3, Volume: 300},
 	}
-	if err := s.SaveDay(code, 0, ks); err != nil {
+	if err := s.SaveDay(code, "", ks); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
 
 	// 全范围（零值端点不限制）
-	ls, err = s.QueryDay(code, time.Time{}, time.Time{})
+	ls, err = s.QueryDay(code, "", "")
 	if err != nil {
 		t.Fatalf("QueryDay: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestQueryDay(t *testing.T) {
 		t.Fatalf("QueryDay 全范围 = %d 根, want 3", len(ls))
 	}
 	// 半开区间
-	ls, err = s.QueryDay(code, base.AddDate(0, 0, 1), time.Time{})
+	ls, err = s.QueryDay(code, base.AddDate(0, 0, 1).Format("2006-01-02"), "")
 	if err != nil {
 		t.Fatalf("QueryDay 半开: %v", err)
 	}
@@ -356,18 +356,18 @@ func TestQueryMinute(t *testing.T) {
 	ks := []*KlineMinute{}
 	for i := 0; i < 3; i++ {
 		ks = append(ks, &KlineMinute{
-			Unix:   base.Add(time.Duration(i) * time.Minute).Unix(),
+			Time:   base.Add(time.Duration(i) * time.Minute).Format("2006-01-02 15:04"),
 			Open:   float64(i + 1),
 			Close:  float64(i + 1),
 			Volume: int64(i+1) * 100,
 		})
 	}
-	if err := s.SaveMinute(code, year, 0, ks); err != nil {
+	if err := s.SaveMinute(code, year, "", ks); err != nil {
 		t.Fatalf("SaveMinute: %v", err)
 	}
 
 	// 跨零值端点查询（自动定位年份文件）
-	ls, err := s.QueryMinute(code, time.Time{}, time.Time{})
+	ls, err := s.QueryMinute(code, "", "")
 	if err != nil {
 		t.Fatalf("QueryMinute: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestQueryMinute(t *testing.T) {
 		t.Fatalf("QueryMinute 全范围 = %d 根, want 3", len(ls))
 	}
 	// 范围过滤
-	ls, err = s.QueryMinute(code, base, base.Add(time.Minute))
+	ls, err = s.QueryMinute(code, base.Format("2006-01-02 15:04"), base.Add(time.Minute).Format("2006-01-02 15:04"))
 	if err != nil {
 		t.Fatalf("QueryMinute 范围: %v", err)
 	}
@@ -402,15 +402,15 @@ func TestEngineCache(t *testing.T) {
 	}
 	defer release2()
 	// 写入后查询走缓存引擎
-	if err := s.SaveDay(code, 0, []*KlineDay{{Unix: 1, Open: 1, Close: 1, Volume: 100}}); err != nil {
+	if err := s.SaveDay(code, "", []*KlineDay{{Time: "2026-01-05", Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
-	last, err := s.LastDayUnix(code)
+	last, err := s.LastDayTime(code)
 	if err != nil {
-		t.Fatalf("LastDayUnix: %v", err)
+		t.Fatalf("LastDayTime: %v", err)
 	}
-	if last != 1 {
-		t.Fatalf("LastDayUnix = %d, want 1", last)
+	if last != "2026-01-05" {
+		t.Fatalf("LastDayTime = %s, want 1", last)
 	}
 }
 
@@ -419,7 +419,7 @@ func TestSaveEmptySkipsWrite(t *testing.T) {
 	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
 	// 空数据写入应跳过，不创建库文件
-	if err := s.SaveDay(code, 0, nil); err != nil {
+	if err := s.SaveDay(code, "", nil); err != nil {
 		t.Fatalf("SaveDay 空数据: %v", err)
 	}
 	if _, err := os.Stat(code.DayFile(s.Config().Dir)); !os.IsNotExist(err) {
@@ -438,26 +438,26 @@ func TestInsertBatchOverLimit(t *testing.T) {
 	ks := make([]*KlineDay, 0, 200)
 	for i := 0; i < 200; i++ {
 		ks = append(ks, &KlineDay{
-			Unix:   base.AddDate(0, 0, i).Unix(),
+			Time:   base.AddDate(0, 0, i).Format("2006-01-02"),
 			Open:   float64(i),
 			Close:  float64(i),
 			Volume: int64(i),
 		})
 	}
-	if err := s.SaveDay(code, 0, ks); err != nil {
+	if err := s.SaveDay(code, "", ks); err != nil {
 		t.Fatalf("SaveDay 超限批量: %v", err)
 	}
 
 	// 数据完整：200 根全部落库
-	got, err := s.QueryDay(code, time.Time{}, time.Time{})
+	got, err := s.QueryDay(code, "", "")
 	if err != nil {
 		t.Fatalf("QueryDay: %v", err)
 	}
 	if len(got) != 200 {
 		t.Fatalf("落库数量 = %d, want 200", len(got))
 	}
-	if got[0].Unix != ks[0].Unix || got[199].Unix != ks[199].Unix {
-		t.Errorf("首尾时间戳不符: got %d..%d, want %d..%d",
-			got[0].Unix, got[199].Unix, ks[0].Unix, ks[199].Unix)
+	if got[0].Time != ks[0].Time || got[199].Time != ks[199].Time {
+		t.Errorf("首尾时间戳不符: got %s..%s, want %s..%s",
+			got[0].Time, got[199].Time, ks[0].Time, ks[199].Time)
 	}
 }

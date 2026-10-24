@@ -320,7 +320,7 @@ import (
 | `Update(m)` | 在 `Config.Manage` 中传入 `m`，然后调用 `s.Update()` |
 | `Run(m, spec)` | 调用方安排定时任务，在任务内调用 `s.Update()` |
 | `DayKlines(code, start, end)` | `s.QueryDay(c, start, end)`，其中 `c` 由 `pull.ParseCode(code)` 获取 |
-| `DayKlinesAll(code)` | `s.QueryDay(c, time.Time{}, time.Time{})` |
+| `DayKlinesAll(code)` | `s.QueryDay(c, "", "")` |
 | `DayKline(code, n)` | 查询升序日线后检查长度，按切片下标选取；最新一根为 `ks[len(ks)-1]` |
 | `MinKlines(code, start, end)` | `s.QueryMinute(c, start, end)` |
 
@@ -360,13 +360,25 @@ Go 最低版本为 1.25.0。默认数据目录从 `./data` 调整为 `./output/d
 旧缓存不会自动搬迁。需要保留现有代码/交易日/股本缓存时，关闭所有使用它们的进程后，将 `codes.db`、`workday.db`、`gbbq.db` 及对应 SQLite WAL/SHM 文件完整复制到新目录，保留原文件备份；这些缓存表结构不变。也可以通过 `codes.WithDB` / `workday.WithDB` / `gbbq.WithDB` 或对应 `DialDB` 选项显式配置路径。这类元数据缓存迁移与上面的旧 K 线数据库格式转换不同。
 
 
-## 固定东八区与旧库隔离
+## 源时间、交易日与真实时刻
 
-新行情时间统一使用固定 `UTC+08:00`（`protocol.Location()`），不再依赖运行机器的 `TZ`。标准 K 线和股本协议的 `time.Time`、标准当日查询日期、交易日判断、`update.StartTimer` / `manage.Manage.AddWorkdayTask` 的 cron 时区及更新去重节点都使用东八区。统一 API 的字符串仍保留源钟面值；扩展数据进入 pull 时也按固定东八区编码，不据此声称其为证券当地的真实 UTC 时刻。
+统一 API 的日／周／月／季／年 K 线 `Time` 只返回源日期 `YYYY-MM-DD`；日内 K 线保留 `YYYY-MM-DD HH:MM`。不再为日期标签添加 `15:00`。`Kline.TradingDate` 仅在确认时返回；扩展行情为空。`KlineResp` / `MinuteResp` / `TradeResp` 的 `TimeZone` 为来源时区：标准行情固定 `UTC+08:00`，扩展未知为空。显示时区由调用方处理，不改变源值。
 
-pull 的新数据目录带 `.storage-timezone` 标记。无标记且已有 `.db` 的目录在 `New` 中被拒绝，不会写入、移动或清理原库。请先使用全新的 `Config.Dir`；旧库另行迁移，本次不提供自动迁移。即使原机器一直处于东八区，也应先验证旧库口径，再由单独迁移步骤建立标记，不能通过手工补标记绕过检查。
+标准原始协议和本地文件的 `time.Time` 保留固定东八区约定，协议日线 15:00、本地日线 00:00 为内部日期标签，不代表所有市场的成交或收盘时刻。交易日判断和内置中国市场定时任务仍使用东八区，不依赖主机 `TZ`。
 
-迁移前停用所有写入者并备份 SQLite 文件及 WAL/SHM。必须先确认旧库每类数据原先采用的时区；仅有 Unix 数值不足以恢复未记录的时区。转换时需同步处理日线/分钟 Unix 主键、年份文件归属、分钟覆盖区间和缓存标记；去重与空扫描标记应在独立迁移中重新认证。代码、交易日、股本缓存中的旧时间也须核对；可重新获取的元数据优先在新缓存目录重建，保留旧缓存备份。迁移工具和已有数据的实际转换不包含在这次优化中。
+pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新目录标记为 `.time-format`，内容为 `source-time-v1`。旧 `.storage-timezone` 或未标记旧数据库会被拒绝，不自动迁移、覆盖或清理旧目录。
+
+| 旧接口／字段 | 新接口／字段 |
+| --- | --- |
+| 日线 `Unix int64` 主键 | `Time string` 源日期主键 |
+| 分钟线 `Unix int64` 主键 | `Time string` 源日期时分主键；`Unix *int64` 仅存已确认的真实时刻，配套 `TimeZone` |
+| `LastDayUnix` / `LastMinuteUnix` / `LastUnix` | `LastDayTime` / `LastMinuteTime` / `LastTime`，空库返回空字符串 |
+| `QueryDay` / `QueryMinute` 的 `time.Time` 边界 | 源日期／日期时分字符串闭区间，空字符串不限端点 |
+| Save／coverage／empty-scan 的 Unix 边界 | 同一源时间格式的字符串边界 |
+| `DayToCalendar(ks, period, loc)` | `DayToCalendar(ks, period)`，优先已知交易日，否则源日期 |
+| `MinuteToSessions(ks, n, loc, sessions)` | `MinuteToSessions(ks, n, sessions)`，按源钟面时段，不推断夜盘交易日 |
+
+`KlineDay` / `KlineMinute` 的 `TradingDate` 未知为空。标准分钟数据及标准分笔合成值带真实 `Unix` 和固定东八区标签，扩展分钟数据默认二者为空。年度文件、增量和聚合都按源时间，不再借助 Unix 恢复日期。调用 `Kline.Timestamp(loc)`、`KlineMinute.Timestamp(loc)` 或 `protocol.ParseSourceTime` 时必须显式提供已确认的来源时区；仅有日期、未知时区、夏令时跳时或重复时刻均返回错误。显式存储 Unix 必须与同一转换规则的结果完全相等，不接受源分钟标签未包含的秒值或夏令时歧义；拒绝写入时不改动已有数据和覆盖标记。
 
 
 ### 重复逻辑收敛后的兼容边界
@@ -437,7 +449,7 @@ pull 的新数据目录带 `.storage-timezone` 标记。无标记且已有 `.db`
 | 标记对象的 `Update(key)` / `Updated(key)` | `Mark(key)` / `IsUpdated(key)`；执行任务的 `Updater.Update()` 保持原名 |
 | `pull.Config.Updated` | `pull.Config.Tracker` |
 | `QueryMin` / `QueryMinCoverage` / `SaveMin` / `SaveMinComplete` / `SaveMinFallbackComplete` / `SaveMinEmptyScan` | `QueryMinute` / `QueryMinuteCoverage` / `SaveMinute` / `SaveMinuteComplete` / `SaveMinuteFallbackComplete` / `SaveMinuteEmptyScan` |
-| `MinFile` / `MinExists` / `MinYearComplete` / `MinYearRecentlyEmpty` / `LastMinUnix` | `MinuteFile` / `MinuteExists` / `MinuteYearComplete` / `MinuteYearRecentlyEmpty` / `LastMinuteUnix` |
+| `MinFile` / `MinExists` / `MinYearComplete` / `MinYearRecentlyEmpty` / `LastMinUnix` | `MinuteFile` / `MinuteExists` / `MinuteYearComplete` / `MinuteYearRecentlyEmpty` / `LastMinuteTime` |
 | `pull.Unit.FetchMin` | `pull.Unit.FetchMinute`，自定义 Unit 和调用方须同步改名 |
 | `extend.KlinesToCsv` / `extend.TradeToCsv` | `extend.KlinesToCSV` / `extend.TradesToCSV` |
 | `extend.UrlSinaFactorHfq` / `UrlSinaFactorQfq` / `UrlTHSDayKline` | `extend.URLSinaFactorHFQ` / `URLSinaFactorQFQ` / `URLTHSDayKline` |

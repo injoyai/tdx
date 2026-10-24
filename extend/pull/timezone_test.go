@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func TestStorageTimezoneAndLegacyDirectory(t *testing.T) {
+func TestStorageSourceFormatAndLegacyDirectory(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	previous := time.Local
 	defer func() { time.Local = previous }()
@@ -39,18 +39,29 @@ func TestStorageTimezoneAndLegacyDirectory(t *testing.T) {
 	if bs, err := os.ReadFile(old); err != nil || string(bs) != "unchanged legacy content" {
 		t.Fatal("legacy content changed", err)
 	}
-	if _, err := os.Stat(filepath.Join(legacy, ".storage-timezone")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(legacy, ".time-format")); !os.IsNotExist(err) {
 		t.Fatal("marked old directory without migration", err)
 	}
 	if _, err := os.Stat(filepath.Join(legacy, "updated.db")); !os.IsNotExist(err) {
 		t.Fatal("modified rejected legacy directory", err)
 	}
 	// 不认识的标记不能当作东八区继续写。
-	if err := os.WriteFile(filepath.Join(dir, ".storage-timezone"), []byte("UTC\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".time-format"), []byte("UTC\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg.Dir = dir
 	if s, err := New(cfg); err == nil || s != nil {
 		t.Fatal("accepted incompatible timezone", err)
+	}
+	marked := t.TempDir()
+	if err := os.WriteFile(filepath.Join(marked, ".storage-timezone"), []byte("UTC+08:00\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Dir = marked
+	if s, err := New(cfg); err == nil || s != nil {
+		t.Fatal("accepted old Unix format", err)
+	}
+	if _, err := os.Stat(filepath.Join(marked, ".time-format")); !os.IsNotExist(err) {
+		t.Fatal("marked old format as source time", err)
 	}
 }

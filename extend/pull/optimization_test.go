@@ -6,30 +6,29 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestMinuteCoverageRollback(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	if last, err := s.LastMinuteUnix(c, 2025); err != nil || last != 0 || s.MinuteExists(c, 2025) {
-		t.Fatalf("读取空库创建了文件或返回异常: %d %v", last, err)
+	if last, err := s.LastMinuteTime(c, 2025); err != nil || last != "" || s.MinuteExists(c, 2025) {
+		t.Fatalf("读取空库创建了文件或返回异常: %s %v", last, err)
 	}
-	if last, err := s.LastDayUnix(c); err != nil || last != 0 || exists(s.DayFile(c)) {
+	if last, err := s.LastDayTime(c); err != nil || last != "" || exists(s.DayFile(c)) {
 		t.Fatal("读取空日线库创建了文件", err)
 	}
-	ks := []*KlineMinute{{Unix: 10, Close: 2}}
-	if err := s.SaveMinute(c, 2025, 0, ks); err != nil {
+	ks := []*KlineMinute{{Time: "2025-01-05 09:31", Close: 2}}
+	if err := s.SaveMinute(c, 2025, "", ks); err != nil {
 		t.Fatal(err)
 	}
-	if done, err := s.MinuteYearComplete(c, 2025, 1); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, "2025-01-01 00:00"); done || err != nil {
 		t.Fatal("旧库不应算完成", done, err)
 	}
-	bad := []*KlineMinute{{Unix: 10, Close: 5}, {Unix: 10, Close: 6}}
-	if err := s.SaveMinuteComplete(c, 2025, 1, bad); err == nil {
+	bad := []*KlineMinute{{Time: "2025-01-05 09:31", Close: 5}, {Time: "2025-01-05 09:31", Close: 6}}
+	if err := s.SaveMinuteComplete(c, 2025, "2025-01-01 00:00", bad); err == nil {
 		t.Fatal("重复主键应回滚")
 	}
-	if done, err := s.MinuteYearComplete(c, 2025, 1); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, "2025-01-01 00:00"); done || err != nil {
 		t.Fatal("失败后标记完成", done, err)
 	}
 	// 测试记录使用合成时间戳；直接检查表中原值验证删除也被回滚。
@@ -37,34 +36,34 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := queryMin(db, time.Time{}, time.Time{})
+	rows, err := queryMin(db, "", "")
 	release()
 	if err != nil || len(rows) != 1 || rows[0].Close != 2 {
 		t.Fatalf("事务未回滚: %+v %v", rows, err)
 	}
-	if err := s.SaveMinuteComplete(c, 2025, 1, ks); err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, "2025-01-01 00:00", ks); err != nil {
 		t.Fatal(err)
 	}
-	if done, err := s.MinuteYearComplete(c, 2025, 1); !done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, "2025-01-01 00:00"); !done || err != nil {
 		t.Fatal("提交后未完成", done, err)
 	}
-	if done, err := s.MinuteYearComplete(c, 2025, 0); done || err != nil {
+	if done, err := s.MinuteYearComplete(c, 2025, "2024-12-31 00:00"); done || err != nil {
 		t.Fatal("更早区间应补拉", done, err)
 	}
 	// 服务器仅保留较新的数据时，重新认证历史区间不能删除旧本地前缀。
-	if err := s.SaveMinuteComplete(c, 2025, 0, []*KlineMinute{{Unix: 20, Close: 3}}); err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, "2024-12-31 00:00", []*KlineMinute{{Time: "2025-01-05 09:32", Close: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	db, release, err = s.openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err = queryMin(db, time.Time{}, time.Time{})
+	rows, err = queryMin(db, "", "")
 	release()
-	if err != nil || len(rows) != 2 || rows[0].Unix != 10 {
+	if err != nil || len(rows) != 2 || rows[0].Time != "2025-01-05 09:31" {
 		t.Fatal("本地历史前缀丢失", rows, err)
 	}
-	if err := s.SaveMinuteComplete(c, 2024, 0, nil); err != nil || s.MinuteExists(c, 2024) {
+	if err := s.SaveMinuteComplete(c, 2024, "", nil); err != nil || s.MinuteExists(c, 2024) {
 		t.Fatal("空年份不应建库", err)
 	}
 }
@@ -79,27 +78,27 @@ func TestEngineLimitAndBorrow(t *testing.T) {
 	}
 	defer release()
 	for i := 0; i < 8; i++ {
-		if err := s.SaveDay(Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i+10)}, 0, []*KlineDay{{Unix: 1}}); err != nil {
+		if err := s.SaveDay(Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i+10)}, "", []*KlineDay{{Time: "2026-01-05"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if len(s.engines) > 2 {
 		t.Fatal("缓存未限制", len(s.engines))
 	}
-	if _, err := LastUnix(db, new(KlineDay)); err != nil {
+	if _, err := LastTime(db, new(KlineDay)); err != nil {
 		t.Fatal("使用中的引擎被关闭", err)
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LastUnix(db, new(KlineDay)); err != nil {
+	if _, err := LastTime(db, new(KlineDay)); err != nil {
 		t.Fatal("Close 中断了借用", err)
 	}
 	release()
 	if len(s.engines) != 0 {
 		t.Fatal("释放后仍有引擎")
 	}
-	if err := s.SaveDay(c, 0, []*KlineDay{{Unix: 1}}); err == nil {
+	if err := s.SaveDay(c, "", []*KlineDay{{Time: "2026-01-05"}}); err == nil {
 		t.Fatal("关闭后重新打开引擎")
 	}
 }
@@ -114,11 +113,11 @@ func TestEngineConcurrentEviction(t *testing.T) {
 			defer wg.Done()
 			c := Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i)}
 			for j := 0; j < 3; j++ {
-				if err := s.SaveDay(c, 0, []*KlineDay{{Unix: 1, Close: float64(i)}}); err != nil {
+				if err := s.SaveDay(c, "", []*KlineDay{{Time: "2026-01-05", Close: float64(i)}}); err != nil {
 					t.Error(err)
 					return
 				}
-				rows, err := s.QueryDay(c, time.Time{}, time.Time{})
+				rows, err := s.QueryDay(c, "", "")
 				if err != nil || len(rows) != 1 || rows[0].Close != float64(i) {
 					t.Errorf("淘汰后读写异常 %v", err)
 					return

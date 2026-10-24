@@ -18,29 +18,41 @@ type minuteFallback struct {
 
 // fill 只补原生分钟最早日期之前的交易日，返回可落库数据和未完成错误。
 // 本地数据参与合并，避免补旧日期时被现有删尾重插规则删除；原生数据优先。
-func (f *minuteFallback) fill(s *pull.Service, code pull.Code, from, end, boundary time.Time,
+func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endValue, boundaryValue string,
 	native []*pull.KlineMinute) ([]*pull.KlineMinute, error) {
-	local, err := s.QueryMinute(code, from, end.Add(-time.Second))
+	from, err := protocol.ParseSourceTime(fromValue, protocol.Location())
 	if err != nil {
 		return nil, err
 	}
-	rows := make(map[int64]*pull.KlineMinute, len(local)+len(native))
+	end, err := protocol.ParseSourceTime(endValue, protocol.Location())
+	if err != nil {
+		return nil, err
+	}
+	boundary, err := time.ParseInLocation(time.DateOnly, boundaryValue, protocol.Location())
+	if err != nil {
+		return nil, err
+	}
+	local, err := s.QueryMinute(code, fromValue, end.Add(-time.Minute).Format(protocol.TimeLayout))
+	if err != nil {
+		return nil, err
+	}
+	rows := make(map[string]*pull.KlineMinute, len(local)+len(native))
 	for _, k := range local {
-		rows[k.Unix] = k
+		rows[k.Time] = k
 	}
 	limit := minuteDay(end, from.Location())
 	if boundary.After(limit) {
 		boundary = limit
 	}
 	for _, k := range native {
-		rows[k.Unix] = k
+		rows[k.Time] = k
 	}
 	result := func() []*pull.KlineMinute {
 		out := make([]*pull.KlineMinute, 0, len(rows))
 		for _, k := range rows {
 			out = append(out, k)
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Unix < out[j].Unix })
+		sort.Slice(out, func(i, j int) bool { return out[i].Time < out[j].Time })
 		return out
 	}
 	if !from.Before(boundary) {
@@ -77,8 +89,8 @@ func (f *minuteFallback) fill(s *pull.Service, code pull.Code, from, end, bounda
 			continue
 		}
 		for _, k := range ks {
-			if k.Unix >= from.Unix() && rows[k.Unix] == nil {
-				rows[k.Unix] = k
+			if k.Time >= fromValue && rows[k.Time] == nil {
+				rows[k.Time] = k
 			}
 		}
 	}
@@ -91,13 +103,13 @@ func minuteDay(t time.Time, loc *time.Location) time.Time {
 }
 
 // hasMinuteDay 不把只有几根记录的旧库当作完整交易日。
-func hasMinuteDay(rows map[int64]*pull.KlineMinute, day time.Time) bool {
+func hasMinuteDay(rows map[string]*pull.KlineMinute, day time.Time) bool {
 	for m := 570; m <= 900; m++ {
 		if m > 690 && m <= 780 {
 			continue
 		}
 		t := time.Date(day.Year(), day.Month(), day.Day(), m/60, m%60, 0, 0, day.Location())
-		if rows[t.Unix()] == nil {
+		if rows[t.Format(protocol.TimeLayout)] == nil {
 			return false
 		}
 	}
@@ -136,8 +148,9 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	ks := normalized.Klines()
 	out := make([]*pull.KlineMinute, 0, len(ks))
 	for _, k := range ks {
+		unix := k.Time.Unix()
 		out = append(out, &pull.KlineMinute{
-			Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
+			Time: k.Time.Format(protocol.TimeLayout), TradingDate: day.Format(time.DateOnly), Unix: &unix, TimeZone: protocol.Location().String(), Open: k.Open.Float64(), High: k.High.Float64(),
 			Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: protocol.ToShares(k.Volume),
 			Amount: k.Amount.Float64(), Source: pull.MinuteSourceTrade,
 		})

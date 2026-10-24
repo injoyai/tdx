@@ -19,7 +19,7 @@ type Unit interface {
 	// s 提供连接源（Manage 标准行情 / ExPool 扩展行情）访问。
 	Codes(s *Service) ([]Code, error)
 
-	// FetchDay 拉取并存储某代码日线；实现需读取最后时间戳、控制增量边界并调用 SaveDay。
+	// FetchDay 拉取并存储某代码日线；实现需读取最后源日期、控制增量边界并调用 SaveDay。
 	FetchDay(s *Service, code Code) error
 
 	// FetchMinute 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。

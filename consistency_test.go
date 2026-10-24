@@ -25,6 +25,9 @@ func (*consistencyClient) Close() error { return nil }
 func (*consistencyClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
 	i, _ := protocol.ParseInstrument(code)
 	k := &protocol.ExKline{Datetime: "2026-10-20 15:00", Open: 10, High: 10, Low: 10, Close: 10, Position: 100000, Trade: 100, Amount: float64(math.Float32frombits(100000))}
+	if !protocol.IsIntraday(category) {
+		k.Datetime = k.Datetime[:10]
+	}
 	return &tdx.KlineResp{Instrument: i, Count: 1, List: []tdx.Kline{{Time: k.Datetime, Extended: k}}}, nil
 }
 
@@ -197,7 +200,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if err := u.FetchDay(s, code); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryDay(code, time.Time{}, time.Time{})
+	rows, err := s.QueryDay(code, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +213,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if err := u.FetchMinute(s, code); err != nil {
 		t.Fatal(err)
 	}
-	minutes, err := s.QueryMinute(code, time.Time{}, time.Time{})
+	minutes, err := s.QueryMinute(code, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

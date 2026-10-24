@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-func mkDay(unix int64, open, close float64, vol int64) *KlineDay {
+func mkDay(value string, open, close float64, vol int64) *KlineDay {
 	return &KlineDay{
-		Unix:   unix,
+		Time:   value,
 		Open:   open,
 		High:   close,
 		Low:    open,
@@ -22,7 +22,7 @@ func TestDayToPeriod(t *testing.T) {
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := make([]*KlineDay, 0, 6)
 	for i := 0; i < 6; i++ {
-		ks = append(ks, mkDay(base.AddDate(0, 0, i).Unix(), float64(i+1), float64(i+1), int64(i+1)))
+		ks = append(ks, mkDay(base.AddDate(0, 0, i).Format("2006-01-02"), float64(i+1), float64(i+1), int64(i+1)))
 	}
 
 	// 合并成 5 日周期：1 根（前5个）+ 1 根（第6个）
@@ -45,7 +45,7 @@ func TestDayToPeriod(t *testing.T) {
 
 func TestDayToPeriodSingle(t *testing.T) {
 	// n<=1 原样返回
-	ks := []*KlineDay{mkDay(1, 1, 1, 1)}
+	ks := []*KlineDay{mkDay("2026-01-05", 1, 1, 1)}
 	if out := DayToPeriod(ks, 1); len(out) != 1 {
 		t.Fatalf("n=1 应原样返回, got %d", len(out))
 	}
@@ -54,9 +54,9 @@ func TestDayToPeriodSingle(t *testing.T) {
 	}
 }
 
-func mkMinute(unix int64, open, close float64, vol int64) *KlineMinute {
+func mkMinute(value string, open, close float64, vol int64) *KlineMinute {
 	return &KlineMinute{
-		Unix:   unix,
+		Time:   value,
 		Open:   open,
 		High:   close,
 		Low:    open,
@@ -70,7 +70,7 @@ func TestMinuteToPeriod(t *testing.T) {
 	base := time.Date(2026, 1, 5, 9, 31, 0, 0, time.Local)
 	ks := make([]*KlineMinute, 0, 10)
 	for i := 0; i < 10; i++ {
-		ks = append(ks, mkMinute(base.Add(time.Duration(i)*time.Minute).Unix(), float64(i+1), float64(i+1), int64(i+1)))
+		ks = append(ks, mkMinute(base.Add(time.Duration(i)*time.Minute).Format("2006-01-02 15:04"), float64(i+1), float64(i+1), int64(i+1)))
 	}
 
 	out := MinuteToPeriod(ks, 5)
@@ -91,16 +91,16 @@ func TestMinuteToPeriod(t *testing.T) {
 func TestPeriodMergePreservesPrecisionAndInput(t *testing.T) {
 	for _, price := range []float64{0.1234, -1.2345} {
 		days := []*KlineDay{
-			{Unix: 1, Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Turnover: 1, FloatStock: 100, TotalStock: 200},
-			{Unix: 2, Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3, Turnover: 2, FloatStock: 110, TotalStock: 220},
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Turnover: 1, FloatStock: 100, TotalStock: 200},
+			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3, Turnover: 2, FloatStock: 110, TotalStock: 220},
 		}
 		got := DayToPeriod(days, 2)
-		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Turnover != 3 || got[0].FloatStock != 110 || got[0].TotalStock != 220 || got[0].Unix != 2 {
+		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Turnover != 3 || got[0].FloatStock != 110 || got[0].TotalStock != 220 || got[0].Time != "2026-01-06" {
 			t.Fatal("day precision/metadata lost", got)
 		}
 		minutes := []*KlineMinute{
-			{Unix: 1, Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: MinuteSourceTrade},
-			{Unix: 2, Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: MinuteSourceTrade},
+			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
 		}
 		min := MinuteToPeriod(minutes, 2)
 		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || min[0].Amount != got[0].Amount || min[0].Volume != 5 || min[0].Source != MinuteSourceTrade {

@@ -9,13 +9,18 @@ import (
 	"strings"
 )
 
-// 旧库没有记录时间口径，不能仅凭当前机器的时区推断并自动升级。
-func checkTimezone(dir string) error {
-	const zone = "UTC+08:00\n"
-	marker := filepath.Join(dir, ".storage-timezone")
+// 源时间与旧 Unix 主键格式隔离，不自动迁移或修改旧库。
+func checkTimeFormat(dir string) error {
+	const format = "source-time-v1\n"
+	marker := filepath.Join(dir, ".time-format")
+	if _, err := os.Stat(filepath.Join(dir, ".storage-timezone")); err == nil {
+		return fmt.Errorf("pull: 目录使用旧 Unix 时间格式，请使用新的数据目录")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if bs, err := os.ReadFile(marker); err == nil {
-		if string(bs) != zone {
-			return fmt.Errorf("pull: 存储时区标记不兼容，请使用新的数据目录或先迁移旧库")
+		if string(bs) != format {
+			return fmt.Errorf("pull: 存储时间格式不兼容，请使用新的数据目录")
 		}
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -29,7 +34,7 @@ func checkTimezone(dir string) error {
 			return err
 		}
 		if !entry.IsDir() && (strings.HasSuffix(path, ".db") || strings.HasSuffix(path, ".db-wal") || strings.HasSuffix(path, ".db-shm")) {
-			return fmt.Errorf("pull: 目录存在未标记时区的旧库，请使用新目录；旧库须单独迁移后再使用")
+			return fmt.Errorf("pull: 目录存在旧数据库，请使用新的数据目录（不支持旧数据格式）")
 		}
 		return nil
 	})
@@ -42,11 +47,11 @@ func checkTimezone(dir string) error {
 	f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if errors.Is(err, os.ErrExist) {
 		// 另一个新服务可能刚完成相同目录的初始化。
-		return checkTimezone(dir)
+		return checkTimeFormat(dir)
 	}
 	if err != nil {
 		return err
 	}
-	_, err = f.WriteString(zone)
+	_, err = f.WriteString(format)
 	return errors.Join(err, f.Close())
 }

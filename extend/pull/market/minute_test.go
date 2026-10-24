@@ -23,23 +23,23 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	var data []*pull.KlineMinute
 	for y := 2024; y <= 2026; y++ {
-		data = append(data, &pull.KlineMinute{Unix: time.Date(y, 6, 1, 9, 31, 0, 0, time.Local).Unix(), Close: float64(y)})
+		data = append(data, &pull.KlineMinute{Time: time.Date(y, 6, 1, 9, 31, 0, 0, time.Local).Format("2006-01-02 15:04"), Close: float64(y)})
 	}
 	// 旧历史库虽有数据，但没有完成标记，应重扫而不是从尾部继续。
-	if err := s.SaveMinute(code, 2024, 0, data[:1]); err != nil {
+	if err := s.SaveMinute(code, 2024, "", data[:1]); err != nil {
 		t.Fatal(err)
 	}
 	failure := errors.New("page failed")
-	if err := pullMinutes(s, code, now, func(time.Time) ([]*pull.KlineMinute, error) { return data, failure }, nil); !errors.Is(err, failure) {
+	if err := pullMinutes(s, code, now, func(string) ([]*pull.KlineMinute, error) { return data, failure }, nil); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
-	if done, err := s.MinuteYearComplete(code, 2024, s.Start().Unix()); done || err != nil {
+	if done, err := s.MinuteYearComplete(code, 2024, s.Start().Format("2006-01-02 15:04")); done || err != nil {
 		t.Fatal("失败标记完成", done, err)
 	}
 	calls := 0
-	fetch := func(from time.Time) ([]*pull.KlineMinute, error) {
+	fetch := func(from string) ([]*pull.KlineMinute, error) {
 		calls++
-		if !from.Equal(s.Start()) {
+		if from != s.Start().Format(protocol.TimeLayout) {
 			t.Errorf("首次边界=%v", from)
 		}
 		return data, nil
@@ -51,24 +51,24 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 		t.Fatal("按年份重复扫描", calls)
 	}
 	for y := 2024; y < 2026; y++ {
-		from := time.Date(y, 1, 1, 0, 0, 0, 0, time.Local).Unix()
+		from := time.Date(y, 1, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02 15:04")
 		if done, err := s.MinuteYearComplete(code, y, from); !done || err != nil {
 			t.Fatal("未完成", y, done, err)
 		}
 	}
-	rows, err := s.QueryMinute(code, time.Time{}, time.Time{})
+	rows, err := s.QueryMinute(code, "", "")
 	if err != nil || len(rows) != 3 {
 		t.Fatal("分年落库失败", len(rows), err)
 	}
-	if err := pullMinutes(s, code, now, func(from time.Time) ([]*pull.KlineMinute, error) {
-		if from.Unix() != data[2].Unix {
+	if err := pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+		if from != data[2].Time {
 			t.Errorf("增量边界=%v", from)
 		}
-		return []*pull.KlineMinute{{Unix: data[2].Unix, Close: 99}}, nil
+		return []*pull.KlineMinute{{Time: data[2].Time, Close: 99}}, nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err = s.QueryMinute(code, time.Time{}, time.Time{})
+	rows, err = s.QueryMinute(code, "", "")
 	if err != nil || len(rows) != 3 || rows[2].Close != 99 {
 		t.Fatal("边界未覆盖", rows, err)
 	}
@@ -83,8 +83,8 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 2; i++ {
-		if err := pullMinutes(s, c, now, func(from time.Time) ([]*pull.KlineMinute, error) {
-			if !from.Equal(s.Start()) {
+		if err := pullMinutes(s, c, now, func(from string) ([]*pull.KlineMinute, error) {
+			if from != s.Start().Format(protocol.TimeLayout) {
 				t.Fatal("空结果被记为已完成")
 			}
 			return nil, nil
@@ -96,8 +96,8 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 		t.Fatal("空结果创建文件")
 	}
 	failed := errors.New("fetch failed")
-	err = pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) {
-		return []*pull.KlineMinute{{Unix: now.Unix()}}, failed
+	err = pullMinutes(s, c, now, func(string) ([]*pull.KlineMinute, error) {
+		return []*pull.KlineMinute{{Time: now.Format("2006-01-02 15:04")}}, failed
 	}, nil)
 	if !errors.Is(err, failed) || s.MinuteExists(c, 2026) {
 		t.Fatal("失败后仍写库", err)
@@ -111,15 +111,15 @@ func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
 	}
 	defer s.Close()
 	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	old := &pull.KlineMinute{Unix: time.Date(2026, 3, 2, 15, 0, 0, 0, time.Local).Unix(), Close: 10}
-	if err := s.SaveMinute(c, 2026, 0, []*pull.KlineMinute{old}); err != nil {
+	old := &pull.KlineMinute{Time: time.Date(2026, 3, 2, 15, 0, 0, 0, time.Local).Format("2006-01-02 15:04"), Close: 10}
+	if err := s.SaveMinute(c, 2026, "", []*pull.KlineMinute{old}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
-	newer := &pull.KlineMinute{Unix: now.Add(-time.Hour - time.Minute).Unix(), Close: 11}
-	newest := &pull.KlineMinute{Unix: now.Add(-time.Hour).Unix(), Close: 12}
-	if err := pullMinutes(s, c, now, func(from time.Time) ([]*pull.KlineMinute, error) {
-		if from.Unix() != old.Unix {
+	newer := &pull.KlineMinute{Time: now.Add(-time.Hour - time.Minute).Format("2006-01-02 15:04"), Close: 11}
+	newest := &pull.KlineMinute{Time: now.Add(-time.Hour).Format("2006-01-02 15:04"), Close: 12}
+	if err := pullMinutes(s, c, now, func(from string) ([]*pull.KlineMinute, error) {
+		if from != old.Time {
 			t.Fatalf("unexpected incremental boundary %v", from)
 		}
 		// 服务器已不保留旧记录，且返回顺序是从新到旧。
@@ -127,16 +127,16 @@ func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryMinute(c, time.Time{}, time.Time{})
-	if err != nil || len(rows) != 3 || rows[0].Unix != old.Unix || rows[1].Unix != newer.Unix {
+	rows, err := s.QueryMinute(c, "", "")
+	if err != nil || len(rows) != 3 || rows[0].Time != old.Time || rows[1].Time != newer.Time {
 		t.Fatalf("local history lost: rows=%v, err=%v", rows, err)
 	}
-	if err := pullMinutes(s, c, now, func(time.Time) ([]*pull.KlineMinute, error) {
-		return []*pull.KlineMinute{{Unix: newest.Unix, Close: 99}}, nil
+	if err := pullMinutes(s, c, now, func(string) ([]*pull.KlineMinute, error) {
+		return []*pull.KlineMinute{{Time: newest.Time, Close: 99}}, nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err = s.QueryMinute(c, time.Time{}, time.Time{})
+	rows, err = s.QueryMinute(c, "", "")
 	if err != nil || len(rows) != 3 || rows[2].Close != 99 {
 		t.Fatal("incremental boundary was not refreshed", rows, err)
 	}
@@ -147,6 +147,24 @@ type pagingClient struct {
 	rows  []tdx.Kline
 	err   error
 	calls int
+}
+
+func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
+	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20261231", Codes: []string{"usAAPL"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	code := pull.Code{Market: protocol.MarketUS, Code: "AAPL"}
+	now := time.Date(2026, 12, 31, 23, 0, 0, 0, protocol.Location())
+	row := &pull.KlineMinute{Time: "2027-01-01 00:01", Close: 10}
+	if err := pullMinutes(s, code, now, func(string) ([]*pull.KlineMinute, error) { return []*pull.KlineMinute{row}, nil }, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.QueryMinute(code, "", "")
+	if err != nil || len(rows) != 1 || rows[0].Time != row.Time || !s.MinuteExists(code, 2027) || rows[0].Unix != nil {
+		t.Fatal("host date displaced source year", rows, err)
+	}
 }
 
 func (*pagingClient) Close() error { return nil }
@@ -165,7 +183,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 	base := time.Date(2026, 1, 2, 15, 0, 0, 0, protocol.Location())
 	c := &pagingClient{}
 	for _, at := range []time.Time{base.AddDate(0, 0, -1), base, base.AddDate(0, 0, 1)} {
-		k := &protocol.ExKline{Datetime: at.Format("2006-01-02 15:04"), Close: 10}
+		k := &protocol.ExKline{Datetime: at.Format(time.DateOnly), Close: 10}
 		c.rows = append(c.rows, tdx.Kline{Time: k.Datetime, Extended: k})
 	}
 	p, err := tdx.NewPool(func() (tdx.Client, error) { return c, nil }, 1)
@@ -179,17 +197,17 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 	}
 	defer s.Close()
 	u := &exUnit{name: protocol.MarketUS, markets: []uint8{marketUS}}
-	rows, err := u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base)
+	rows, err := u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly))
 	if err != nil || len(rows) != 2 || rows[0].Datetime != c.rows[1].Time || c.calls != 1 {
 		t.Fatal(rows, c.calls, err)
 	}
 	c.err = errors.New("page failed")
-	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); !errors.Is(err, c.err) {
+	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly)); !errors.Is(err, c.err) {
 		t.Fatal("lost paging error", err)
 	}
 	c.err = nil
 	c.rows = []tdx.Kline{{Time: "invalid"}}
-	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base); err == nil {
+	if _, err = u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly)); err == nil {
 		t.Fatal("accepted invalid source time")
 	}
 }
@@ -221,18 +239,18 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 	}
 	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
-	row := &pull.KlineMinute{Unix: now.Add(-time.Hour).Unix(), Close: 10}
+	row := &pull.KlineMinute{Time: now.Add(-time.Hour).Format("2006-01-02 15:04"), Close: 10}
 	failed := errors.New("scan failed")
-	if err := pullMinutes(s, code, now, func(time.Time) ([]*pull.KlineMinute, error) {
+	if err := pullMinutes(s, code, now, func(string) ([]*pull.KlineMinute, error) {
 		return []*pull.KlineMinute{row}, failed
 	}, nil); !errors.Is(err, failed) {
 		t.Fatal(err)
 	}
-	if empty, err := s.MinuteYearRecentlyEmpty(code, 2024, s.Start().Unix(), now); err != nil || empty {
+	if empty, err := s.MinuteYearRecentlyEmpty(code, 2024, s.Start().Format("2006-01-02 15:04"), now); err != nil || empty {
 		t.Fatal("请求失败被缓存为空历史", empty, err)
 	}
-	if err := pullMinutes(s, code, now, func(from time.Time) ([]*pull.KlineMinute, error) {
-		if !from.Equal(s.Start()) {
+	if err := pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+		if from != s.Start().Format(protocol.TimeLayout) {
 			t.Fatal("首次未扫描完整范围", from)
 		}
 		return []*pull.KlineMinute{row}, nil
@@ -250,25 +268,25 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err := pullMinutes(s, code, now.AddDate(0, 0, 1), func(from time.Time) ([]*pull.KlineMinute, error) {
-		if from.Unix() != row.Unix {
+	if err := pullMinutes(s, code, now.AddDate(0, 0, 1), func(from string) ([]*pull.KlineMinute, error) {
+		if from != row.Time {
 			t.Fatal("重启后仍重复扫描空年份", from)
 		}
-		return []*pull.KlineMinute{{Unix: row.Unix, Close: 99}}, nil
+		return []*pull.KlineMinute{{Time: row.Time, Close: 99}}, nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	old := &pull.KlineMinute{Unix: s.Start().Add(9*time.Hour + 31*time.Minute).Unix(), Close: 11}
-	if err := pullMinutes(s, code, now.AddDate(0, 0, 7), func(from time.Time) ([]*pull.KlineMinute, error) {
-		if !from.Equal(s.Start()) {
+	old := &pull.KlineMinute{Time: s.Start().Add(9*time.Hour + 31*time.Minute).Format("2006-01-02 15:04"), Close: 11}
+	if err := pullMinutes(s, code, now.AddDate(0, 0, 7), func(from string) ([]*pull.KlineMinute, error) {
+		if from != s.Start().Format(protocol.TimeLayout) {
 			t.Fatal("到期未复查历史", from)
 		}
 		return []*pull.KlineMinute{row, old}, nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.QueryMinute(code, time.Time{}, time.Time{})
-	if err != nil || len(rows) != 2 || rows[0].Unix != old.Unix {
+	rows, err := s.QueryMinute(code, "", "")
+	if err != nil || len(rows) != 2 || rows[0].Time != old.Time {
 		t.Fatal("重新出现的历史数据未补入", rows, err)
 	}
 }

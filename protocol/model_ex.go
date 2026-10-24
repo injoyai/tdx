@@ -334,7 +334,7 @@ func (exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
 		trade := r.u32()
 		price := r.f32()
 		out = append(out, ExKline{
-			Datetime: t.Format("2006-01-02 15:04"),
+			Datetime: KlineTime(t, c.Category),
 			Open:     open, High: high, Low: low, Close: cls,
 			Position: position, Trade: trade, Price: price, Amount: amount,
 		})

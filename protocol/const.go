@@ -19,5 +19,5 @@ const (
 
 var (
 	// ExchangeEstablish 交易所成立时间
-	ExchangeEstablish = time.Date(1990, 12, 19, 0, 0, 0, 0, time.Local)
+	ExchangeEstablish = time.Date(1990, 12, 19, 0, 0, 0, 0, Location())
 )

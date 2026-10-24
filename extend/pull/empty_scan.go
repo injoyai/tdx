@@ -11,7 +11,7 @@ import (
 // 与行情覆盖标记分开：空历史只暂缓复查，不表示数据完整。
 type emptyMinuteScan struct {
 	Key       string `xorm:"pk"`
-	From      int64
+	From      string
 	CheckedAt int64
 }
 
@@ -21,7 +21,10 @@ func emptyScanKey(code Code, year int) string {
 
 // MinuteYearRecentlyEmpty 检查该历史年份是否在最近 7 天内成功扫描为空。
 // 更早的起始日期或时钟回退不会复用缓存；不创建空行情库。
-func (s *Service) MinuteYearRecentlyEmpty(code Code, year int, from int64, now time.Time) (bool, error) {
+func (s *Service) MinuteYearRecentlyEmpty(code Code, year int, from string, now time.Time) (bool, error) {
+	if err := validateRange(from, "", "2006-01-02 15:04"); err != nil {
+		return false, err
+	}
 	file := filepath.Join(s.cfg.Dir, "minute-scans.db")
 	if !exists(file) {
 		return false, nil
@@ -39,7 +42,10 @@ func (s *Service) MinuteYearRecentlyEmpty(code Code, year int, from int64, now t
 
 // SaveMinuteEmptyScan 记录一次成功扫描的空历史范围；调用方不得用它缓存请求失败。
 // 内置市场仅在原生扫描返回其他年份的有效数据时调用，不用于分笔兜底。
-func (s *Service) SaveMinuteEmptyScan(code Code, year int, from int64, now time.Time) error {
+func (s *Service) SaveMinuteEmptyScan(code Code, year int, from string, now time.Time) error {
+	if err := validateRange(from, "", "2006-01-02 15:04"); err != nil {
+		return err
+	}
 	db, release, err := s.engine(filepath.Join(s.cfg.Dir, "minute-scans.db"), new(emptyMinuteScan))
 	if err != nil {
 		return err

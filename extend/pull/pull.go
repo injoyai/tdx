@@ -116,7 +116,7 @@ func New(cfg *Config) (*Service, error) {
 	if len(units) == 0 {
 		return nil, fmt.Errorf("pull: 未注册任何市场 Unit")
 	}
-	if err := checkTimezone(cfg.Dir); err != nil {
+	if err := checkTimeFormat(cfg.Dir); err != nil {
 		return nil, err
 	}
 
@@ -436,8 +436,11 @@ func (s *Service) DayFile(code Code) string { return code.DayFile(s.cfg.Dir) }
 func (s *Service) MinuteFile(code Code, year int) string { return code.MinuteFile(s.cfg.Dir, year) }
 
 // QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空。
-// start/end 为零值时表示不限制该端。
-func (s *Service) QueryDay(code Code, start, end time.Time) ([]*KlineDay, error) {
+// start/end 为空字符串时表示不限制该端。
+func (s *Service) QueryDay(code Code, start, end string) ([]*KlineDay, error) {
+	if err := validateRange(start, end, time.DateOnly); err != nil {
+		return nil, err
+	}
 	if !exists(code.DayFile(s.cfg.Dir)) {
 		return nil, nil
 	}
@@ -455,37 +458,40 @@ func (s *Service) QueryDay(code Code, start, end time.Time) ([]*KlineDay, error)
 	return rows, err
 }
 
-// LastDayUnix 查询某代码日线库内最后一条记录的时间戳；空库返回 0。
-func (s *Service) LastDayUnix(code Code) (int64, error) {
+// LastDayTime 查询某代码日线库内最后一条记录的源时间；空库返回空字符串。
+func (s *Service) LastDayTime(code Code) (string, error) {
 	if !exists(s.DayFile(code)) {
-		return 0, nil
+		return "", nil
 	}
 	db, release, err := s.openDay(code)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	defer release()
-	return LastUnix(db, new(KlineDay))
+	return LastTime(db, new(KlineDay))
 }
 
-// LastMinuteUnix 查询某代码指定年份分钟库内最后一条记录的时间戳；空库返回 0。
-func (s *Service) LastMinuteUnix(code Code, year int) (int64, error) {
+// LastMinuteTime 查询某代码指定年份分钟库内最后一条记录的源时间；空库返回空字符串。
+func (s *Service) LastMinuteTime(code Code, year int) (string, error) {
 	if !s.MinuteExists(code, year) {
-		return 0, nil
+		return "", nil
 	}
 	db, release, err := s.openMinute(code, year)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	defer release()
-	return LastUnix(db, new(KlineMinute))
+	return LastTime(db, new(KlineMinute))
 }
 
-// SaveDay 打开某代码日线库并增量写入（删除 Unix>=from 后插入，事务内幂等）。
+// SaveDay 打开某代码日线库并增量写入（删除 Time>=from 后插入，事务内幂等）。
 // 空数据直接跳过（不打开库文件，避免创建空库）。
-func (s *Service) SaveDay(code Code, from int64, ks []*KlineDay) error {
+func (s *Service) SaveDay(code Code, from string, ks []*KlineDay) error {
 	if len(ks) == 0 {
 		return nil
+	}
+	if err := validateDays(from, ks); err != nil {
+		return err
 	}
 	db, release, err := s.openDay(code)
 	if err != nil {
@@ -495,11 +501,14 @@ func (s *Service) SaveDay(code Code, from int64, ks []*KlineDay) error {
 	return upsertDay(db, from, ks)
 }
 
-// SaveMinute 打开某代码指定年份分钟库并增量写入（删除 Unix>=from 后插入，事务内幂等）。
+// SaveMinute 打开某代码指定年份分钟库并增量写入（删除 Time>=from 后插入，事务内幂等）。
 // 空数据直接跳过（不打开库文件，避免创建空库）。
-func (s *Service) SaveMinute(code Code, year int, from int64, ks []*KlineMinute) error {
+func (s *Service) SaveMinute(code Code, year int, from string, ks []*KlineMinute) error {
 	if len(ks) == 0 {
 		return nil
+	}
+	if err := validateMinutes(year, from, ks); err != nil {
+		return err
 	}
 	db, release, err := s.openMinute(code, year)
 	if err != nil {
@@ -515,13 +524,24 @@ func (s *Service) MinuteExists(code Code, year int) bool {
 }
 
 // QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
-// start/end 为零值时表示不限制该端。
-func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, error) {
+// start/end 为空字符串时表示不限制该端。
+func (s *Service) QueryMinute(code Code, start, end string) ([]*KlineMinute, error) {
 	out := []*KlineMinute{}
-	startYear, endYear := minMaxYear(start, end, s.Start().Location())
-	for y := startYear; y <= endYear; y++ {
-		file := code.MinuteFile(s.cfg.Dir, y)
-		if !exists(file) {
+	if err := validateRange(start, end, protocol.TimeLayout); err != nil {
+		return nil, err
+	}
+	startYear, endYear := minMaxYear(start, end)
+	files, err := filepath.Glob(filepath.Join(filepath.Dir(code.MinuteFile(s.cfg.Dir, 2000)), "*.db"))
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		var y int
+		name := filepath.Base(file)
+		if len(name) < 7 {
+			continue
+		}
+		if _, err := fmt.Sscanf(name[len(name)-7:], "%d.db", &y); err != nil || y < startYear || y > endYear || file != code.MinuteFile(s.cfg.Dir, y) {
 			continue
 		}
 		db, release, err := s.engine(file, new(KlineMinute))
@@ -543,14 +563,14 @@ func (s *Service) QueryMinute(code Code, start, end time.Time) ([]*KlineMinute, 
 	return out, nil
 }
 
-// minMaxYear 返回查询区间覆盖的年份范围；零值端点不限制。
-func minMaxYear(start, end time.Time, loc *time.Location) (int, int) {
-	startYear, endYear := 1990, time.Now().In(loc).Year()
-	if !start.IsZero() {
-		startYear = start.In(loc).Year()
+// minMaxYear 返回查询区间覆盖的年份范围；空字符串端点不限制。
+func minMaxYear(start, end string) (int, int) {
+	startYear, endYear := 0, 9999
+	if start != "" {
+		fmt.Sscanf(start[:4], "%d", &startYear)
 	}
-	if !end.IsZero() {
-		endYear = end.In(loc).Year()
+	if end != "" {
+		fmt.Sscanf(end[:4], "%d", &endYear)
 	}
 	return startYear, endYear
 }

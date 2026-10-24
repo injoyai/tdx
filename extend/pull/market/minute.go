@@ -2,6 +2,7 @@ package market
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -11,44 +12,42 @@ import (
 
 type minuteTarget struct {
 	year       int
-	from       int64
+	from       string
 	historical bool
-	through    int64
+	through    string
 }
 
 // pullMinutes 所有缺失年份共用一次从新到旧的扫描；扫描成功后再按年提交。
 // 完成指已读完服务器可提供的区间，不保证服务器保留了上市以来的全部历史。
 func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
-	fetch func(time.Time) ([]*pull.KlineMinute, error), supplement *minuteFallback) error {
+	fetch func(string) ([]*pull.KlineMinute, error), supplement *minuteFallback) error {
 	start := s.Start()
 	now = now.In(start.Location())
-	if start.After(now) {
+	info, known := code.Market.Info()
+	if start.After(now) && known && info.Protocol == protocol.ProtocolStandard {
 		return nil
 	}
 	var targets []minuteTarget
-	var earliest time.Time
-	for year := start.Year(); year <= now.Year(); year++ {
-		from := time.Date(year, 1, 1, 0, 0, 0, 0, start.Location())
-		if start.After(from) {
-			from = start
-		}
+	var earliest string
+	for year := start.Year(); year <= max(start.Year(), now.Year()); year++ {
+		from := max(fmt.Sprintf("%04d-01-01 00:00", year), start.Format(protocol.TimeLayout))
 		historical := year < now.Year()
-		through := time.Date(year+1, 1, 1, 0, 0, 0, 0, start.Location()).Unix()
+		through := fmt.Sprintf("%04d-01-01 00:00", year+1)
 		if !historical {
-			through = now.Unix()
+			through = now.Add(time.Minute).Format(protocol.TimeLayout)
 		}
 		coverage, err := s.QueryMinuteCoverage(code, year)
 		if err != nil {
 			return err
 		}
 		if historical {
-			if coverage != nil && coverage.From <= from.Unix() &&
+			if coverage != nil && coverage.From <= from &&
 				(!coverage.TradeFallback || coverage.Through >= through) &&
 				(supplement == nil || coverage.TradeFallback) {
 				continue
 			}
 			if supplement == nil {
-				empty, err := s.MinuteYearRecentlyEmpty(code, year, from.Unix(), now)
+				empty, err := s.MinuteYearRecentlyEmpty(code, year, from, now)
 				if err != nil {
 					return err
 				}
@@ -57,24 +56,24 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 				}
 			}
 		} else {
-			last, err := s.LastMinuteUnix(code, year)
+			last, err := s.LastMinuteTime(code, year)
 			if err != nil {
 				return err
 			}
 			if supplement != nil {
 				// 旧标记或未完成的当年仍需补早期历史，不能只从最新一根继续。
-				if coverage == nil || !coverage.TradeFallback || coverage.From > from.Unix() {
-					last = 0
+				if coverage == nil || !coverage.TradeFallback || coverage.From > from {
+					last = ""
 				} else {
 					last = min(last, coverage.Through)
 				}
 			}
-			if last > from.Unix() {
-				from = time.Unix(last, 0).In(start.Location())
+			if last > from {
+				from = last
 			}
 		}
-		targets = append(targets, minuteTarget{year: year, from: from.Unix(), historical: historical, through: through})
-		if earliest.IsZero() || from.Before(earliest) {
+		targets = append(targets, minuteTarget{year: year, from: from, historical: historical, through: through})
+		if earliest == "" || from < earliest {
 			earliest = from
 		}
 	}
@@ -85,10 +84,32 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 	if err != nil {
 		return err
 	}
-	boundary := minuteDay(now, start.Location())
+	planned := make(map[int]bool, len(targets))
+	for _, target := range targets {
+		planned[target.year] = true
+	}
+	boundary := now.Format(time.DateOnly)
 	for _, k := range ks {
-		day := minuteDay(time.Unix(k.Unix, 0), start.Location())
-		if day.Before(boundary) {
+		if k == nil {
+			return fmt.Errorf("pull: nil 分钟线")
+		}
+		at, err := time.Parse(protocol.TimeLayout, k.Time)
+		if err != nil || at.Format(protocol.TimeLayout) != k.Time {
+			return fmt.Errorf("pull: 无效源时间 %q", k.Time)
+		}
+		// 来源时区未知时，服务器日期可能已进入下一年；按实际返回的年份落库。
+		if at.Year() > now.Year() && !planned[at.Year()] && k.Time >= start.Format(protocol.TimeLayout) {
+			from := max(fmt.Sprintf("%04d-01-01 00:00", at.Year()), start.Format(protocol.TimeLayout))
+			last, err := s.LastMinuteTime(code, at.Year())
+			if err != nil {
+				return err
+			}
+			from = max(from, last)
+			targets = append(targets, minuteTarget{year: at.Year(), from: from, through: fmt.Sprintf("%04d-01-01 00:00", at.Year()+1)})
+			planned[at.Year()] = true
+		}
+		day := k.Time[:10]
+		if day < boundary {
 			boundary = day
 		}
 	}
@@ -101,19 +122,25 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		var days protocol.Klines
 		var daysErr error
 		supplement = &minuteFallback{trades: supplement.trades, days: func(time.Time) (protocol.Klines, error) {
-			daysOnce.Do(func() { days, daysErr = originalDays(earliest) })
+			daysOnce.Do(func() {
+				at, err := protocol.ParseSourceTime(earliest, protocol.Location())
+				if err != nil {
+					daysErr = err
+					return
+				}
+				days, daysErr = originalDays(at)
+			})
 			return days, daysErr
 		}}
 		var merged []*pull.KlineMinute
 		for _, target := range targets {
 			var yearNative []*pull.KlineMinute
 			for _, k := range ks {
-				if k.Unix >= target.from && k.Unix < target.through {
+				if k.Time >= target.from && k.Time < target.through {
 					yearNative = append(yearNative, k)
 				}
 			}
-			out, err := supplement.fill(s, code, time.Unix(target.from, 0).In(start.Location()),
-				time.Unix(target.through, 0).In(start.Location()), boundary, yearNative)
+			out, err := supplement.fill(s, code, target.from, target.through, boundary, yearNative)
 			if err != nil {
 				fallbackErrs = append(fallbackErrs, err)
 				fallbackFailed[target.year] = true
@@ -125,13 +152,14 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 	var saveErrors []error
 	byYear := make(map[int][]*pull.KlineMinute)
 	for _, k := range ks {
-		year := time.Unix(k.Unix, 0).In(start.Location()).Year()
+		var year int
+		fmt.Sscanf(k.Time[:4], "%d", &year)
 		byYear[year] = append(byYear[year], k)
 	}
 	for _, target := range targets {
 		var out []*pull.KlineMinute
 		for _, k := range byYear[target.year] {
-			if k.Unix >= target.from {
+			if k.Time >= target.from {
 				out = append(out, k)
 			}
 		}
@@ -149,9 +177,9 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 			err = s.SaveMinuteComplete(code, target.year, target.from, out)
 		} else {
 			// 保留服务器滚动历史窗口之前的本地记录。
-			writeFrom := out[0].Unix
+			writeFrom := out[0].Time
 			for _, k := range out[1:] {
-				writeFrom = min(writeFrom, k.Unix)
+				writeFrom = min(writeFrom, k.Time)
 			}
 			err = s.SaveMinute(code, target.year, writeFrom, out)
 		}

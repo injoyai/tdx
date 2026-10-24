@@ -2,7 +2,8 @@ package pull
 
 import (
 	"errors"
-	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"xorm.io/xorm"
@@ -11,7 +12,8 @@ import (
 // KlineDay 日线；价格/金额使用证券原币种或报价单位，成交量按 protocol.Market.Info 换算。
 // 一代码一个文件 day/{key}.db。
 type KlineDay struct {
-	Unix          int64 `xorm:"pk"` // 秒级时间戳，日线固定 15:00
+	Time          string `xorm:"pk"` // 源日期 YYYY-MM-DD，不附加收盘时刻
+	TradingDate   string // 已确认交易日 YYYY-MM-DD；未知为空
 	Open          float64
 	High          float64
 	Low           float64
@@ -27,7 +29,10 @@ type KlineDay struct {
 // KlineMinute 1分钟线；量价单位及未确认金额语义与 KlineDay 相同。
 // 一代码一年一个文件 min/{key}/{year}.db。
 type KlineMinute struct {
-	Unix          int64 `xorm:"pk"` // 秒级时间戳
+	Time          string `xorm:"pk"` // 源日期时分 YYYY-MM-DD HH:MM
+	TradingDate   string // 已确认交易日 YYYY-MM-DD；不从夜盘日期推断
+	Unix          *int64 // 已确认真实时刻的 Unix 秒；未知为 NULL
+	TimeZone      string // Unix 的来源时区；未知为空
 	Open          float64
 	High          float64
 	Low           float64
@@ -54,33 +59,33 @@ func openDB(filename string, table any) (*xorms.Engine, error) {
 	return db, nil
 }
 
-// LastUnix 查询表内最后一条记录的时间戳；空表返回 0。
-func LastUnix(db *xorms.Engine, table any) (int64, error) {
-	has, err := db.Desc("Unix").Get(table)
+// LastTime 查询表内最后一条记录的源时间；空表返回空字符串。
+func LastTime(db *xorms.Engine, table any) (string, error) {
+	has, err := db.Desc("Time").Get(table)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	if !has {
-		return 0, nil
+		return "", nil
 	}
 	switch v := table.(type) {
 	case *KlineDay:
-		return v.Unix, nil
+		return v.Time, nil
 	case *KlineMinute:
-		return v.Unix, nil
+		return v.Time, nil
 	}
-	return 0, errors.New("pull: lastUnix 不支持的表格类型")
+	return "", errors.New("pull: LastTime 不支持的表格类型")
 }
 
-// upsertDay 增量写日线：删除 Unix>=from 后批量插入新数据（事务内，幂等）。
-// from 通常为 last.Unix（覆盖最新可能变动的一根）。
+// upsertDay 增量写日线：删除 Time>=from 后批量插入新数据（事务内，幂等）。
+// from 通常为 last.Time（覆盖最新可能变动的一根）。
 // 空数据跳过写入：既避免创建空库文件，也防止"只删不插"侵蚀已有数据。
-func upsertDay(db *xorms.Engine, from int64, ks []*KlineDay) error {
+func upsertDay(db *xorms.Engine, from string, ks []*KlineDay) error {
 	if len(ks) == 0 {
 		return nil
 	}
 	return db.SessionFunc(func(session *xorm.Session) error {
-		if _, err := session.Where("Unix >= ?", from).Delete(new(KlineDay)); err != nil {
+		if _, err := session.Where("Time >= ?", from).Delete(new(KlineDay)); err != nil {
 			return err
 		}
 		return insertBatch(session, dayCols, func(start, end int) error {
@@ -90,9 +95,9 @@ func upsertDay(db *xorms.Engine, from int64, ks []*KlineDay) error {
 	})
 }
 
-// upsertMin 增量写分钟线：删除 Unix>=from 后批量插入新数据（事务内，幂等）。
+// upsertMin 增量写分钟线：删除 Time>=from 后批量插入新数据（事务内，幂等）。
 // 空数据跳过写入，同 upsertDay。
-func upsertMin(db *xorms.Engine, from int64, ks []*KlineMinute) error {
+func upsertMin(db *xorms.Engine, from string, ks []*KlineMinute) error {
 	if len(ks) == 0 {
 		return nil
 	}
@@ -101,8 +106,8 @@ func upsertMin(db *xorms.Engine, from int64, ks []*KlineMinute) error {
 	})
 }
 
-func writeMin(session *xorm.Session, from int64, ks []*KlineMinute) error {
-	if _, err := session.Where("Unix >= ?", from).Delete(new(KlineMinute)); err != nil {
+func writeMin(session *xorm.Session, from string, ks []*KlineMinute) error {
+	if _, err := session.Where("Time >= ?", from).Delete(new(KlineMinute)); err != nil {
 		return err
 	}
 	return insertBatch(session, minCols, func(start, end int) error {
@@ -134,32 +139,38 @@ func insertBatch(session *xorm.Session, cols int, fn func(start, end int) error,
 // dayCols / minCols 每行字段数（与 KlineDay / KlineMinute 结构体字段数一致，
 // 用于 insertBatch 计算分批大小）。
 const (
-	dayCols = 11 // Unix, OHLC, Volume, Amount, AmountUnknown, Turnover, FloatStock, TotalStock
-	minCols = 9  // Unix, OHLC, Volume, Amount, AmountUnknown, Source
+	dayCols = 12 // Time, TradingDate, OHLC, Volume, Amount, AmountUnknown, Turnover, FloatStock, TotalStock
+	minCols = 12 // Time, TradingDate, Unix, TimeZone, OHLC, Volume, Amount, AmountUnknown, Source
 )
 
-// queryDay 按时间范围查询日线（升序）；start/end 为零值时表示不限制该端。
-func queryDay(db *xorms.Engine, start, end time.Time) ([]*KlineDay, error) {
-	ls := []*KlineDay{}
-	err := rangeQuery(db, start, end).Asc("Unix").Find(&ls)
-	return ls, err
-}
-
-// queryMin 按时间范围查询分钟线（升序）；start/end 为零值时表示不限制该端。
-func queryMin(db *xorms.Engine, start, end time.Time) ([]*KlineMinute, error) {
-	ls := []*KlineMinute{}
-	err := rangeQuery(db, start, end).Asc("Unix").Find(&ls)
-	return ls, err
-}
-
-// rangeQuery 构造时间范围查询条件；零值端点不限制。
-func rangeQuery(db *xorms.Engine, start, end time.Time) *xorms.Session {
-	q := db.Where("")
-	if !start.IsZero() {
-		q = q.Where("Unix >= ?", start.Unix())
+// queryDay 按时间范围查询日线（升序）；start/end 为空字符串时表示不限制该端。
+func queryDay(db *xorms.Engine, start, end string) ([]*KlineDay, error) {
+	if err := validateRange(start, end, "2006-01-02"); err != nil {
+		return nil, err
 	}
-	if !end.IsZero() {
-		q = q.Where("Unix <= ?", end.Unix())
+	ls := []*KlineDay{}
+	err := rangeQuery(db, start, end).Asc("Time").Find(&ls)
+	return ls, err
+}
+
+// queryMin 按时间范围查询分钟线（升序）；start/end 为空字符串时表示不限制该端。
+func queryMin(db *xorms.Engine, start, end string) ([]*KlineMinute, error) {
+	if err := validateRange(start, end, protocol.TimeLayout); err != nil {
+		return nil, err
+	}
+	ls := []*KlineMinute{}
+	err := rangeQuery(db, start, end).Asc("Time").Find(&ls)
+	return ls, err
+}
+
+// rangeQuery 构造时间范围查询条件；空字符串端点不限制。
+func rangeQuery(db *xorms.Engine, start, end string) *xorms.Session {
+	q := db.Where("")
+	if start != "" {
+		q = q.Where("Time >= ?", start)
+	}
+	if end != "" {
+		q = q.Where("Time <= ?", end)
 	}
 	return q
 }

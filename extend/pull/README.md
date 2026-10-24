@@ -151,9 +151,11 @@ fmt.Println(info.Protocol, info.Day.Category, info.Day.ToStorageVolume(204225))
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
-新库使用固定东八区（`UTC+08:00`），`StartAt`、默认起始日期和按年定位均不随主机 `TZ` 改变。扩展行情保留服务器钟面值，按同一东八区存储口径编码；这不代表已经确认美股当地时区、夏令时或夜盘自然日。
+行情按源日期时分保存：日线 `Time="YYYY-MM-DD"`，分钟线 `Time="YYYY-MM-DD HH:MM"`，均为主键。查询、增量边界和年度分库使用源时间，不依赖主机 `TZ`。`TradingDate` 仅在交易日已确认时填写；扩展行情不推断美股时区或期货夜盘自然日。
 
-数据根目录自动创建 `.storage-timezone` 标记。没有此标记且包含 `.db` 的旧目录会被拒绝，防止时区混写；请使用新目录，旧库另行迁移，不能只手工补标记。迁移要求见 [v2 迁移指南](../../docs/v2-migration.md#固定东八区与旧库隔离)。
+标准分钟线额外保存已确认的 `Unix *int64` 和 `TimeZone="UTC+08:00"`；扩展分钟线默认 `Unix=NULL, TimeZone=""`。调用方确认来源时区后可用 `Timestamp(loc)` 显式转换，缺少时区、夏令时跳时或重复时刻会返回错误。日线不生成真实时间戳。
+
+数据根目录自动创建 `.time-format`（`source-time-v1`）。不兼容旧 Unix 主键格式；含 `.storage-timezone` 或未标记旧数据库的目录会被拒绝，请配置新的 `Dir` 并重新拉取。不会自动删除、覆盖或迁移旧数据。
 
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 
@@ -192,7 +194,7 @@ Codes: []string{
 
 ```
 {Dir}/
-├── .storage-timezone           # UTC+08:00 存储口径
+├── .time-format               # source-time-v1 源日期时分格式
 ├── updated.db                  # 增量去重标记
 ├── cn/                          # 中国大陆
 │   ├── stock/day/{code}.db      # 沪深股票
@@ -223,19 +225,19 @@ Codes: []string{
 
 > 与本地 `.day/.lc1/.lc5` 文件的量单位不同。使用 `VolumeDefault` 的扩展市场及周期尚未确认单位，不能仅依据存储字段名宣称其成交量为股。
 
-扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 新增 `AmountUnknown` 列（默认 false），已有 SQLite 库由现有建表同步流程增加该列。查询按记录中的 `AmountUnknown` 标记返回金额，不根据市场修补旧数据。旧库需另行转换或重新拉取。需要原始字段时使用行情记录的 `Extended`。
+扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 使用 `AmountUnknown` 标注未知金额。查询按记录标记返回金额，不根据市场猜测。新格式需重新拉取，不读取旧库。需要原始字段时使用行情记录的 `Extended`。
 
 周期合并遇到任意未知金额，合并结果也为 `Amount=0, AmountUnknown=true`，避免将部分金额之和冒充完整成交额。价格和金额都不做汇率换算；只有人民币证券的已确认金额才能解释为人民币元。
 
 ### 增量写入
 
-拉取时按库内最后时间戳增量拉取，写入时**删除 `Unix>=from` 后批量插入**（事务内幂等）；
+拉取时按库内最后源时间增量拉取，写入时**删除 `Time>=from` 后批量插入**（事务内幂等）；
 空数据不写库（避免产生空库文件）。
 
 分钟线对所有待补年份共用一次从新到旧的分页，股票/ETF 的集合竞价逐笔查询也不再按年份重复。
-历史年份的 `minuteCoverage` 表与 K 线在同一事务中提交。开启 `TradeFallback` 时，股票/ETF 的兜底检查完成后，当年再按最后时间戳增量；未完成时仍补查早期历史。
-已按东八区口径迁移的库若没有完成标记，会重新扫描认证；补拉只覆盖本次实际返回的时间段，保留服务器已不提供的本地历史前缀。
-空结果、拉取失败以及扩展行情偏移超限均不会写成功标记。`LastDayUnix/LastMinuteUnix` 不再为不存在的文件建库。
+历史年份的 `minuteCoverage` 表与 K 线在同一事务中提交。开启 `TradeFallback` 时，股票/ETF 的兜底检查完成后，当年再按最后源时间增量；未完成时仍补查早期历史。
+新格式库若没有完成标记，会重新扫描认证；补拉只覆盖本次实际返回的时间段，保留服务器已不提供的本地历史前缀。
+空结果、拉取失败以及扩展行情偏移超限均不会写成功标记。`LastDayTime/LastMinuteTime` 不再为不存在的文件建库。
 完成标记表示成功处理了服务器当前可提供的数据，不保证其保留了所请求区间的全部历史；空年份会在后续执行中重新检查。
 
 ### 历史分笔兜底（股票、ETF/LOF）
@@ -244,13 +246,13 @@ Codes: []string{
 
 交易日来自同一品种可获取的日线，成交量为零的日期不请求分笔，因此不依赖调用方一定开启日线落库或配置交易日历。通过现有 `GetHistoryTradeDay` 获取分笔，复用 `Trades.Klines()` 合成 241 根：集合竞价标为 09:30，09:30 的成交归入 09:31，13:00 归入 13:01；空分钟沿用前收价、量额为零。分笔钟面时间会还原至固定东八区，同分钟按返回顺序处理。
 
-这些是近似分钟线，不能保证高低价、成交额与原生分钟线一致，也无法从数据本身证明服务器未漏分笔。数据写入 `KlineMinute.Source="trade"`，原生来源为空字符串。先合并已有本地数据，只补缺少的时间戳；本次返回的原生数据可覆盖合成值。继续使用原有删尾重插事务，不改变通用 Save 的写入规则。
+这些是近似分钟线，不能保证高低价、成交额与原生分钟线一致，也无法从数据本身证明服务器未漏分笔。数据写入 `KlineMinute.Source="trade"`，原生来源为空字符串。先合并已有本地数据，只补缺少的源时间；本次返回的原生数据可覆盖合成值。继续使用原有删尾重插事务，不改变通用 Save 的写入规则。
 
 分笔为空、无有效成交或请求失败时，返回带代码与日期的错误，保留缺口；已获取的原生分钟及其他日期合成结果仍按年落库，失败不会阻止其他年份提交覆盖范围。完整 241 根的已存日期重跑时跳过分笔请求。失败日期所在年份不提交本次兜底覆盖标记，市场也不会记为完成。
 
 `MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；原生扫描不能跳过分笔兜底检查。可用 `QueryMinuteCoverage` 查询、`SaveMinuteFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。表结构由统一建表流程初始化；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
 
-`must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以本地时间 15:01 分界。
+`must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以固定东八区 15:01 分界。
 
 ### 执行与资源释放
 
@@ -272,14 +274,19 @@ Codes: []string{
 ## 🔍 数据查询
 
 ```go
-// 日线（升序）；start/end 零值 = 不限制该端
-ks, _ := s.QueryDay(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"}, start, end)
+// 日线：源日期闭区间；空字符串表示不限制该端。
+ks, err := s.QueryDay(code, "2026-01-01", "2026-01-31")
 
-// 1分钟线：自动按年定位文件并拼接，不存在的年份跳过
-ms, _ := s.QueryMinute(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"}, start, end)
+// 分钟线：源日期时分闭区间，按源年份定位文件。
+ms, err := s.QueryMinute(code, "2026-01-05 09:30", "2026-01-05 15:00")
 
-// 库内最后一条时间戳（空库返回 0）
-last, _ := s.LastDayUnix(pull.Code{Market: protocol.MarketAStock, Code: "sh600000"})
+// 最后一条源日期／日期时分；空库返回空字符串。
+lastDay, err := s.LastDayTime(code)
+lastMinute, err := s.LastMinuteTime(code, 2026)
+
+// 仅在已确认源时区时转换，源 Time 保持不变。
+stamp, err := ms[0].Timestamp(protocol.Location())
+
 ```
 
 ---
@@ -294,11 +301,10 @@ weekly := pull.DayToPeriod(ks, 5)
 m5 := pull.MinuteToPeriod(ms, 5)
 
 // 日历对齐：ISO 周（周一开始）、月、季、年
-weeklyCalendar, err := pull.DayToCalendar(ks, pull.CalendarWeek, time.Local)
+weeklyCalendar, err := pull.DayToCalendar(ks, pull.CalendarWeek)
 
-// 按实际时区/交易时段对齐，A 股集合竞价 09:30 独立保留，午休与跨日不混合
-loc, err := time.LoadLocation("Asia/Shanghai")
-m5Aligned, err := pull.MinuteToSessions(ms, 5, loc, []pull.TradingSession{
+// 按源日期时分和交易时段对齐，A 股集合竞价 09:30 独立保留，午休与跨日不混合
+m5Aligned, err := pull.MinuteToSessions(ms, 5, []pull.TradingSession{
     {StartMinute: 9*60+30, EndMinute: 11*60+30},
     {StartMinute: 13*60, EndMinute: 15*60},
 })
@@ -307,7 +313,8 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, loc, []pull.TradingSession{
 `DayToPeriod` 与 `MinuteToPeriod` 保留固定根数语义；`n<=1` 原样返回。
 日线合并的股本取最后一根、换手率累加。新增日历/时段接口不修改输入，按时间排序，不填造缺失记录。
 `MinuteToSessions` 使用收盘时刻 `(start,end]` 分桶，时段开始时刻的独立记录单独保留；时段外数据或重叠时段报错。
-聚合函数的 `loc` 须与输入 Unix 的编码口径一致。内置拉取结果统一为东八区钟面编码，不能直接传入 `America/New_York` 再解释一次；需要真实美股当地时间时，须先确认源时间含义并单独转换。自有、已确认真实时区的数据可传对应时区与时段；期货可配置跨午夜时段，例如 `{StartMinute: 21*60, EndMinute: 2*60+30}`，避免套用 A 股时段。
+聚合接口不再接收 `loc`：日历聚合优先使用已确认的 `TradingDate`，未知时使用源日期；分钟聚合按源钟面时段分桶，不进行时区转换。跨午夜时段如 `{StartMinute: 21*60, EndMinute: 2*60+30}` 按时段开始日对齐，但不把它当成期货交易日。不同已知交易日不会混入同一时段桶。跨市场真实时刻比较需先确认来源时区。
+
 
 ---
 

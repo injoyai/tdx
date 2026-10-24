@@ -143,7 +143,7 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 			return nil, err
 		}
 		if out == nil {
-			out = &KlineResp{Instrument: r.Instrument, Category: r.Category, VolumeUnit: r.VolumeUnit}
+			out = &KlineResp{Instrument: r.Instrument, Category: r.Category, VolumeUnit: r.VolumeUnit, TimeZone: r.TimeZone}
 		}
 		if len(r.List) > 0 && r.List[0].Standard != nil {
 			if last != nil {
@@ -199,7 +199,7 @@ func (q *queries) GetHistoryTrade(date, code string, start, count uint16) (*Trad
 }
 
 func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool) (*TradeResp, error) {
-	i, _, err := instrumentInfo(code)
+	i, info, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
@@ -211,6 +211,9 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 		return nil, fmt.Errorf("分笔单次数量必须为1..%d", limit)
 	}
 	out := &TradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	if info.Protocol == protocol.ProtocolStandard {
+		out.TimeZone = protocol.Location().String()
+	}
 	if date != "" && checkDay {
 		day, _ := time.Parse("20060102", date)
 		target := day.Format(time.DateOnly)
@@ -222,7 +225,11 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 		if err != nil {
 			return nil, fmt.Errorf("%s %s 查询分笔前检查日线: %w", code, date, err)
 		}
-		if len(days.List) == 0 || !strings.HasPrefix(days.List[0].Time, target+" ") {
+		if len(days.List) == 0 {
+			return out, nil
+		}
+		sourceDate, _, _ := strings.Cut(days.List[0].Time, " ")
+		if sourceDate != target {
 			return out, nil
 		}
 	}
@@ -259,7 +266,7 @@ func (q *queries) tradeAll(date, code string, checkDay bool) (*TradeResp, error)
 			return nil, errors.New("分笔响应数量超过请求数量")
 		}
 		if out == nil {
-			out = &TradeResp{Instrument: r.Instrument, Date: r.Date, VolumeUnit: r.VolumeUnit}
+			out = &TradeResp{Instrument: r.Instrument, Date: r.Date, VolumeUnit: r.VolumeUnit, TimeZone: r.TimeZone}
 		}
 		out.List = append(r.List, out.List...)
 		out.Count = len(out.List)
@@ -289,11 +296,12 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: r.Instrument, VolumeUnit: VolumeUnknown, List: []Trade{}}
+	out := &TradeResp{Instrument: r.Instrument, VolumeUnit: VolumeUnknown, TimeZone: r.TimeZone, List: []Trade{}}
 	if r.Count == 0 {
 		return out, nil
 	}
-	first, err := time.ParseInLocation("2006-01-02 15:04", r.List[0].Time, before.Location())
+	firstDate, _, _ := strings.Cut(r.List[0].Time, " ")
+	first, err := time.ParseInLocation(time.DateOnly, firstDate, before.Location())
 	if err != nil {
 		return nil, fmt.Errorf("上市月份日期无效: %w", err)
 	}

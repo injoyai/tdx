@@ -28,7 +28,8 @@ type Config struct {
 	Workday          *workday.Workday // 交易日历（可选，不传则不判断交易日）
 }
 
-// Start 解析起始日期；未设置或非法时返回零值。New 会拒绝非法日期。
+// Start 解析起始日期；time.Time 仅作为东八区日历日期容器，不定义扩展行情的来源时区。
+// 未设置或非法时返回零值。New 会拒绝非法日期。
 func (c Config) Start() time.Time {
 	t, _ := c.parseStart()
 	return t

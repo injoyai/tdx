@@ -73,7 +73,11 @@ func klineRequest(code string, category uint8, count uint16) (*KlineResp, protoc
 	if unit == protocol.VolumeDefault || protocol.IsConvertibleBond(standardCode(i)) {
 		unit = VolumeUnknown
 	}
-	return &KlineResp{Instrument: i, Category: category, VolumeUnit: unit}, info, nil
+	zone := ""
+	if info.Protocol == protocol.ProtocolStandard {
+		zone = protocol.Location().String()
+	}
+	return &KlineResp{Instrument: i, Category: category, VolumeUnit: unit, TimeZone: zone}, info, nil
 }
 
 func codePage(out *CodeResp, start uint32, count uint16) *CodeResp {

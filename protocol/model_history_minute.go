@@ -49,7 +49,7 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 	}
 
 	lastPrice := Price(0)
-	t := time.Date(0, 0, 0, 9, 30, 0, 0, time.Local)
+	t := time.Date(0, 0, 0, 9, 30, 0, 0, Location())
 	for i := uint16(0); i < resp.Count; i++ {
 		price := Price(d.number())
 		d.number() // 未知字段

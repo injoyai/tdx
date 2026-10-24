@@ -21,13 +21,15 @@ type KlineResp struct {
 	Instrument protocol.Instrument
 	Category   uint8 // 实际发送的协议周期
 	VolumeUnit protocol.VolumeUnit
+	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Kline
 }
 
 // Kline 是统一 K 线记录，Standard/Extended/RangeExtended 按查询来源保留原始字段。
 type Kline struct {
-	Time          string // 源数据的日期/墙上时间 YYYY-MM-DD HH:MM；不推断时区或夜盘交易日
+	Time          string // 源日期 YYYY-MM-DD，日内周期为 YYYY-MM-DD HH:MM
+	TradingDate   string // 已确认交易日 YYYY-MM-DD；未知为空，不推断夜盘归属
 	Open          float64
 	High          float64
 	Low           float64
@@ -37,6 +39,15 @@ type Kline struct {
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline
 	RangeExtended *protocol.ExRangeKline // 区间协议的持仓和结算价等原始字段
+}
+
+// Timestamp 只转换带时分且来源时区已确认的记录；日期标签不能转换为成交时刻。
+func (k Kline) Timestamp(loc *time.Location) (int64, error) {
+	t, err := protocol.ParseSourceTime(k.Time, loc)
+	if err != nil {
+		return 0, err
+	}
+	return t.Unix(), nil
 }
 
 // Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量以 VolumeUnit 为准。
@@ -62,6 +73,7 @@ type MinuteResp struct {
 	Instrument protocol.Instrument
 	Date       string // 请求日期 YYYYMMDD，不按行号推断夜盘日期
 	VolumeUnit protocol.VolumeUnit
+	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Minute
 }
@@ -80,6 +92,7 @@ type TradeResp struct {
 	Instrument protocol.Instrument
 	Date       string
 	VolumeUnit protocol.VolumeUnit
+	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Trade
 }
@@ -613,7 +626,7 @@ func (c *MarketClient) GetZHBFiles() (map[string][]byte, error) {
 
 func standardKline(k *protocol.Kline) Kline {
 	amount := k.Amount.Float64()
-	return Kline{Time: k.Time.Format("2006-01-02 15:04"), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
+	return Kline{Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
 // Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。

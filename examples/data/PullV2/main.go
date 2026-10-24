@@ -15,7 +15,7 @@ import (
 
 func main() {
 	dir := flag.String("dir", "./output/pullv2", "数据目录，应放在 ./output/ 下")
-	since := flag.String("since", time.Now().AddDate(0, -1, 0).Format("20060102"), "首次拉取的起始日期 YYYYMMDD")
+	since := flag.String("since", time.Now().In(protocol.Location()).AddDate(0, -1, 0).Format("20060102"), "首次拉取的起始日期 YYYYMMDD")
 	day := flag.Bool("day", true, "拉取日线")
 	minute := flag.Bool("minute", true, "拉取 1 分钟线")
 	all := flag.Bool("all", false, "全市场拉取；不能同时指定证券")
@@ -27,7 +27,7 @@ func main() {
 	if *all && flag.NArg() > 0 {
 		logs.Panic("-all 不能同时指定证券")
 	}
-	_, err := time.ParseInLocation("20060102", *since, time.Local)
+	_, err := time.Parse("20060102", *since)
 	logs.PanicErr(err)
 	codes := flag.Args()
 	if !*all && len(codes) == 0 {
@@ -65,7 +65,7 @@ func main() {
 		for _, raw := range codes {
 			code, err := pull.ParseCode(raw)
 			logs.PanicErr(err)
-			ks, err := s.QueryDay(code, time.Time{}, time.Now())
+			ks, err := s.QueryDay(code, "", "")
 			logs.PanicErr(err)
 			logs.Debug(code.Key(), "已落库日线:", len(ks))
 			for _, k := range ks {

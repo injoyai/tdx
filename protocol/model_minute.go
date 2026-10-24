@@ -56,7 +56,7 @@ func (*minute) Decode(bs []byte) (*MinuteResp, error) {
 		resp.List = make([]PriceNumber, 0, resp.Count)
 	}
 
-	t := time.Date(0, 0, 0, 9, 0, 0, 0, time.Local)
+	t := time.Date(0, 0, 0, 9, 0, 0, 0, Location())
 	for i := uint16(0); i < resp.Count; i++ {
 		price := Price(d.number())
 		d.number() // 未知字段

@@ -46,8 +46,12 @@ func (u *stdUnit) fetchDayAll(c tdx.Client, code string, startAt time.Time) (pro
 }
 
 // fetchDayFrom 拉取日线，直到遇到 last 之前的日期（增量）。
-func (u *stdUnit) fetchDayFrom(c tdx.Client, code string, last int64, startAt time.Time) (protocol.Klines, error) {
-	stop := time.Unix(last, 0)
+func (u *stdUnit) fetchDayFrom(c tdx.Client, code string, last string, startAt time.Time) (protocol.Klines, error) {
+	stop, err := time.ParseInLocation(time.DateOnly, last, protocol.Location())
+	if err != nil {
+		return nil, err
+	}
+	stop = stop.Add(15 * time.Hour)
 	return u.dayUntil(c, code, func(k *protocol.Kline) bool {
 		if !k.Time.After(stop) { // <= last 已入库，停止
 			return true
@@ -190,7 +194,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 			return err
 		}
 	}
-	last, err := s.LastDayUnix(code)
+	last, err := s.LastDayTime(code)
 	if err != nil {
 		return err
 	}
@@ -199,7 +203,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	var ks protocol.Klines
 	err = m.ClientPool.Do(func(c tdx.Client) error {
 		var err error
-		if last > 0 {
+		if last != "" {
 			ks, err = u.fetchDayFrom(c, code.Code, last, start)
 		} else {
 			ks, err = u.fetchDayAll(c, code.Code, start)
@@ -213,7 +217,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	out := make([]*pull.KlineDay, 0, len(ks))
 	for _, k := range ks {
 		d := &pull.KlineDay{
-			Unix:   k.Time.Unix(),
+			Time: k.Time.Format(time.DateOnly), TradingDate: k.Time.Format(time.DateOnly),
 			Open:   k.Open.Float64(),
 			High:   k.High.Float64(),
 			Low:    k.Low.Float64(),
@@ -231,7 +235,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		}
 		out = append(out, d)
 	}
-	return saveDays(s, code, max(last, start.Unix()), out)
+	return saveDays(s, code, max(last, start.Format(time.DateOnly)), out)
 }
 
 // FetchMinute 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
@@ -274,11 +278,15 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 			},
 		}
 	}
-	return pullMinutes(s, code, time.Now(), func(from time.Time) ([]*pull.KlineMinute, error) {
+	return pullMinutes(s, code, time.Now(), func(from string) ([]*pull.KlineMinute, error) {
+		startAt, err := protocol.ParseSourceTime(from, protocol.Location())
+		if err != nil {
+			return nil, err
+		}
 		var ks protocol.Klines
-		err := m.ClientPool.Do(func(c tdx.Client) error {
+		err = m.ClientPool.Do(func(c tdx.Client) error {
 			var err error
-			ks, err = u.fetchMinAll(c, code.Code, from)
+			ks, err = u.fetchMinAll(c, code.Code, startAt)
 			return err
 		})
 		if err != nil {
@@ -286,8 +294,9 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		}
 		out := make([]*pull.KlineMinute, 0, len(ks))
 		for _, k := range ks {
+			unix := k.Time.Unix()
 			out = append(out, &pull.KlineMinute{
-				Unix: k.Time.Unix(), Open: k.Open.Float64(), High: k.High.Float64(),
+				Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Unix: &unix, TimeZone: protocol.Location().String(), Open: k.Open.Float64(), High: k.High.Float64(),
 				Low: k.Low.Float64(), Close: k.Close.Float64(),
 				Volume: info.Minute.ToStorageVolume(k.Volume), Amount: k.Amount.Float64(),
 			})

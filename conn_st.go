@@ -43,7 +43,9 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 		return nil, err
 	}
 	for _, k := range r.List {
-		out.List = append(out.List, standardKline(k))
+		v := standardKline(k)
+		v.Time = protocol.KlineTime(k.Time, out.Category)
+		out.List = append(out.List, v)
 	}
 	if len(out.List) > int(count) {
 		return nil, errors.New("K线响应数量超过请求数量")
@@ -183,7 +185,7 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &MinuteResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	out := &MinuteResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown, TimeZone: protocol.Location().String()}
 	var r *protocol.MinuteResp
 	if date == "" {
 		r, err = c.getStandardMinute(standardCode(i))
@@ -207,7 +209,7 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown}
+	out := &TradeResp{Instrument: i, Date: date, VolumeUnit: VolumeUnknown, TimeZone: protocol.Location().String()}
 	var r *protocol.TradeResp
 	if date == "" {
 		r, err = c.getStandardTrade(standardCode(i), start, count)

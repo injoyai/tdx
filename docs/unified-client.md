@@ -113,7 +113,9 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 - K 线 `Amount` 为指针，标准金额有值；扩展金额与持仓字段重叠，统一金额暂为 nil。期货持仓、结算价等保留在 `Extended` 中。原始结构的字段仍按各自既有契约解释，存在字段不代表其语义在全部市场已确认。
 - 分笔公共 `Direction` 为 1 买、-1 卖、0 中性。扩展分笔的原始整数价格尺度未确认，公共 `Price` 为 nil，原始值保留在 `Extended.Price`；不会擅自除以 100/1000。[pytdx 上游分笔解析](https://github.com/rainx/pytdx/blob/master/pytdx/parser/ex_get_transaction_data.py) 同样保留整数原始价格。
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
-- K 线 `Time` 为源数据墙上时间 `YYYY-MM-DD HH:MM`，分时/分笔为 `HH:MM`/`HH:MM:SS`。不生成 UTC 时间戳，不猜测美股时区、夜盘自然日或交易日；历史返回 `Date` 为请求日期，当日查询 `Date` 为空。标准当日分时按东八区当前日期请求历史分时。标准原始 `Kline.Time` / `Trade.Time` / `Gbbq.Time`、本地日线/分钟文件、同花顺日线及 pull 时间解释采用 `protocol.Location()` 返回的固定东八区，不依赖主机 `TZ`；扩展钟面时间仍不推断证券当地时区。
+- K 线 `Time` 保留源精度：日及更长周期为 `YYYY-MM-DD`，日内周期为 `YYYY-MM-DD HH:MM`；分时／分笔为 `HH:MM`／`HH:MM:SS`。不为日线补造 15:00。`Kline.TradingDate` 仅填写已确认交易日；扩展未知为空，历史分笔的 `Date` 仍是请求交易日期，不等同于夜盘自然日。
+- `KlineResp`、`MinuteResp`、`TradeResp` 的 `TimeZone` 表示来源时区：标准行情为固定 `UTC+08:00`，扩展未知为空。不根据证券所在地猜测服务器时间口径，不修改全局 `time.Local`。`Kline.Timestamp(loc)` 仅在显式给出来源时区、且记录含时分时转换；未知时区及夏令时不存在／重复的钟面时刻报错。显示时区由调用方决定。
+- 标准原始 `Kline.Time`／`Trade.Time`／`Gbbq.Time`、本地文件及同花顺适配沿用 `protocol.Location()` 的固定东八区约定；原始日线的 15:00／00:00 是内部日期标签。pull 按源日期时分保存和查询，扩展不再按东八区生成 Unix。新存储格式及接口变更见 [迁移说明](v2-migration.md#源时间交易日与真实时刻)。
 
 `Dial*` 返回的单协议连接 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `Kline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们保持原标准返回类型与单位。统一结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要原始协议响应时调用 `StandardResponse()`；它保留整数价格、时间和原始量单位，不转换扩展数据，并检查旧 uint16 数量上限。指标和本地文件编码使用下述 `Klines()` 整数手适配。K 线、分时和分笔都提供该方法；Count 按实际 List 长度生成，缺少 Standard 原始记录时返回错误。
 
