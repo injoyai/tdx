@@ -8,10 +8,10 @@ import (
 )
 
 func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
-	data := [][]any{{"日期", "时间", "代码", "名称", "开盘", "最高", "最低", "收盘", "总手", "金额"}}
+	data := [][]any{{"日期", "时间", "代码", "名称", "开盘(元)", "最高(元)", "最低(元)", "收盘(元)", "成交量(股)", "成交额(元)"}}
 	for _, v := range ks {
 		data = append(data, []any{
-			v.Time.Format("20060102"),
+			v.Time.Format(time.DateOnly),
 			v.Time.Format("15:04"),
 			code,
 			name,
@@ -19,7 +19,7 @@ func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
 			v.High.Float64(),
 			v.Low.Float64(),
 			v.Close.Float64(),
-			v.Volume,
+			v.Volume*100,
 			v.Amount.Float64(),
 		})
 	}
@@ -33,13 +33,13 @@ func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
 }
 
 func TradesToCSV(filename string, ts protocol.Trades) error {
-	data := [][]any{{"日期", "时间", "价格", "成交量(手)", "成交额", "方向(0买,1卖)"}}
+	data := [][]any{{"日期", "时间", "价格(元)", "成交量(股)", "成交额(元)", "方向(0买,1卖,2中性)"}}
 	for _, v := range ts {
 		data = append(data, []any{
 			v.Time.Format(time.DateOnly),
 			v.Time.Format("15:04"),
 			v.Price.Float64(),
-			v.Volume,
+			v.Volume*100,
 			v.Amount().Float64(),
 			v.Status,
 		})
