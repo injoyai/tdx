@@ -298,7 +298,7 @@ return m.Close()
 
 标准行情的全部代码、成交、K 线分页使用整数累加偏移；偏移或累计数量超过 `uint16` 上限（65535）会报错，不会回绕或返回错误数量。此时调用方不应将结果视为完整历史。`GetBlockFileRaw` 按元信息校验文件长度，缺块返回 `io.ErrUnexpectedEOF`，过长分块也会报错。
 
-成交示例统一见 [GetTrade](../examples/trades/GetTrade/main.go)。
+成交查询使用 `GetTrade` / `GetTradeAll` 和 `GetHistoryTrade` / `GetHistoryTradeDay`，支持边界见 [统一 Client](unified-client.md)。
 
 北交所代码通过通达信 `zhb.zip` 中的 `tdxbjmore.cfg` 获取，返回 `CodeResp.List`，包含代码与名称。需要 `bj` 前缀字符串时，将 `"bj"` 拼接到每条记录的 `Code`；该配置可能包含已分配但尚未上市的代码，不等同于官网上市证券列表。示例见 [GetCodeAll](../examples/codes/GetCodeAll/main.go)，使用 `-exchange 2 -all`。
 
@@ -326,7 +326,7 @@ import (
 
 `Dir` 必须显式设置；`StartAt` 改用 `YYYYMMDD` 字符串，未设置时默认最近两年，非法格式或不存在的日期在创建服务时直接报错，且不会创建数据库。`Day` 与 `Minute` 都为 `false` 时默认同时拉取两种数据。服务使用完成后调用 `s.Close()`，外部连接池仍由调用方关闭。
 
-日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。将标准价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/data/PullV2/main.go) 和 [Income](../examples/finance/Income/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
+日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。将标准价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/data/PullV2/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
 内置市场的 K 线参数和成交量换算现集中于 `Market.Info()`；由 `ParseCode` 得到市场后可直接查询。未知单位设为 `VolumeDefault`，暂按旧倍率 ×100，不能据此认定这些扩展市场的量单位为股或合约。配置只覆盖日线和 1 分钟线。
 
@@ -447,7 +447,7 @@ pull 的新数据目录带 `.storage-timezone` 标记。无标记且已有 `.db`
 
 `update` 表的名称与 Key/Time 列、行情数据库表列、`updated.db`、`min/` 数据目录均不变。JSON 名称与当前 Go 字段一致：`Reserved0..9`、`Tracker`、`ClientPool`，不保留旧拼写。协议原始字段的数值与单位不变。
 
-源码文件统一使用小写下划线：`codes_server.go`、`pull_trade.go`、`spider_sina.go`、`spider_ths.go`，因子模型为 `extend/factor.go`；扩展 HTTP handler 为 `handler_ex.go`，传输写入为 `conn_writer.go`，ZIP 工具为 `lib/zip/zip.go`，对应测试同步。扩展连接示例路径改为 `examples/client/ExClient`；真实扩展测试名称改为 `TestExLive`，原 `TDX_EXHQ_LIVE` 环境开关保持不变。
+源码文件统一使用小写下划线：`codes_server.go`、`pull_trade.go`、`spider_sina.go`、`spider_ths.go`，因子模型为 `extend/factor.go`；扩展 HTTP handler 为 `handler_ex.go`，传输写入为 `conn_writer.go`，ZIP 工具为 `lib/zip/zip.go`，对应测试同步。跨市场示例见 [UnifiedClient](../examples/client/UnifiedClient/main.go)；真实扩展测试名称改为 `TestExLive`，原 `TDX_EXHQ_LIVE` 环境开关保持不变。
 
 ## 扩展功能按职责拆包
 

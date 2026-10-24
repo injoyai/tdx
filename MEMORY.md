@@ -19,7 +19,7 @@
 - `conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：协议业务连接；`query.go` / `conn_query.go`：共享业务算法及校验。
 - `extend/`：离线数据读取(`local.go`)、行情拉取、爬虫、HTTP server；指标统一由 `protocol.Klines` 提供。
 - `lib/`：gbbq、xorms、zip 工具。
-- `examples/`：大量独立示例。
+- `examples/`：少量独立的典型用法，入口见 `examples/README.md`。
 
 ## 关键约定与决策记录
 
@@ -28,8 +28,8 @@
 3. **标准行情协议不支持 BJ 代码列表请求**：原始标准协议 `MCount/MCode(market=2)` 超时；统一 `GetCount/GetCode(ExchangeBJ)` 使用下述报表来源；但行情/K线正常。
 4. **北交所代码获取**：`GetCodeAll(ExchangeBJ)` 走 `GetZHBFiles()` → `tdxbjmore.cfg`（含名称，可能含已分配未上市代码）；不再使用北交所官网爬虫。代码数量随报表更新，不作为固定契约。
 5. **tdxstat.cfg**：全市场逐股统计，35字段，无名称字段。名称需另从 `tdxbjmore.cfg`/板块文件等获取。
-6. **退市股票历史样本（2026-08）**：原代码在线数据可能已清退，不能假定线上服务器保留退市股历史，也不能由以下样本推断所有退市品种。部分退市品种使用新三板代码(400/420，市场44)。当时实测：标准行情7709 `GetKlineDay("600001"/"sh600001")` 返回0条、`GetQuote(sh600001)` 全零；扩展行情7727 当时的旧接口 `ExQuote/ExBars` 在 market 0/1/2/44 × (原代码/`T600001`) 全部返回全零（对照组 `sz000609` 正常）。这些是历史观测；当前公开业务接口统一为 `Get*`，原始任意市场请求使用 `SendFrame` 与 `protocol.MEx.Frame*`。客户端能显示退市股(如 `T600001`)是通过【功能→定制品种→退市品种管理】绑定"自设市场+原代码"后，其历史日线缓存于本地 `<安装目录>/T0002/ds_cache/`，文件命名 `<市场标识>#<代码>.~~~day`(实测 `100#T600001.~~~day`/`100#T600003.~~~day`，`100#` 为缓存命名空间/市场标识，`~~~day` 为日线缓存后缀)，非实时行情服务器提供、也不在 `vipdoc/lday` 下。**缓存格式与标准 `.day` 不同**：头部14字节(`[0:10]`保留 + `[10:14]` uint32 记录数)，之后每条32字节——`[0:4]`uint32日期YYYYMMDD、`[4:20]`4×float32开/高/低/收(**元**)、`[20:24]`float32成交额(元)、`[24:28]`uint32成交量(股)、`[28:32]`保留。读取示例：`examples/data/ReadLocalDelisted`。
-7. **板块指数(880xxx/881xxx)编码约定**：`protocol.IsIndex/AddPrefix` 已识别板块指数——880xxx(概念/风格/地区)、881xxx(行业)归属上海交易所(ExchangeSH)，`AddPrefix("880741")`→`sh880741`，`IsIndex("sh880741")`=true。板块指数日K线用自动识别指数的 `GetKlineDay`(指数解析, 量×100/涨跌家数)、实时行情用 `GetQuote` 均可直接获取；`GetQuote` 对指数类(含板块指数)跳过元数据价格修正，标准报价不依赖全局 `DefaultCodes` 初始化。板块指数不在 `GetCodeAll`/`DefaultCodes` 股票代码列表内。示例：`examples/codes/GetBlockData` 演示拉全量板块+板块指数行情。
+6. **退市股票历史样本（2026-08）**：原代码在线数据可能已清退，不能假定线上服务器保留退市股历史，也不能由以下样本推断所有退市品种。部分退市品种使用新三板代码(400/420，市场44)。当时实测：标准行情7709 `GetKlineDay("600001"/"sh600001")` 返回0条、`GetQuote(sh600001)` 全零；扩展行情7727 当时的旧接口 `ExQuote/ExBars` 在 market 0/1/2/44 × (原代码/`T600001`) 全部返回全零（对照组 `sz000609` 正常）。这些是历史观测；当前公开业务接口统一为 `Get*`，原始任意市场请求使用 `SendFrame` 与 `protocol.MEx.Frame*`。客户端能显示退市股(如 `T600001`)是通过【功能→定制品种→退市品种管理】绑定"自设市场+原代码"后，其历史日线缓存于本地 `<安装目录>/T0002/ds_cache/`，文件命名 `<市场标识>#<代码>.~~~day`(实测 `100#T600001.~~~day`/`100#T600003.~~~day`，`100#` 为缓存命名空间/市场标识，`~~~day` 为日线缓存后缀)，非实时行情服务器提供、也不在 `vipdoc/lday` 下。**缓存格式与标准 `.day` 不同**：头部14字节(`[0:10]`保留 + `[10:14]` uint32 记录数)，之后每条32字节——`[0:4]`uint32日期YYYYMMDD、`[4:20]`4×float32开/高/低/收(**元**)、`[20:24]`float32成交额(元)、`[24:28]`uint32成交量(股)、`[28:32]`保留。
+7. **板块指数(880xxx/881xxx)编码约定**：`protocol.IsIndex/AddPrefix` 已识别板块指数——880xxx(概念/风格/地区)、881xxx(行业)归属上海交易所(ExchangeSH)，`AddPrefix("880741")`→`sh880741`，`IsIndex("sh880741")`=true。板块指数日K线用自动识别指数的 `GetKlineDay`(指数解析, 量×100/涨跌家数)、实时行情用 `GetQuote` 均可直接获取；`GetQuote` 对指数类(含板块指数)跳过元数据价格修正，标准报价不依赖全局 `DefaultCodes` 初始化。板块指数不在 `GetCodeAll`/`DefaultCodes` 股票代码列表内。板块成分查询使用 `GetBlockData` / `GetSpBlock`。
 8. **可转债(标准行情7709)**：`protocol.AddPrefix` 已识别可转债前缀——沪市(110/111/113/118)→`sh`、深市(123/125/126/127/128)→`sz`。日K线 `GetKlineDay`/分钟线直接可用，统一返回浮点价格，原始标准价格为厘。实时行情 `GetQuote` 由当前 `StConn` 使用同一连接读取所属交易所代码表，并在该连接内缓存精度元数据，不依赖 `DefaultCodes`、数据库或额外连接。价格按代码的 `Decimal` 校准（`Decimal=4` 时原始价格÷100）；缺少元数据返回错误，不猜测精度。
 9. **期货(扩展行情7727)**：使用跨市场 `NewClient()` 或 `DialExHqDefault()`，扩展业务实现位于 `conn_ex.go`。合约使用显式交易所前缀，如 `cffIF2609`、`dceA2609`；不能假定连续/主力代码可用。批量行情用 `GetQuoteList(market, 3, 0, n)`（market: 47中金/60主力期货/30上期/28郑商/29大商/66广期）。日K用 `GetKlineDay(code, 0, n)` 或 `GetKline(TypeKlineDay, code, 0, n)`，业务入口按市场映射为实际 category=4；持仓、结算价等保留在 `Extended` 中，未知单位不宣称已确认。原始扩展品种协议分页 start 为全局品种序号；统一 `GetCode(exchange,start,count)` 按市场过滤后分页，不能互换偏移语义。
 10. **`DecodeCode` 通用代码解析**：已泛化支持多市场——A股(6位数字自动补前缀, 行为不变)、港股(5位纯数字如 `00700`/`hk00700`)、美股(纯字母如 `AAPL`/`usBRK.B`, 最长前缀匹配避免 `SHOP` 被误拆为 `sh`+`OP`)、期货(需显式前缀如 `cffIF2609`/`dceA2609`, 裸合约如 `IF2609` 因无法确定交易所而报错提示用前缀)。另支持带点后缀格式 `000001.SZ`/`600000.SH`/`00700.HK`/`AAPL.US`/`IF2609.CFF`(后缀=交易所缩写, 大小写均可; 美股点代码 `BRK.B` 因后缀 B 非交易所而按美股代码解析)。前缀支持小写缩写/大写/中文名(如 `上海600000`)。注意: 标准行情7709的 Frame(model_quote/model_kline 等)只接受 A股 6 位定长代码；统一业务入口使用 `protocol.ParseInstrument` 解析与路由，港股/美股/期货走扩展行情7727的同名 `Get*`，不使用标准行情帧。代码能解析不代表相应市场已接入行情路由。
@@ -62,7 +62,7 @@
 - 本地文件读写约定：`protocol.Price` 单位为厘；`ReadDay/ReadMinute1/ReadMinute5` 返回及 `WriteDay/WriteMinute1/WriteMinute5` 输入的 `protocol.Kline.Volume` 为协议百股单位（手）。不能把该约定套用到所有在线结果：统一 `tdx.Kline` 价格为原币种/报价单位的 `float64`，量按响应 `VolumeUnit` 判断；标准股票/ETF K线为百股，标准指数/板块 K线为股，港股日线为百股，其他未确认项为 `unknown`。`StandardResponse()` 保留原始字段，不自动转换量单位；线上指数数据用于本地编码或 VWAP 前须先将股转换为百股。
 - **成交量单位差异（指数 vs 股票）**：`.day/.lc1/.lc5` 的 `24~27` 字段，**指数(如 sh000001/sz399001/bj899050)单位是"手"，原值即手**；**股票单位是"股"**，需 ÷100 转手。`ReadDay/ReadMinute1/ReadMinute5/WriteDay/WriteMinute1/WriteMinute5` 已按 `protocol.IsIndex(c)` 区分处理（指数不÷100；写入时股票×100转股、指数原样写手）。判断时用 decodeCode 已带前缀的 c 直接 `IsIndex(c)`，勿再拼前缀。
 - API：`ReadDay(dir, code)`、`ReadMinute1(dir, code)`、`ReadMinute5(dir, code)`；code 需带交易所前缀(如 `sz000001`)，本地文件名为 `sz000001.day` 格式。
-- **写入**：`WriteDay(code, ks) ([]byte, error)`、`WriteMinute1(code, ks)`、`WriteMinute5(code, ks)`（均 `([]byte, error)`），与读取格式对称，**只返回通达信格式字节流、不落盘**，由调用方自由决定如何写入/使用（如 `examples/data/FetchLC1ForTest` 内自行 `os.WriteFile` 到 `./output/lc1/vipdoc/...`）。code 需带交易所前缀用于判断指数/股票。均在 `extend/local.go`。
+- **写入**：`WriteDay(code, ks) ([]byte, error)`、`WriteMinute1(code, ks)`、`WriteMinute5(code, ks)`（均 `([]byte, error)`），与读取格式对称，**只返回通达信格式字节流、不落盘**，由调用方自由决定如何写入/使用（如自行 `os.WriteFile` 到 `./output/lc1/vipdoc/...`）。code 需带交易所前缀用于判断指数/股票。均在 `extend/local.go`。
 
 ## extend/pull v2 拉取服务（2026-08 新增）
 
@@ -100,5 +100,4 @@
 - **踩坑（用被覆盖文件误判格式）**：曾用 `sz000001.lc1` 分析真实格式，但它已被本项目 `WriteMinute1` 生成的旧文件覆盖，导致误判「占位在当日首条前、9:31 有重复」。真实格式必须用未被覆盖的文件（如 `sz000002.lc1`）验证。教训：**分析真实格式前先确认样本文件非本工具生成**。
 - **1分钟线文件巨大**（如 sz000001.lc1 超 120 万条 / 35MB），读取时注意内存；通达信 1 分钟数据可能较旧（取决于客户端下载范围）。
 - `minline/` 目录只有 `.lc1`(1分钟)；5分钟 `.lc5` 实际存放在 `fzline/` 目录。
-- **分钟线拉取/生成工具**：`examples/data/FetchLC1ForTest/main.go` 实时拉取股票/指数 1分钟与5分钟K线，用 `WriteMinute` 生成 `.lc1/.lc5`，输出统一放 `./output/lc1/vipdoc/<sh|sz>/<minline|fzline>/`（供客户端导入测试，需手动复制到通达信 `vipdoc` 目录）。股票和指数分钟线统一用 `GetKlineMinuteAll`/`GetKline5MinuteAll`，通过 `StandardResponse` 提取原始字段供本地文件编码。
 - zhb.zip 盘后包包含 tdxstat/tdxstat2/tdxbjmore/tdxhy/tdxzs/tdxbk/gbbq 等文件，数量随来源更新；文本通常为 GBK，gbbq 等二进制文件须使用各自解码器。现有 `UTF8ToGBK` 名称与方向相反，实际调用 GBK 解码器，转换为 UTF-8 并去除 NUL；不要按函数名误判转换方向。

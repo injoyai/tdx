@@ -6,7 +6,7 @@
 
 `ListenCodesHTTP(port, ...codes.Option)` 启动独立代码表服务，提供 `/codes`、`/stocks`、`/etfs`、`/indexes`。`ListenCodesAndGbbqHTTP(port, []codes.Option, []gbbq.Option)` 额外提供 `/gbbqs`。这两个入口返回原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不向 `New` 创建的行情服务自动注册路由。
 
-客户端使用 `extend/metadatahttp` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端在初始化、监听失败或退出时关闭自建缓存，路由按路径匹配，允许携带查询参数。示例见 [CodesHTTP](../../examples/services/CodesHTTP/main.go)。
+客户端使用 `extend/metadatahttp` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端在初始化、监听失败或退出时关闭自建缓存，路由按路径匹配，允许携带查询参数。实现见 [服务端入口](metadata.go) 和 [元数据客户端](../metadatahttp/cache.go)。
 
 ## 快速开始
 

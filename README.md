@@ -43,7 +43,7 @@
 
 ## 🚀 快速开始
 
-全部示例按主题整理在 [examples](examples/README.md)，包含运行命令、使用条件与输出目录说明。
+保留 6 个典型示例，见 [examples](examples/README.md)：跨市场客户端、实时报价、代码列表、K 线、复权和拉取落库。
 
 扩展功能按职责分包：本地文件使用 `extend/local`，CSV 导出使用 `extend/export`，历史分笔下载使用 `extend/pulltrade`，第三方数据源使用 `extend/spider`，HTTP 缓存客户端使用 `extend/metadatahttp`，HTTP 服务使用 `extend/httpserver`。直接导入职责子包，详见 [包职责说明](extend/README.md)。
 
@@ -143,8 +143,6 @@ if b := protocol.SpBlockByName(sp, "中证2000"); b != nil {
 }
 ```
 
-> 演示: [`examples/codes/GetBlockData`](examples/codes/GetBlockData)。
-
 ---
 
 ## 🔁 复权日线 (前复权 / 后复权, 对齐通达信)
@@ -206,8 +204,6 @@ hy, _ := c.GetTdxHy()
 for _, v := range hy { _ = v.TdxHy; _ = v.SwHy }
 ```
 
-> 演示: [`examples/finance/GetFinanceInfo`](examples/finance/GetFinanceInfo)、[`examples/codes/GetTdxHy`](examples/codes/GetTdxHy)。
-
 ---
 
 ## 🗄 报表/配置数据 (zhb.zip)
@@ -253,8 +249,6 @@ for _, x := range xgsg {
 	fmt.Printf("%s %s 申购日=%s 发行价=%.3f\n", x.Code, x.Name, x.Date, x.IssuePrice)
 }
 ```
-
-> 完整演示见 [`examples/data/DumpReportFile`](examples/data/DumpReportFile)：下载 zhb.zip、解压、解析、板块 id 关联一条龙。
 
 ---
 
