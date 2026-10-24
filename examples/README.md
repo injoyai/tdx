@@ -1,15 +1,15 @@
 # 示例
 
-保留 6 个典型用法，每个示例独立运行，客户端或服务在退出时关闭。
+保留 6 个典型用法，直接放在 `examples/<示例名>/` 下。每个示例独立运行，客户端或服务在退出时关闭。
 
 | 示例 | 内容 |
 | --- | --- |
-| [UnifiedClient](client/UnifiedClient/main.go) | 统一客户端查询沪深、港股、美股日线 |
-| [GetQuote](quotes/GetQuote/main.go) | 批量实时报价，证券代码作为位置参数传入 |
-| [GetCodeAll](codes/GetCodeAll/main.go) | 市场数量、分页或完整代码列表、沪深北股票代码 |
-| [GetKline](klines/GetKline/main.go) | 各周期 K 线，支持分页、全部历史和按日期停止 |
-| [GetQFQKline](finance/GetQFQKline/main.go) | 前后复权、复权因子、股本与换手率 |
-| [PullV2](data/PullV2/main.go) | 日线/分钟线拉取与落库查询，默认单证券、最近一个月、串行执行 |
+| [UnifiedClient](UnifiedClient/main.go) | 统一客户端查询沪深、港股、美股日线 |
+| [GetQuote](GetQuote/main.go) | 批量实时报价，证券代码作为位置参数传入 |
+| [GetCodeAll](GetCodeAll/main.go) | 市场数量、分页或完整代码列表、沪深北股票代码 |
+| [GetKline](GetKline/main.go) | 各周期 K 线，支持分页、全部历史和按日期停止 |
+| [GetQFQKline](GetQFQKline/main.go) | 前后复权、复权因子、股本与换手率 |
+| [PullV2](PullV2/main.go) | 日线/分钟线拉取与落库查询，默认单证券、最近一个月、串行执行 |
 
 ## 运行
 
@@ -17,26 +17,26 @@
 
 ```sh
 # 跨市场查询与批量报价
-go run ./examples/client/UnifiedClient
-go run ./examples/quotes/GetQuote sz000001 sh600000
+go run ./examples/UnifiedClient
+go run ./examples/GetQuote sz000001 sh600000
 
 # 北交所完整代码；沪深北股票代码
-go run ./examples/codes/GetCodeAll -exchange 2 -all
-go run ./examples/codes/GetCodeAll -stocks
+go run ./examples/GetCodeAll -exchange 2 -all
+go run ./examples/GetCodeAll -stocks
 
 # 指数日线；最近 20 根 1 分钟线；向前查询到指定日期
-go run ./examples/klines/GetKline -code sh000001
-go run ./examples/klines/GetKline -type 7 -count 20
-go run ./examples/klines/GetKline -until 20261001
+go run ./examples/GetKline -code sh000001
+go run ./examples/GetKline -type 7 -count 20
+go run ./examples/GetKline -until 20261001
 
 # 标准股票复权
-go run ./examples/finance/GetQFQKline -code sh600519
+go run ./examples/GetQFQKline -code sh600519
 
 # 指定证券，只拉日线并写入 ./output/pullv2/
-go run ./examples/data/PullV2 -minute=false sz000001 sh000001
+go run ./examples/PullV2 -minute=false sz000001 sh000001
 
 # 查看参数，不连接服务器
-go run ./examples/klines/GetKline -h
+go run ./examples/GetKline -h
 
 # 编译全部示例并执行离线测试，不执行 main
 go test ./examples/...

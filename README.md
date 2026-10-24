@@ -62,7 +62,7 @@ if err != nil { panic(err) }
 _ = a; _ = h; _ = f
 ```
 
-`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StConn` / `ExConn`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](examples/client/UnifiedClient/main.go)。标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`，两者均实现 `Client`；连接池使用 `Client`，通用传输仅在内部复用；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
+`NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StConn` / `ExConn`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量带 `VolumeUnit`；未知尺度不猜测换算。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](examples/UnifiedClient/main.go)。标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`，两者均实现 `Client`；连接池使用 `Client`，通用传输仅在内部复用；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
 
 需要组合标准行情连接池、代码缓存、交易日历和工作日任务时，使用独立的 [`extend/manage`](extend/manage/README.md) 包：`m, err := manage.New()`，使用完毕后调用 `m.Close()`。管理器类型与选项已从根包迁出，原 `tdx.NewManage()` 调用需按 [迁移指南](docs/v2-migration.md#管理器独立子包) 更新。
 
@@ -182,7 +182,7 @@ for _, f := range fs {
 ```
 
 > 价格类型 `protocol.Price` 为 **int64, 单位厘(元×1000)**，`.Float64()` 得元。股票最小变动 0.01 元(分)，ETF/可转债/指数到 0.001 元(厘)。
-> 完整演示见 [`examples/finance/GetQFQKline`](examples/finance/GetQFQKline)。
+> 完整演示见 [`examples/GetQFQKline`](examples/GetQFQKline)。
 
 ---
 

@@ -19,7 +19,7 @@
 - `conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：协议业务连接；`query.go` / `conn_query.go`：共享业务算法及校验。
 - `extend/`：离线数据读取(`local.go`)、行情拉取、爬虫、HTTP server；指标统一由 `protocol.Klines` 提供。
 - `lib/`：gbbq、xorms、zip 工具。
-- `examples/`：少量独立的典型用法，入口见 `examples/README.md`。
+- `examples/`：每个典型示例直接放在 `examples/<示例名>/` 下，入口见 `examples/README.md`。
 
 ## 关键约定与决策记录
 
@@ -68,7 +68,7 @@
 
 > 通用可插拔的日线+1分钟线拉取服务，覆盖沪深股票/指数/ETF/LOF/板块/期货/港股/美股，每天增量更新。v2 统一使用本服务；旧拉取服务的存量数据库不自动转换，不能仅改目录复用，处理要求见 `docs/v2-migration.md`。包级文档：`extend/pull/README.md`（架构/配置/存储布局/查询/合并/自定义 Unit）。
 
-- **架构**：`pull.Unit` 接口（`Name()/Codes(s)/FetchDay(s,code)/FetchMin(s,code)`）实现市场可插拔；`pull.Service` 编排（并发 `Goroutines`、重试 `Retry`、增量去重 `Updated`、进度条）；`pull.Config`（2026-09 由 `PullConfig` 更名，消除包名 stuttering）全部通过**代码参数**传入（本库是第三方引用库，不写配置文件）。示例：`examples/data/PullV2`（`go run ./examples/data/PullV2`）。
+- **架构**：`pull.Unit` 接口（`Name()/Codes(s)/FetchDay(s,code)/FetchMin(s,code)`）实现市场可插拔；`pull.Service` 编排（并发 `Goroutines`、重试 `Retry`、增量去重 `Updated`、进度条）；`pull.Config`（2026-09 由 `PullConfig` 更名，消除包名 stuttering）全部通过**代码参数**传入（本库是第三方引用库，不写配置文件）。示例：`examples/PullV2`（`go run ./examples/PullV2`）。
 - **存储（sqlite, `lib/xorms`）**：已确认的股票/ETF/指数/板块及港股日线成交量存为**股**；其余扩展市场/周期按 `Market.Info()` 默认倍率存储，实际单位待确认，不能称为股或合约数。两级「地区/资产」目录：日线 `{Dir}/{地区}/{资产}/day/{code}.db`（一代码一库）；1分钟线 `{Dir}/{地区}/{资产}/min/{code}/{code}-{year}.db`（一代码一年一库）。目录映射（`Code.DirName()`=枚举值）：`cn/stock|index|etf|block`、`cn/future`（期货，多交易所共用，地区级）、`hk/stock|index`、`us/stock`。2026-09 布局演进：`day|min 顶层`→`min 文件带代码`→`市场顶层`→`两级地区/资产`（`cn/stock` 等）。`Code.FileName()`=**原始代码**（目录已含市场信息，2026-09 从 key 改为 code），期货含 `/` 代码替换为 `-`（`cff/IF2609`→`cff-IF2609.db`）。`Code.Key()` 仅用于日志/完整键。`KlineDay{Unix pk, OHLC float64(原币种/报价单位), Volume int64(按市场配置换算), Amount, Turnover, FloatStock, TotalStock}`；`KlineMinute`（全称）同字段无股本/换手。仅存日线+1分钟，5/15/30/60分钟、周/月/季/年由 `DayToPeriod`/`MinuteToPeriod`（`merge.go`，直接聚合原始浮点字段）纯内存派生、不落盘。
 - **Code.Key() 规则**：cn 四市场→原代码（已带 sh/sz/bj 前缀）；hk→`HK00700`；us→`US.AAPL`；future/hk_index→`cn/future.cff/IF2609` / `hk/index.HSI`（市场值+`.`+代码，key 含 `/` 时文件名替换为 `-`）。`SplitKey` 与 `ParseCode` 共用忽略大小写的市场前缀解析，支持直接拼接与点分隔，完整市场键继续兼容。
 - **Market 枚举（2026-09，值=目录路径）**：`pull.Market`（`type Market string`）+ 常量 `MarketAStock/MarketIndex/MarketEtfLof/MarketBlock/MarketFuture/MarketHK/MarketHKIndex/MarketUS`，定义在 `protocol/market.go`，`extend/pull/market.go` 保留类型与常量别名。**枚举值即两级「地区/资产」路径**：`cn/stock|index|etf|block`、`cn/future`、`hk/stock|index`、`us/stock`——`Code.DirName()` 直接返回枚举值（与磁盘布局完全一致）。`Code.Market`、market 子包 Unit 的 `name` 字段均为该类型（`Name()` 返回 `.String()`）。**演进**：初版扁平值（`a_stock`/`hk`/`us`…）→ 改为目录路径形式（用户提议统一）；`hk.00700` 作为港股简称输入兼容；旧 `a_stock.sh600000` 不再对应内置市场，目录形式为 `hk/stock.00700`/`cn/stock.sh600000`（`hk/index.HSI` 同理）。注意与 `protocol.Exchange`（uint8 协议层市场编码）是两套体系。

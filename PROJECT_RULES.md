@@ -7,7 +7,7 @@
   - `client_interface.go`：统一业务接口；`conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：标准/扩展业务连接；`query.go`：共享业务算法；股本缓存和复权查询位于 `extend/gbbq`，内部纯计算由 `internal/gbbq` 共享；组合管理器位于独立子包 `extend/manage`；代码查询接口和缓存位于 `extend/codes`，纯内存实现由 `internal/codecache` 共享；中国市场历史日历位于 `extend/workday`，通用更新标记和定时工具位于 `lib/update`，数据库工厂类型为 `xorms.DialFunc`，各缓存的默认定时规则由各自子包提供。
   - `extend/`：离线数据读写（`local.go` 读写）、行情拉取、爬虫、HTTP server、指标计算统一在 `protocol.Klines`。
   - `lib/`：gbbq、xorms、zip 工具；北交所代码统一由 `Client.GetCodeAll(ExchangeBJ)` 获取。
-  - `examples/`：按主题分类的独立可运行示例，每个示例一个目录；从项目根目录运行 `go run ./examples/<分类>/<示例>`，索引见 `examples/README.md`。
+  - `examples/`：少量独立可运行示例，每个示例直接放在 `examples/<示例名>/`；从项目根目录运行 `go run ./examples/<示例名>`，索引见 `examples/README.md`。
 - **外部依赖**：真实连接通达信服务器（`Dial*`/`DialDefault`）；示例与测试大多需要联网，测试可能因行情服务器/数据源而异，失败时先排查网络与数据可用性。
 
 ### 8.2 输出数据统一放 `./output/`（约定）
