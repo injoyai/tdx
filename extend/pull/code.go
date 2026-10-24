@@ -21,7 +21,7 @@ type Code struct {
 // 注意存储文件名不用它（见 FileName，目录已含市场信息，文件名用原始代码）。
 func (c Code) Key() string {
 	switch c.Market {
-	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther:
 		// 标准行情代码自带交易所前缀（sh/sz/bj），直接使用
 		return c.Code
 	case protocol.MarketHK:
@@ -73,6 +73,7 @@ func yearToString(year int) string {
 var marketPrefixes = []string{
 	protocol.MarketAStock.String(), protocol.MarketIndex.String(), protocol.MarketEtfLof.String(), protocol.MarketBlock.String(),
 	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
+	protocol.MarketBond.String(), protocol.MarketOther.String(),
 }
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
@@ -105,7 +106,7 @@ func codeInMarket(prefix, body string) (Code, error) {
 	query := lower + "." + body
 	explicit := protocol.Market(lower)
 	switch explicit {
-	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketFuture:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther, protocol.MarketFuture:
 		query = body
 	case protocol.MarketHK:
 		query = "hk." + body
@@ -133,11 +134,8 @@ func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body str
 	}
 	code := i.Code
 	switch market {
-	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock:
+	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther:
 		code = i.Exchange.String() + i.Code
-		if market == protocol.MarketAStock && !protocol.IsStock(code) {
-			return Code{}, fmt.Errorf("pull: 不支持的标准行情品种 %q", body)
-		}
 	case protocol.MarketFuture:
 		code = i.Exchange.String() + "/" + i.Code
 	}

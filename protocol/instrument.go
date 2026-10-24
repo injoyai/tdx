@@ -30,8 +30,12 @@ func (i Instrument) Market() (Market, error) {
 			return MarketBlock, nil
 		case IsIndex(code):
 			return MarketIndex, nil
-		default:
+		case IsConvertibleBond(code):
+			return MarketBond, nil
+		case IsStock(code):
 			return MarketAStock, nil
+		default:
+			return MarketOther, nil
 		}
 	case ExchangeHK:
 		return MarketHK, nil

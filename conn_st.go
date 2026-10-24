@@ -95,27 +95,12 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 			u.Bid[n], u.BidVolume[n] = q.BuyLevel[n].Price.Float64(), int64(q.BuyLevel[n].Number)
 			u.Ask[n], u.AskVolume[n] = q.SellLevel[n].Price.Float64(), int64(q.SellLevel[n].Number)
 		}
-		scale, scaleErr := volumeScale(i)
-		if scaleErr != nil {
-			// 零量不需要倍率；保留无成交品种的价格和精度元数据查询。
-			if u.Volume != 0 || u.BidVolume != [5]int64{} || u.AskVolume != [5]int64{} {
-				return nil, scaleErr
-			}
-			scale = 1
-		}
-		u.Volume, err = scaleVolume(u.Volume, scale)
+		scale, err := volumeScale(i)
 		if err != nil {
 			return nil, err
 		}
-		for n := 0; n < 5; n++ {
-			u.BidVolume[n], err = scaleVolume(u.BidVolume[n], scale)
-			if err != nil {
-				return nil, err
-			}
-			u.AskVolume[n], err = scaleVolume(u.AskVolume[n], scale)
-			if err != nil {
-				return nil, err
-			}
+		if err := u.scaleVolume(scale); err != nil {
+			return nil, err
 		}
 		out[j] = u
 	}

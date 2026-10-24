@@ -79,6 +79,13 @@ func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 		for n := 0; n < 5; n++ {
 			u.BidVolume[n], u.AskVolume[n] = int64(q.BidVol[n]), int64(q.AskVol[n])
 		}
+		scale, err := volumeScale(i)
+		if err != nil {
+			return nil, err
+		}
+		if err := u.scaleVolume(scale); err != nil {
+			return nil, err
+		}
 		out[j] = u
 	}
 	return out, nil
@@ -142,7 +149,8 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := volumeScale(i); err != nil {
+	scale, err := volumeScale(i)
+	if err != nil {
 		return nil, err
 	}
 	out := &MinuteResp{Instrument: i, Date: date}
@@ -158,7 +166,11 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 	}
 	for j := range ticks {
 		k := &ticks[j]
-		out.List = append(out.List, Minute{Time: fmt.Sprintf("%02d:%02d", k.Hour, k.Minute), Price: k.Price, Volume: int64(k.Volume), Extended: k})
+		volume, err := scaleVolume(int64(k.Volume), scale)
+		if err != nil {
+			return nil, err
+		}
+		out.List = append(out.List, Minute{Time: fmt.Sprintf("%02d:%02d", k.Hour, k.Minute), Price: k.Price, Volume: volume, Extended: k})
 	}
 	out.Count = len(out.List)
 	return out, nil
@@ -169,7 +181,8 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := volumeScale(i); err != nil {
+	scale, err := volumeScale(i)
+	if err != nil {
 		return nil, err
 	}
 	out := &TradeResp{Instrument: i, Date: date}
@@ -186,7 +199,11 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	// shortcut: 扩展分笔价格尺度未确认，取得各市场交叉验证样本后填充公共 Price。
 	for j := range ticks {
 		k := &ticks[j]
-		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Volume: int64(k.Volume), Direction: k.Direction, Extended: k})
+		volume, err := scaleVolume(int64(k.Volume), scale)
+		if err != nil {
+			return nil, err
+		}
+		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Volume: volume, Direction: k.Direction, Extended: k})
 	}
 	out.Count = len(out.List)
 	return out, nil

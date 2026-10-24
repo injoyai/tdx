@@ -89,6 +89,8 @@ func main() {
 | `protocol.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
 | `protocol.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
 | `protocol.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
+| `protocol.MarketBond` | `cn/bond` | 可转债 | 7709 | 普通 K 线，按国内默认倍率 |
+| `protocol.MarketOther` | `cn/other` | 其他国内品种，含尚未细分的普通债券 | 7709 | 普通 K 线，按国内默认倍率 |
 | `protocol.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
 | `protocol.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
 | `protocol.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
@@ -99,7 +101,7 @@ func main() {
 
 ### 市场 K 线配置
 
-`Market.Info()` 返回行情协议、标准行情解码分类，以及日线、1 分钟线各自的请求类型和**原始解码量转为最小单位的倍率 `VolumeScale`**。内置拉取适配器共用此配置，参数集中在 [`protocol/market.go`](../../protocol/market.go)。
+`Market.Info()` 返回行情协议、解码分类、日线/1 分钟线的请求类型和 `VolumeScale`，并用 `TickVolumeScale` 声明报价/分时/分笔倍率。内置有效倍率全部为正，集中在 [`protocol/market.go`](../../protocol/market.go)。
 
 ```go
 code, err := pull.ParseCode("hk00700")
@@ -111,23 +113,26 @@ if !ok {
     panic("没有内置市场配置")
 }
 // extended、4、20422500（股）
-fmt.Println(info.Protocol, info.Day.Category, info.Day.ToStorageVolume(204225))
+volume, err := info.Day.ToStorageVolume(204225)
+if err != nil { panic(err) }
+fmt.Println(info.Protocol, info.Day.Category, volume)
 ```
 
 | 市场 | 日线类型 / 解码量单位 | 1 分钟类型 / 解码量单位 |
 |---|---|---|
 | 股票、ETF/LOF | 9 / 百股 | 7 / 百股 |
+| 可转债、其他国内品种 | 9 / 默认 ×100 | 7 / 默认 ×100 |
 | 指数、板块指数 | 9 / 股 | 7 / 股 |
 | 港股主板 | 4 / 百股（×100 转股） | 8 / 百股（×100 转股） |
 | 期货 | 4 / 张（×1） | 8 / 张（×1） |
-| 美股 | 9 / 股（×1） | 8 / 股（×1） |
-| 港股指数 | 9 / 未确认 | 8 / 未确认 |
+| 美股 | 4 / 股（×1） | 8 / 股（×1） |
+| 港股指数 | 4 / 原样保留（×1），数量接口拒绝 | 8 / 原样保留（×1），数量接口拒绝 |
 
-`VolumeScale=1` 直接存储股数或合约张数，`100` 将百股转为股；百股是协议单位，与港股交易所每手的实际股数无关。`0` 表示尚未确认，底层 `ToStorageVolume` 暂保留旧的 ×100 行为，统一行情接口会拒绝这些未知单位。自定义市场的 `Info()` 返回 `false`，由自己的 `Unit` 决定请求和换算。
+`VolumeScale=1` 保留已确认的股数/张数，`100` 为百股换算或用户指定的国内默认倍率；可转债等国内默认项尚未逐接口校准。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数含成交额口径，倍率 1 不代表已确认股数，统一数量接口拒绝。未匹配市场（含空值）的 `Info()` 也填充标准行情配置：股票解码、日线类型 9、分钟线类型 7，所有成交量倍率默认 100；布尔值仍返回 `false` 标明非内置市场，自定义 `Unit` 可按实际协议声明配置。
 
 期货、美股旧存储采用默认 ×100，新数据采用 ×1；已有数据库不自动修改，不能混用新旧数值。应保留旧库后重新拉取，或先核实来源再迁移。
 
-标准行情统一由 `GetKline*` 按代码选择 `KindIndex` 解码。股票/ETF 的分钟拉取继续调用 `GetKlineMinute241Until`（类型 7），保留集合竞价拆分。配置仅覆盖 pull 存储的日线和 1 分钟线，不能用于报价、分笔、本地文件或其他周期。
+标准行情由 `GetKline*` 按代码选择解码类型。股票/ETF 分钟拉取使用 `GetKlineMinute241Until` 保留竞价拆分；可转债、其他国内品种及指数走普通分页，不套用股票竞价拆分。K 线与报价/分时/分笔使用各自声明的倍率，本地文件仍遵循自身协议单位。
 
 港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
 
@@ -226,7 +231,7 @@ Codes: []string{
 | AmountUnknown | 金额是否未确认；当前全部内置扩展市场为 true，标准市场为 false |
 | Source（分钟线） | 空字符串=原生数据；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 
-> 与本地 `.day/.lc1/.lc5` 文件的量单位不同。`VolumeScale=0` 的扩展市场及周期尚未确认单位，不能仅依据存储字段名宣称其成交量为股。
+> 与本地 `.day/.lc1/.lc5` 文件的单位不同。国内默认 ×100 不是单位校准结论，不能仅依据字段名宣称其已验证为股数；港股指数不作为成交数量输出。
 
 扩展 K 线的原始 `Amount` 与持仓字节重叠，适配器不将它写为已确认金额。`KlineDay` / `KlineMinute` 使用 `AmountUnknown` 标注未知金额。查询按记录标记返回金额，不根据市场猜测。新格式需重新拉取，不读取旧库。需要原始字段时使用行情记录的 `Extended`。
 

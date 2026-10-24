@@ -60,3 +60,28 @@ func TestInstrumentBlockMarket(t *testing.T) {
 		}
 	}
 }
+
+func TestDomesticInstrumentMarkets(t *testing.T) {
+	for _, tc := range []struct {
+		code   string
+		market Market
+	}{
+		{"sh110075", MarketBond}, {"sz123126", MarketBond},
+		{"sh118001", MarketBond}, {"sh019001", MarketOther},
+		{"sz131810", MarketOther}, {"sz000001", MarketAStock},
+	} {
+		i, err := ParseInstrument(tc.code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if market, err := i.Market(); err != nil || market != tc.market {
+			t.Fatal(tc.code, market, err)
+		}
+	}
+	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketUS, MarketHKIndex} {
+		info, ok := market.Info()
+		if !ok || info.Day.VolumeScale <= 0 || info.Minute.VolumeScale <= 0 || info.TickVolumeScale <= 0 {
+			t.Fatalf("%s has nonpositive volume scale: %+v", market, info)
+		}
+	}
+}

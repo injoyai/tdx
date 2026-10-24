@@ -13,6 +13,30 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+type plainMinuteClient struct {
+	tdx.Client
+	category uint8
+}
+
+func (c *plainMinuteClient) GetKlineUntil(category uint8, _ string, _ func(tdx.Kline) bool) (*tdx.KlineResp, error) {
+	c.category = category
+	return &tdx.KlineResp{List: []tdx.Kline{{Standard: &protocol.Kline{Volume: 100}}}}, nil
+}
+
+func TestBondMinuteUsesPlainPaging(t *testing.T) {
+	for _, market := range []protocol.Market{protocol.MarketBond, protocol.MarketOther} {
+		if _, ok := pull.Get(market.String()); !ok {
+			t.Fatal("new domestic unit not registered", market)
+		}
+		c := &plainMinuteClient{}
+		u := stdUnit{name: market}
+		rows, err := u.minUntil(c, "sh110075", func(*protocol.Kline) bool { return false })
+		if err != nil || len(rows) != 1 || c.category != protocol.TypeKlineMinute {
+			t.Fatal(market, rows, c.category, err)
+		}
+	}
+}
+
 func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20240101", Codes: []string{"sz000001"}})
 	if err != nil {

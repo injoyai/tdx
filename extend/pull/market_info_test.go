@@ -18,14 +18,16 @@ func TestMarketInfoRouting(t *testing.T) {
 		day, min           uint8
 		dayScale, minScale int64
 	}{
+		{"sh110075", protocol.MarketBond, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
+		{"sh019001", protocol.MarketOther, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
 		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, 1, 1},
-		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 9, 8, 0, 0},
-		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 9, 8, 1, 1},
+		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			code, err := ParseCode(tc.code)
@@ -39,8 +41,11 @@ func TestMarketInfoRouting(t *testing.T) {
 			}
 		})
 	}
-	if _, ok := protocol.Market("custom").Info(); ok {
-		t.Fatal("custom market received a built-in configuration")
+	for _, market := range []protocol.Market{"", "custom"} {
+		info, ok := market.Info()
+		if ok || info.TickVolumeScale != 100 {
+			t.Fatal("custom market must receive the default tick scale without being marked as built-in", market, info, ok)
+		}
 	}
 	info, _ := protocol.MarketHK.Info()
 	info.Day.Category = 9
@@ -48,15 +53,15 @@ func TestMarketInfoRouting(t *testing.T) {
 	if unchanged.Day.Category != 4 {
 		t.Fatal("editing a copy changed the built-in configuration")
 	}
-	for _, scale := range []int64{0, 100} {
-		if got := (protocol.KlineInfo{VolumeScale: scale}).ToStorageVolume(123); got != 12300 {
+	for _, scale := range []int64{100} {
+		if got, err := (protocol.KlineInfo{VolumeScale: scale}).ToStorageVolume(123); err != nil || got != 12300 {
 			t.Fatal("default conversion", scale, got)
 		}
 	}
 	for _, market := range []protocol.Market{protocol.MarketFuture, protocol.MarketUS} {
 		info, _ := market.Info()
 		for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
-			if got := spec.ToStorageVolume(123); got != 123 {
+			if got, err := spec.ToStorageVolume(123); err != nil || got != 123 {
 				t.Fatal("minimum units multiplied twice", market, got)
 			}
 		}
@@ -80,7 +85,7 @@ func TestStandardIndexVolumeIsNotConvertedTwice(t *testing.T) {
 		if spec.Category == protocol.TypeKlineDay {
 			want *= 100
 		}
-		if got := spec.ToStorageVolume(bars.List[0].Volume); got != want {
+		if got, err := spec.ToStorageVolume(bars.List[0].Volume); err != nil || got != want {
 			t.Fatalf("category %d: stored volume %d, want %d", spec.Category, got, want)
 		}
 	}
@@ -110,12 +115,15 @@ func TestHKDailyCapturedVolume(t *testing.T) {
 		if len(bars) == 5 {
 			latest = bars[4]
 			for i, bar := range bars {
-				got := info.Day.ToStorageVolume(int64(bar.Trade))
+				got, err := info.Day.ToStorageVolume(int64(bar.Trade))
+				if err != nil {
+					t.Fatal(err)
+				}
 				if delta := got - shares[i]; delta < -50 || delta > 50 {
 					t.Fatalf("%s: %d shares, independent source %d", bar.Datetime, got, shares[i])
 				}
 			}
-		} else if bars[0] != latest || info.Day.ToStorageVolume(int64(bars[0].Trade)) != 20422500 {
+		} else if volume, err := info.Day.ToStorageVolume(int64(bars[0].Trade)); err != nil || bars[0] != latest || volume != 20422500 {
 			t.Fatal("single-record volume differs from multi-record volume", bars)
 		}
 	}

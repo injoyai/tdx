@@ -4,6 +4,7 @@ package market
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/injoyai/tdx/v2"
@@ -21,9 +22,25 @@ type stdUnit struct {
 
 func (u *stdUnit) Name() string { return u.name.String() }
 
-// Codes 获取代码列表（由具体市场决定来源）。
+// Codes 从同一份标准代码元数据筛选新增的国内品种。
 func (u *stdUnit) Codes(s *pull.Service) ([]pull.Code, error) {
-	return nil, fmt.Errorf("market: %s 未实现 Codes", u.name)
+	m, err := u.Manage(s)
+	if err != nil {
+		return nil, err
+	}
+	out := []pull.Code{}
+	for _, model := range m.Codes.Iter() {
+		i, err := protocol.ParseInstrument(model.FullCode())
+		if err != nil {
+			continue
+		}
+		market, err := i.Market()
+		if err == nil && market == u.name {
+			out = append(out, pull.Code{Market: u.name, Code: model.FullCode(), Name: model.Name})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
+	return out, nil
 }
 
 // Manage 只获取标准行情连接源；不因查询代码、指数或分钟线触发股本初始化。
@@ -92,7 +109,7 @@ func (u *stdUnit) fetchMinAll(c tdx.Client, code string, startAt time.Time) (pro
 	})
 }
 
-// minUntil 指数走统一分钟查询、其余走 GetKlineMinute241（含集合竞价 241 根），从新到旧拉取直到 f 返回 true。
+// minUntil 股票/ETF拆分竞价，其余品种普通分页；从新到旧拉取到停止边界。
 func (u *stdUnit) minUntil(c tdx.Client, code string, f func(k *protocol.Kline) bool) (protocol.Klines, error) {
 	info, ok := u.name.Info()
 	if !ok {
@@ -100,7 +117,7 @@ func (u *stdUnit) minUntil(c tdx.Client, code string, f func(k *protocol.Kline) 
 	}
 	var resp *tdx.KlineResp
 	var err error
-	if info.Kind == protocol.KindIndex {
+	if info.Kind == protocol.KindIndex || (u.name != protocol.MarketAStock && u.name != protocol.MarketEtfLof) {
 		resp, err = c.GetKlineUntil(info.Minute.Category, code, func(k tdx.Kline) bool { return f(k.Standard) })
 	} else {
 		resp, err = c.GetKlineMinute241Until(code, func(k tdx.Kline) bool { return f(k.Standard) })
@@ -126,16 +143,26 @@ type Index struct{ stdUnit }
 // EtfLof ETF/LOF 市场。
 type EtfLof struct{ stdUnit }
 
+// Bond 可转债市场，成交量暂按国内默认100换算。
+type Bond struct{ stdUnit }
+
+// Other 其他国内标准品种，不冒用股票分类或股本数据。
+type Other struct{ stdUnit }
+
 var (
 	_ pull.Unit = (*AStock)(nil)
 	_ pull.Unit = (*Index)(nil)
 	_ pull.Unit = (*EtfLof)(nil)
+	_ pull.Unit = (*Bond)(nil)
+	_ pull.Unit = (*Other)(nil)
 )
 
 func init() {
 	pull.Register(&AStock{stdUnit{name: protocol.MarketAStock}})
 	pull.Register(&Index{stdUnit{name: protocol.MarketIndex}})
 	pull.Register(&EtfLof{stdUnit{name: protocol.MarketEtfLof}})
+	pull.Register(&Bond{stdUnit{name: protocol.MarketBond}})
+	pull.Register(&Other{stdUnit{name: protocol.MarketOther}})
 }
 
 // ---- Codes 实现 ----
@@ -216,6 +243,10 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 
 	out := make([]*pull.KlineDay, 0, len(ks))
 	for _, k := range ks {
+		volume, err := info.Day.ToStorageVolume(k.Volume)
+		if err != nil {
+			return err
+		}
 		d := &pull.KlineDay{
 			Time: k.Time.Format(time.DateOnly), TradingDate: k.Time.Format(time.DateOnly),
 			Open:   k.Open.Float64(),
@@ -223,7 +254,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 			Low:    k.Low.Float64(),
 			Close:  k.Close.Float64(),
 			Amount: k.Amount.Float64(),
-			Volume: info.Day.ToStorageVolume(k.Volume),
+			Volume: volume,
 		}
 		// 换手率/股本回填：仅股票有（Gbbq 非股票返回 nil）
 		if equity != nil {
@@ -294,11 +325,15 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		}
 		out := make([]*pull.KlineMinute, 0, len(ks))
 		for _, k := range ks {
+			volume, err := info.Minute.ToStorageVolume(k.Volume)
+			if err != nil {
+				return nil, err
+			}
 			unix := k.Time.Unix()
 			out = append(out, &pull.KlineMinute{
 				Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Unix: &unix, TimeZone: protocol.Location().String(), Open: k.Open.Float64(), High: k.High.Float64(),
 				Low: k.Low.Float64(), Close: k.Close.Float64(),
-				Volume: info.Minute.ToStorageVolume(k.Volume), Amount: k.Amount.Float64(),
+				Volume: volume, Amount: k.Amount.Float64(),
 			})
 		}
 		return out, nil

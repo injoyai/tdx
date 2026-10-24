@@ -69,9 +69,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			t.Error("wrong extended request", h)
 		}
 		want := uint16(4)
-		if b[0] == 27 || b[0] == 74 {
-			want = 9
-		}
+
 		if binary.LittleEndian.Uint16(b[10:12]) != want {
 			t.Error("wrong day category", b)
 		}

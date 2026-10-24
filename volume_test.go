@@ -87,8 +87,8 @@ func TestScaleVolumeBounds(t *testing.T) {
 	}
 }
 
-func TestUnconfirmedVolumeRejected(t *testing.T) {
-	for _, code := range []string{"hk.HSI", "sz123126"} {
+func TestForeignIndexVolumeRejected(t *testing.T) {
+	for _, code := range []string{"hk.HSI", "hk.CES120"} {
 		i, info, err := instrumentInfo(code)
 		if err != nil {
 			t.Fatal(err)
@@ -103,5 +103,47 @@ func TestUnconfirmedVolumeRejected(t *testing.T) {
 	i, info, _ := instrumentInfo("sh000001")
 	if scale, err := klineVolumeScale(i, protocol.TypeKlineDay, info); err != nil || scale != 1 {
 		t.Fatal("index scaled twice", scale, err)
+	}
+}
+
+func TestDomesticDefaultVolume(t *testing.T) {
+	for _, code := range []string{"sh110075", "sz123126", "sh019001", "sz131810", "sh000001"} {
+		i, info, err := instrumentInfo(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if scale, err := volumeScale(i); err != nil || scale != 100 {
+			t.Fatal(code, scale, err)
+		}
+		want := int64(100)
+		if protocol.IsIndex(standardCode(i)) {
+			want = 1
+		}
+		if scale, err := klineVolumeScale(i, info.Day.Category, info); err != nil || scale != want {
+			t.Fatal(code, scale, err)
+		}
+	}
+}
+
+func TestDomesticDefaultKlines(t *testing.T) {
+	c := marketTestClient(t, func(_ []byte, b []byte) []byte {
+		if b[8] == protocol.TypeKlineMinute {
+			return completionStandardBars([]uint32{20261009}, []uint16{571}, false)
+		}
+		return testStandardBar(false)
+	}, nil)
+	for _, tc := range []struct {
+		code                    string
+		minuteVolume, minuteRaw int64
+	}{{"sh110075", 10000, 100}, {"sz123126", 10000, 100}, {"sh019001", 100, 1}, {"sz131810", 100, 1}} {
+		code := tc.code
+		day, err := c.GetKlineDay(code, 0, 1)
+		if err != nil || day.Count != 1 || day.List[0].Volume != 10000 || day.List[0].Standard.Volume != 100 {
+			t.Fatal(code, day, err)
+		}
+		minute, err := c.GetKlineMinute(code, 0, 1)
+		if err != nil || minute.Count != 1 || minute.List[0].Volume != tc.minuteVolume || minute.List[0].Standard.Volume != tc.minuteRaw {
+			t.Fatal(code, minute, err)
+		}
 	}
 }

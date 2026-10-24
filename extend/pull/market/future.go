@@ -176,9 +176,13 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	}
 	out := make([]*pull.KlineDay, 0, len(bars))
 	for _, k := range bars {
+		volume, err := info.Day.ToStorageVolume(int64(k.Trade))
+		if err != nil {
+			return err
+		}
 		out = append(out, &pull.KlineDay{
 			Time: k.Datetime, Open: k.Open, High: k.High,
-			Low: k.Low, Close: k.Close, Volume: info.Day.ToStorageVolume(int64(k.Trade)), AmountUnknown: true,
+			Low: k.Low, Close: k.Close, Volume: volume, AmountUnknown: true,
 		})
 	}
 	return saveDays(s, code, from, out)
@@ -197,9 +201,13 @@ func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		}
 		out := make([]*pull.KlineMinute, 0, len(bars))
 		for _, k := range bars {
+			volume, err := info.Minute.ToStorageVolume(int64(k.Trade))
+			if err != nil {
+				return nil, err
+			}
 			out = append(out, &pull.KlineMinute{
 				Time: k.Datetime, Open: k.Open, High: k.High,
-				Low: k.Low, Close: k.Close, Volume: info.Minute.ToStorageVolume(int64(k.Trade)), AmountUnknown: true,
+				Low: k.Low, Close: k.Close, Volume: volume, AmountUnknown: true,
 			})
 		}
 		return out, nil
