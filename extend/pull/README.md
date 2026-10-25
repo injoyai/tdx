@@ -99,6 +99,8 @@ func main() {
 
 > 市场标识统一用 `protocol.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
+内置扩展市场的交易所编号、简称及前缀解析复用 `protocol.Exchange`。通过 `pull.ParseCode` 构造 `Code`；拉取适配器只接受当前 Unit 支持的规范交易所前缀，期货仍保留 `cff/IF2609` 等代码形式及对应存储文件名。
+
 ### 市场 K 线配置
 
 `Market.Info()` 返回行情协议、解码分类、日线/1 分钟线的请求类型和 `VolumeScale`，并用 `TickVolumeScale` 声明报价/分时/分笔倍率。内置有效倍率全部为正，集中在 [`protocol/market.go`](../../protocol/market.go)。

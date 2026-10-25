@@ -7,9 +7,6 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// 港股市场编码（扩展行情 ExInstrument.Market）。
-const marketHK = 31 // 香港交易所
-
 // HK 港股市场。
 // 品种代码为 5 位数字，如 00700（腾讯）；K 线配置由 protocol.MarketHK.Info 提供。
 type HK struct{ exUnit }
@@ -19,6 +16,6 @@ var _ pull.Unit = (*HK)(nil)
 func init() {
 	pull.Register(&HK{exUnit{
 		name:    protocol.MarketHK,
-		markets: []uint8{marketHK},
+		markets: []protocol.Exchange{protocol.ExchangeHK},
 	}})
 }

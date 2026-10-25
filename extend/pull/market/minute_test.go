@@ -220,7 +220,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	u := &exUnit{name: protocol.MarketUS, markets: []uint8{marketUS}}
+	u := &exUnit{name: protocol.MarketUS, markets: []protocol.Exchange{protocol.ExchangeUS}}
 	rows, err := u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly))
 	if err != nil || len(rows) != 2 || rows[0].Time != c.rows[1].Time || c.calls != 1 {
 		t.Fatal(rows, c.calls, err)

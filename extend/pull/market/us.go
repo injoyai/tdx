@@ -7,9 +7,6 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// 美股市场编码（扩展行情 ExInstrument.Market）。
-const marketUS = 74 // 美国股票
-
 // US 美股市场。
 // 品种代码为纯字母，如 AAPL。
 type US struct{ exUnit }
@@ -19,6 +16,6 @@ var _ pull.Unit = (*US)(nil)
 func init() {
 	pull.Register(&US{exUnit{
 		name:    protocol.MarketUS,
-		markets: []uint8{marketUS},
+		markets: []protocol.Exchange{protocol.ExchangeUS},
 	}})
 }

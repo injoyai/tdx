@@ -12,33 +12,13 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// 期货市场编码（扩展行情 ExInstrument.Market）。
-const (
-	marketCFF = 47 // 中金
-	marketCZC = 28 // 郑商
-	marketDCE = 29 // 大商
-	marketSHF = 30 // 上期/能源
-	marketGFE = 66 // 广期
-	marketQHZ = 42 // 期货指数
-)
-
-// futureMarketNames 期货市场编码→简称（编码进 Code.Code 前缀，区分交易所）。
-var futureMarketNames = map[uint8]string{
-	marketCFF: "cff",
-	marketCZC: "czc",
-	marketDCE: "dce",
-	marketSHF: "shf",
-	marketGFE: "gfe",
-	marketQHZ: "qhz",
-}
-
 // exUnit 扩展行情(7727)市场的基础实现：通过 pull.Service.ExPool 取连接。
 // 品种代码列表中，同一 Unit 可能覆盖多个扩展市场（如期货多个交易所），
 // 此时交易所简称作为 Code.Code 前缀（"cff/IF2609"），由 marketOf 解析。
 type exUnit struct {
 	name protocol.Market // 市场标识（protocol.Market 枚举）
 	// markets 该 Unit 覆盖的扩展市场编码（用于从 GetInstruments 过滤）
-	markets []uint8
+	markets []protocol.Exchange
 }
 
 func (u *exUnit) Name() string { return u.name.String() }
@@ -61,12 +41,13 @@ func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 	}
 	out := []pull.Code{}
 	for _, it := range ins {
-		if !u.isMarket(it.Market) {
+		exchange := protocol.Exchange(it.Market)
+		if !u.isMarket(exchange) {
 			continue
 		}
 		code := it.Code
 		if u.multiMarket() {
-			code = futureMarketNames[it.Market] + "/" + it.Code
+			code = exchange.String() + "/" + it.Code
 		}
 		out = append(out, pull.Code{Market: u.name, Code: code, Name: it.Name})
 	}
@@ -75,7 +56,7 @@ func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 }
 
 // isMarket 判断市场编码是否属于本 Unit。
-func (u *exUnit) isMarket(m uint8) bool {
+func (u *exUnit) isMarket(m protocol.Exchange) bool {
 	for _, x := range u.markets {
 		if x == m {
 			return true
@@ -88,13 +69,14 @@ func (u *exUnit) isMarket(m uint8) bool {
 func (u *exUnit) multiMarket() bool { return len(u.markets) > 1 }
 
 // marketOf 解析 Code 的市场编码与裸代码（去掉交易所前缀）。
-func (u *exUnit) marketOf(code pull.Code) (uint8, string, error) {
+func (u *exUnit) marketOf(code pull.Code) (protocol.Exchange, string, error) {
 	codeStr := code.Code
 	if i := strings.IndexByte(codeStr, '/'); i > 0 {
-		for m, name := range futureMarketNames {
-			if codeStr[:i] == name {
-				return m, codeStr[i+1:], nil
-			}
+		prefix := codeStr[:i]
+		exchange, err := protocol.ParseExchange(prefix)
+		// Code.Code 已由 pull 归一化，只接受本 Unit 的规范交易所简称。
+		if err == nil && prefix == exchange.String() && u.isMarket(exchange) {
+			return exchange, codeStr[i+1:], nil
 		}
 		return 0, "", fmt.Errorf("pull: 未知的扩展市场前缀 %q", codeStr[:i])
 	}
@@ -117,7 +99,7 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from stri
 	var out []tdx.Kline
 	err = p.Do(func(c tdx.Client) error {
 		var parseErr error
-		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), func(k tdx.Kline) bool {
+		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: market, Code: bare}).String(), func(k tdx.Kline) bool {
 			layout := protocol.TimeLayout
 			if !protocol.IsIntraday(category) {
 				layout = time.DateOnly
@@ -219,6 +201,6 @@ var _ pull.Unit = (*Future)(nil)
 func init() {
 	pull.Register(&Future{exUnit{
 		name:    protocol.MarketFuture,
-		markets: []uint8{marketCFF, marketCZC, marketDCE, marketSHF, marketGFE, marketQHZ},
+		markets: []protocol.Exchange{protocol.ExchangeCFF, protocol.ExchangeCZC, protocol.ExchangeDCE, protocol.ExchangeSHF, protocol.ExchangeGFE, protocol.ExchangeQHZ},
 	}})
 }
