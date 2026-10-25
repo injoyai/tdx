@@ -1,4 +1,4 @@
-// PullV2 演示指定证券或全市场的日线/分钟线拉取与落库查询。
+// pull 演示指定证券或全市场的日线/分钟线拉取与落库查询。
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	dir := flag.String("dir", "./output/pullv2", "数据目录，应放在 ./output/ 下")
+	dir := flag.String("dir", "./output/pull", "数据目录，应放在 ./output/ 下")
 	since := flag.String("since", time.Now().In(protocol.Location()).AddDate(0, -1, 0).Format("20060102"), "首次拉取的起始日期 YYYYMMDD")
 	day := flag.Bool("day", true, "拉取日线")
 	minute := flag.Bool("minute", true, "拉取 1 分钟线")

@@ -9,7 +9,7 @@
 | [GetCodeAll](GetCodeAll/main.go) | 市场数量、分页或完整代码列表、沪深北股票代码 |
 | [GetKline](GetKline/main.go) | 各周期 K 线，支持分页、全部历史和按日期停止 |
 | [GetQFQKline](GetQFQKline/main.go) | 前后复权、复权因子、股本与换手率 |
-| [PullV2](PullV2/main.go) | 日线/分钟线拉取与落库查询，默认单证券、最近一个月、串行执行 |
+| [pull](pull/main.go) | 日线/分钟线拉取与落库查询，默认单证券、最近一个月、串行执行 |
 
 ## 运行
 
@@ -32,8 +32,8 @@ go run ./examples/GetKline -until 20261001
 # 标准股票复权
 go run ./examples/GetQFQKline -code sh600519
 
-# 指定证券，只拉日线并写入 ./output/pullv2/
-go run ./examples/PullV2 -minute=false sz000001 sh000001
+# 指定证券，只拉日线并写入 ./output/pull/
+go run ./examples/pull -minute=false sz000001 sh000001
 
 # 查看参数，不连接服务器
 go run ./examples/GetKline -h
@@ -44,6 +44,6 @@ go test ./examples/...
 
 `GetKline` 的 `-type` 使用 `protocol.TypeKline*` 数值，默认 9（日线）；`-all` 查询全部可用历史。`-until` 保留首次早于指定日期的停止记录，不能与 `-all` 同用。
 
-`PullV2` 的日线和分钟线至少开启一种；全市场需显式传入 `-all`，`-force` 可忽略当日完成标记。拉取会更新同名数据库，配置与存储单位见 [pull 文档](../extend/pull/README.md)。
+`pull` 默认写入 `./output/pull/`；继续使用原示例数据目录时传入 `-dir ./output/pullv2`，已有数据不会自动搬迁。日线和分钟线至少开启一种；全市场需显式传入 `-all`，`-force` 可忽略当日完成标记。拉取会更新同名数据库，配置与存储单位见 [pull 文档](../extend/pull/README.md)。
 
 联网结果取决于证券、交易日和服务器保留范围；真实验证遵循 [项目规则](../PROJECT_RULES.md) 的预算与限流要求。更多接口见 [统一 Client](../docs/unified-client.md)、[项目 README](../README.md) 和 [HTTP 服务](../extend/httpserver/README.md)。

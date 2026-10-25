@@ -55,7 +55,7 @@ func main() {
 	defer ex.Close()
 
 	s, err := pull.New(&pull.Config{
-		Dir:     "./output/pullv2", // 数据根目录
+		Dir:     "./output/pull", // 数据根目录
 		StartAt: "20260101",        // 首次全量的最早日期；空 = 只拉最近两年
 		Manage:  m,
 		ExPool:  ex,
@@ -73,7 +73,7 @@ func main() {
 }
 ```
 
-> 完整演示见 [`examples/PullV2`](../../examples/PullV2)：默认拉取单证券，可通过代码参数、`-all` 或 `-minute=false` 选择指定范围、全市场或只拉日线。
+> 完整演示见 [`examples/pull`](../../examples/pull)：默认拉取单证券，可通过代码参数、`-all` 或 `-minute=false` 选择指定范围、全市场或只拉日线。
 
 ### 两种拉取模式
 
@@ -350,6 +350,6 @@ func init() { pull.Register(&MyUnit{}) }
 go test ./extend/pull/... -count=1
 ```
 
-> 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/PullV2`。
+> 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/pull`。
 
 内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键与简称使用相同的规范化文件名，例如 `cn/stock.600000` 和 `sh600000` 均使用 `sh600000.db`。
