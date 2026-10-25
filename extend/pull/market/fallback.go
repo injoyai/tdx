@@ -6,13 +6,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // minuteFallback 仅供股票/ETF 使用；协议请求仍由已有客户端接口完成。
 type minuteFallback struct {
-	days   func(from time.Time) (protocol.Klines, error)
+	days   func(from time.Time) ([]tdx.Kline, error)
 	trades func(day time.Time) (protocol.Trades, error)
 }
 
@@ -65,7 +66,10 @@ func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endVal
 	seen := map[int64]bool{}
 	var dates []time.Time
 	for _, k := range days {
-		day := minuteDay(k.Time, from.Location())
+		day, err := time.ParseInLocation(time.DateOnly, k.Time, from.Location())
+		if err != nil {
+			return result(), err
+		}
 		if k.Volume <= 0 || day.Before(minuteDay(from, from.Location())) || !day.Before(boundary) || seen[day.Unix()] {
 			continue
 		}
@@ -149,7 +153,7 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	out := make([]*pull.KlineMinute, 0, len(ks))
 	for _, k := range ks {
 		out = append(out, &pull.KlineMinute{
-			Time: k.Time.Format(protocol.TimeLayout), TradingDate: day.Format(time.DateOnly), Open: k.Open, High: k.High,
+			Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume),
 			Amount: k.Amount, Source: pull.MinuteSourceTrade,
 		})

@@ -169,12 +169,12 @@ for _, k := range qfq {
 
 // 方式二: 已有不复权 K 线时直接复权
 resp, _ := c.GetKlineDayAll("sh600519")
-raw, _ := resp.StandardResponse()
-qfq2 := gb.QFQ("sh600519", raw.List)
+ks, _ := resp.Klines()
+qfq2 := gb.QFQ("sh600519", ks)
 _ = qfq2
 
 // 方式三: 仅取复权因子(每个除权区间一个仿射系数), 自行施加
-fs := gb.GetFactors("sh600519", raw.List)
+fs := gb.GetFactors("sh600519", ks)
 for _, f := range fs {
 	_ = f.QFQPrice(100) // 对任意原始价做前复权
 }

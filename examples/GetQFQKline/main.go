@@ -22,14 +22,14 @@ func main() {
 	defer gb.Close()
 	result, err := c.GetKlineDayAll(*code)
 	logs.PanicErr(err)
-	resp, err := result.StandardResponse()
+	ks, err := result.Klines()
 	logs.PanicErr(err)
-	if len(resp.List) == 0 {
+	if len(ks) == 0 {
 		logs.Info("没有可用日线")
 		return
 	}
-	qfq := gb.QFQ(*code, resp.List)
-	hfq := gb.HFQ(*code, resp.List)
+	qfq := gb.QFQ(*code, ks)
+	hfq := gb.HFQ(*code, ks)
 	for _, k := range qfq[max(0, len(qfq)-5):] {
 		fmt.Printf("%s 前复权 开%.2f 高%.2f 低%.2f 收%.2f\n",
 			k.Time.Format(time.DateOnly), k.Open, k.High, k.Low, k.Close)
@@ -39,10 +39,10 @@ func main() {
 	}
 	xrxds := gb.GetXRXDs(*code)
 	logs.Debug("除权除息记录:", len(xrxds))
-	for _, factor := range gb.GetFactors(*code, resp.List) {
+	for _, factor := range gb.GetFactors(*code, ks) {
 		logs.Debug(factor)
 	}
-	latest := resp.List[len(resp.List)-1]
+	latest := ks[len(ks)-1]
 	if equity := gb.GetEquity(*code, latest.Time); equity != nil {
 		logs.Debug("总股本:", equity.Total, "流通股本:", equity.Float)
 		logs.Debug("换手率:", gb.GetTurnover(*code, latest.Time, protocol.ToShares(latest.Volume)))

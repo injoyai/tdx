@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -119,9 +120,9 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		// 各年份独立处理，但日线候选只请求一次。
 		originalDays := supplement.days
 		var daysOnce sync.Once
-		var days protocol.Klines
+		var days []tdx.Kline
 		var daysErr error
-		supplement = &minuteFallback{trades: supplement.trades, days: func(time.Time) (protocol.Klines, error) {
+		supplement = &minuteFallback{trades: supplement.trades, days: func(time.Time) ([]tdx.Kline, error) {
 			daysOnce.Do(func() {
 				at, err := time.ParseInLocation(protocol.TimeLayout, earliest, protocol.Location())
 				if err != nil {

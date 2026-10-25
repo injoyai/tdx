@@ -3,6 +3,7 @@ package workday
 
 import (
 	"errors"
+	"fmt"
 	"iter"
 	"path/filepath"
 	"reflect"
@@ -200,15 +201,16 @@ func (w *Workday) refresh() error {
 			logs.Err(err)
 			return err
 		}
-		raw, err := resp.StandardResponse()
-		if err != nil {
-			return err
-		}
 
 		inserts := []any(nil)
-		for _, v := range raw.List {
-			if unix := v.Time.Unix(); unix > lastWorkday.Unix {
-				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: v.Time.Format("20060102")})
+		for _, v := range resp.List {
+			day, err := time.ParseInLocation(time.DateOnly, v.Time, protocol.Location())
+			if err != nil || day.Format(time.DateOnly) != v.Time {
+				return fmt.Errorf("workday: 无效源日期 %q", v.Time)
+			}
+			// 维持已有日历数据库及 Is 使用的固定东八区 15:00 键。
+			if unix := day.Add(15 * time.Hour).Unix(); unix > lastWorkday.Unix {
+				inserts = append(inserts, &WorkdayModel{Unix: unix, Date: day.Format("20060102")})
 			}
 		}
 

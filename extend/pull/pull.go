@@ -450,11 +450,6 @@ func (s *Service) QueryDay(code Code, start, end string) ([]*KlineDay, error) {
 	}
 	defer release()
 	rows, err := queryDay(db, start, end)
-	for _, k := range rows {
-		if k.AmountUnknown {
-			k.Amount = 0
-		}
-	}
 	return rows, err
 }
 
@@ -552,11 +547,6 @@ func (s *Service) QueryMinute(code Code, start, end string) ([]*KlineMinute, err
 		release()
 		if err != nil {
 			return nil, err
-		}
-		for _, k := range ls {
-			if k.AmountUnknown {
-				k.Amount = 0
-			}
 		}
 		out = append(out, ls...)
 	}

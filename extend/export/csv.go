@@ -7,6 +7,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// KlinesToCSV 接受成交量已统一为整数手的 K 线（Client 结果先调用 Klines）；CSV 输出为股。
 func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
 	data := [][]any{{"日期", "时间", "代码", "名称", "开盘(元)", "最高(元)", "最低(元)", "收盘(元)", "成交量(股)", "成交额(元)"}}
 	for _, v := range ks {

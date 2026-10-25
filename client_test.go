@@ -93,17 +93,11 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			t.Fatal("daily source date must not include a fabricated close time", k.Time)
 		}
 		if k.Standard != nil {
-			if k.TradingDate != k.Time {
-				t.Fatal("lost standard trading date", k)
-			}
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
 			}
 		} else if k.Close != 10.5 || k.Extended.Position != 123 || k.Extended.Price != 10.75 || k.Amount != nil {
 			t.Fatal("lost futures fields or mislabeled position as amount", k)
-		}
-		if k.Extended != nil && k.TradingDate != "" {
-			t.Fatal("guessed extended trading date", k)
 		}
 	}
 }
@@ -953,6 +947,32 @@ func TestKlinesVolumeValidation(t *testing.T) {
 		}
 		if tc.valid && (ks[0].Volume != tc.want || r.List[0].Standard.Volume != tc.raw || r.List[0].Volume != tc.volume) {
 			t.Fatal("incorrect or mutating conversion", ks)
+		}
+	}
+}
+
+func TestKlinesBeyondLegacyResponseCount(t *testing.T) {
+	raw := &protocol.Kline{Volume: 20000, Close: 10.8, Amount: 216000}
+	r := &KlineResp{List: make([]Kline, 65536)}
+	for i := range r.List {
+		r.List[i] = Kline{Volume: 20000, Standard: raw}
+	}
+	ks, err := r.Klines()
+	if err != nil || len(ks) != len(r.List) {
+		t.Fatalf("slice conversion failed: count=%d err=%v", len(ks), err)
+	}
+	if ks[0] == raw || ks[0].Volume != 200 || raw.Volume != 20000 || ks[0].Close != 10.8 {
+		t.Fatal("conversion changed raw fields", ks[0], raw)
+	}
+	if _, err := r.StandardResponse(); err == nil {
+		t.Fatal("legacy uint16 response accepted too many records")
+	}
+	for _, bad := range []*KlineResp{
+		{Instrument: protocol.Instrument{Exchange: protocol.ExchangeHK}},
+		{List: []Kline{{Volume: 100}}},
+	} {
+		if _, err := bad.Klines(); err == nil {
+			t.Fatal("unsupported source accepted")
 		}
 	}
 }

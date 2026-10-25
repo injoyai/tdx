@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -14,6 +15,9 @@ func TestJSONUsesCurrentFieldNames(t *testing.T) {
 		value            any
 		current, removed string
 	}{
+		{tdx.Kline{}, "Time", "TradingDate"},
+		{pull.KlineDay{}, "Time", "TradingDate"},
+		{pull.KlineMinute{}, "Amount", "AmountUnknown"},
 		{protocol.Quote{}, "Reserved0", "ReversedBytes0"},
 		{pull.Config{}, "Tracker", "Updated"},
 		{manage.Manage{}, "ClientPool", "IPool"},

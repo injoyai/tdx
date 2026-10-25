@@ -239,17 +239,17 @@ func (g *Gbbq) HFQ(code string, ks protocol.Klines) protocol.Klines {
 	return protocol.ApplyHFQ(ks, g.GetFactors(code, ks))
 }
 
-// QFQKlineDay 一站式获取前复权日线(全量历史): 拉取不复权日K + 前复权(对齐通达信)。
+// QFQKlineDay 拉取全量历史并前复权，成交量统一为整数手，可直接用于指标和本地文件。
 func (g *Gbbq) QFQKlineDay(code string) (protocol.Klines, error) {
 	resp, err := g.c.GetKlineDayAll(code)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := resp.StandardResponse()
+	ks, err := resp.Klines()
 	if err != nil {
 		return nil, err
 	}
-	return g.QFQ(code, raw.List), nil
+	return g.QFQ(code, ks), nil
 }
 
 // HFQKlineDay 一站式获取后复权日线(全量历史)。见 QFQKlineDay。
@@ -258,11 +258,11 @@ func (g *Gbbq) HFQKlineDay(code string) (protocol.Klines, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := resp.StandardResponse()
+	ks, err := resp.Klines()
 	if err != nil {
 		return nil, err
 	}
-	return g.HFQ(code, raw.List), nil
+	return g.HFQ(code, ks), nil
 }
 
 func (g *Gbbq) GetTurnover(code string, t time.Time, volume int64) float64 {

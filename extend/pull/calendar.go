@@ -30,11 +30,7 @@ func DayToCalendar(ks []*KlineDay, period CalendarPeriod) ([]*KlineDay, error) {
 	input := append([]*KlineDay(nil), ks...)
 	sort.SliceStable(input, func(i, j int) bool { return input[i].Time < input[j].Time })
 	key := func(k *KlineDay) string {
-		date := k.TradingDate
-		if date == "" {
-			date = k.Time
-		}
-		t, _ := parseTime(date, time.DateOnly)
+		t, _ := parseTime(k.Time, time.DateOnly)
 		y, m, _ := t.Date()
 		switch period {
 		case CalendarWeek:
@@ -55,9 +51,6 @@ func DayToCalendar(ks []*KlineDay, period CalendarPeriod) ([]*KlineDay, error) {
 			end++
 		}
 		k := *DayToPeriod(input[start:end], end-start)[0]
-		if k.AmountUnknown {
-			k.Amount = 0
-		}
 		out = append(out, &k)
 		start = end
 	}
@@ -109,15 +102,11 @@ func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*K
 		if _, err := parseTime(k.Time, "2006-01-02 15:04"); err != nil {
 			return nil, err
 		}
-		if err := validateRange(k.TradingDate, "", time.DateOnly); err != nil {
-			return nil, err
-		}
 	}
 	input := append([]*KlineMinute(nil), ks...)
 	sort.SliceStable(input, func(i, j int) bool { return input[i].Time < input[j].Time })
 	type bucket struct {
 		anchor         string
-		tradingDate    string
 		session, index int
 	}
 	var previous bucket
@@ -143,7 +132,7 @@ func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*K
 				if elapsed > 0 {
 					index = int((elapsed - 1) / (int64(n) * 60))
 				}
-				current, found = bucket{anchor: begin.Format("2006-01-02 15:04"), tradingDate: k.TradingDate, session: i, index: index}, true
+				current, found = bucket{anchor: begin.Format("2006-01-02 15:04"), session: i, index: index}, true
 				break
 			}
 			if found {
@@ -159,20 +148,14 @@ func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*K
 		} else {
 			last := out[len(out)-1]
 			last.High, last.Low = max(last.High, k.High), min(last.Low, k.Low)
-			last.Close, last.Time, last.TradingDate = k.Close, k.Time, k.TradingDate
+			last.Close, last.Time = k.Close, k.Time
 			last.Volume += k.Volume
 			last.Amount += k.Amount
-			last.AmountUnknown = last.AmountUnknown || k.AmountUnknown
 			if k.Source != "" {
 				last.Source = k.Source
 			}
 		}
 		previous = current
-	}
-	for _, k := range out {
-		if k.AmountUnknown {
-			k.Amount = 0
-		}
 	}
 	return out, nil
 }

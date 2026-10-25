@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,15 +59,13 @@ func GetTHSDayKlineFull(code string, c tdx.Client) ([3]protocol.Klines, error) {
 	if err != nil {
 		return [3]protocol.Klines{}, err
 	}
-	raw, err := resp.StandardResponse()
+	bfq, err := resp.Klines()
 	if err != nil {
 		return [3]protocol.Klines{}, err
 	}
 	mAmount := make(map[string]float64)
-	bfq := protocol.Klines(nil)
-	for _, v := range raw.List {
+	for _, v := range bfq {
 		mAmount[v.Time.In(protocol.Location()).Format(time.DateOnly)] = v.Amount
-		bfq = append(bfq, v)
 	}
 	//前复权
 	qfq, err := GetTHSDayKline(code, THSQFQ)
@@ -193,6 +192,10 @@ func GetTHSDayKline(code string, adjustment uint8) (protocol.Klines, error) {
 				return nil, err
 			}
 			x = time.Date(year, x.Month(), x.Day(), 15, 0, 0, 0, protocol.Location())
+			volume, err := strconv.ParseInt(strings.TrimSpace(volumes[i]), 10, 64)
+			if err != nil || volume < 0 || volume%protocol.SharesPerLot != 0 {
+				return nil, fmt.Errorf("同花顺第 %d 条成交量不能无损转换为整数手: %q", i+1, volumes[i])
+			}
 			low := conv.Float64(prices[i*4+0]) / priceFactor
 			ls = append(ls, &protocol.Kline{
 				Time:   x,
@@ -200,7 +203,7 @@ func GetTHSDayKline(code string, adjustment uint8) (protocol.Klines, error) {
 				High:   conv.Float64(prices[i*4+2])/priceFactor + low,
 				Low:    low,
 				Close:  conv.Float64(prices[i*4+3])/priceFactor + low,
-				Volume: protocol.FromShares(conv.Int64(volumes[i]) + protocol.SharesPerLot/2),
+				Volume: protocol.FromShares(volume),
 			})
 			i++
 		}

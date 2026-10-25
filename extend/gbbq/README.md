@@ -21,7 +21,7 @@ ks, err := cache.QFQKlineDay("sh600519")
 - `Update()` 串行刷新，完整拉取后在事务中替换数据库记录；失败不发布部分新结果。
 - `Close()` 可重复或并发调用，等待在途更新并停止调度，释放自建资源；关闭后 `Update()` 返回 `net.ErrClosed`，已加载数据仍可查询。
 
-`GetEquity`、`GetTurnover`、`GetXRXDs`、`GetFactors` 提供内存查询；`QFQ` / `HFQ` 接收 `protocol.Klines`，`QFQKlineDay` / `HFQKlineDay` 直接拉取并复权。迁移不改变 `protocol` 的单位和计算算法。`All()` 只复制映射，记录与切片沿用共享读取语义，调用方应视为只读。
+`GetEquity`、`GetTurnover`、`GetXRXDs`、`GetFactors` 提供内存查询；`QFQ` / `HFQ` 接收 `protocol.Klines`，`QFQKlineDay` / `HFQKlineDay` 直接拉取并复权。`QFQKlineDay` / `HFQKlineDay` 先通过 `KlineResp.Klines()` 把成交量统一为整数手，返回值可直接用于 `VWAP()`、本地文件和 CSV 导出；指数不再携带原始股数。不能无损转换的非整百股数量会报错。`QFQ` / `HFQ` 本身保留调用方输入的量额，传入已获取的统一结果时先调用 `Klines()`，不要把指数的 `StandardResponse().List` 直接交给指标或导出。复权价格算法不变。`All()` 只复制映射，记录与切片沿用共享读取语义，调用方应视为只读。
 
 缓存查询和复权使用同一证券解析规则：`sz000001`、`SZ000001`、`sz.000001`、`000001.SZ` 与裸 `000001` 等价。HTTP 股本缓存也采用此规则。非法代码或非标准市场查询为空，不会误用其他市场的股本。
 

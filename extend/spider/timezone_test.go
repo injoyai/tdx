@@ -17,7 +17,7 @@ type timezoneDailyClient struct {
 }
 
 func (c *timezoneDailyClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
-	return &tdx.KlineResp{Count: 1, List: []tdx.Kline{{Standard: c.k}}}, nil
+	return &tdx.KlineResp{Count: 1, List: []tdx.Kline{{Time: c.k.Time.Format(time.DateOnly), Volume: protocol.ToShares(c.k.Volume), Standard: c.k}}}, nil
 }
 
 func TestTHSUsesExchangeTimezone(t *testing.T) {

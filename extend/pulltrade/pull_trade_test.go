@@ -133,6 +133,11 @@ func TestPullTradePeriods(t *testing.T) {
 			if rows[1][1] != "09:30" || rows[1][8] != "100" || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
 				t.Fatalf("auction/session boundary changed: first=%v second=%v", rows[1], rows[2])
 			}
+			for i := 2; i < len(rows); i++ {
+				if rows[i][0]+rows[i][1] < rows[i-1][0]+rows[i-1][1] {
+					t.Fatal("CSV rows out of source-time order")
+				}
+			}
 			volume := 0
 			amount := 0.0
 			for _, row := range rows[1:] {

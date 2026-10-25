@@ -25,7 +25,7 @@ isTradingDay := calendar.TodayIs()
 - `WithSpec` / `WithRetry` 配置刷新计划与定时重试次数，`WithOptions` 组合配置。
 - `Close()` 可重复或并发调用，等待在途更新并停止调度，释放自建资源。关闭后 `Update()` 返回 `net.ErrClosed`，已加载日期仍可查询。
 
-`manage.WithWorkday` 和 `pull.Config.Workday` 使用 `*workday.Workday`；`manage.WithDialWorkday` 使用 `workday.DialFunc`。数据表仍为 `workday`，`WorkdayModel` 的字段保持原样；无需因拆包转换已有数据库。
+`manage.WithWorkday` 和 `pull.Config.Workday` 使用 `*workday.Workday`；`manage.WithDialWorkday` 使用 `workday.DialFunc`。刷新直接读取统一 K 线的 `Time` 源日期（`YYYY-MM-DD`），不要求 `Standard` 原始记录；非法日期使本次写入失败，不发布部分新日期。内部继续按固定东八区当日 15:00 生成已有缓存键。数据表仍为 `workday`，`WorkdayModel` 的字段保持原样；无需因拆包转换已有数据库。
 
 `tdx.IntegerDay` 继续保留在根包，它返回输入时区的当日零点。迁移对应关系见 [迁移指南](../../docs/v2-migration.md#交易日历与更新工具独立子包)。
 

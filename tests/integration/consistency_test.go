@@ -29,7 +29,7 @@ func (*consistencyClient) GetKlineUntil(category uint8, code string, stop func(t
 	if !protocol.IsIntraday(category) {
 		k.Datetime = k.Datetime[:10]
 	}
-	return &tdx.KlineResp{Instrument: i, Count: 1, List: []tdx.Kline{{Time: k.Datetime, Extended: k}}}, nil
+	return &tdx.KlineResp{Instrument: i, Count: 1, List: []tdx.Kline{{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: 100, Extended: k}}}, nil
 }
 
 func consistencyDay(n int) time.Time { return time.Date(2026, 10, n, 15, 0, 0, 0, protocol.Location()) }
@@ -46,7 +46,7 @@ func (*consistencyClient) GetKlineDayAll(code string) (*tdx.KlineResp, error) {
 	r := &tdx.KlineResp{Instrument: i}
 	for _, d := range []int{19, 20, 21} {
 		k := &protocol.Kline{Time: consistencyDay(d), Open: 10, High: 10, Low: 10, Close: 10}
-		r.List = append(r.List, tdx.Kline{Time: k.Time.Format("2006-01-02 15:04"), Standard: k})
+		r.List = append(r.List, tdx.Kline{Time: k.Time.Format(time.DateOnly), Volume: k.Volume, Standard: k})
 	}
 	r.Count = len(r.List)
 	return r, nil
@@ -210,7 +210,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatal(len(rows))
 	}
-	if rows[0].Amount != 0 || !rows[0].AmountUnknown {
+	if rows[0].Amount != 0 {
 		t.Errorf("position bits=100000 stored as monetary Amount=%g", rows[0].Amount)
 	}
 	if err := u.FetchMinute(s, code); err != nil {
@@ -220,7 +220,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(minutes) != 1 || minutes[0].Amount != 0 || !minutes[0].AmountUnknown {
+	if len(minutes) != 1 || minutes[0].Amount != 0 {
 		t.Fatal("unconfirmed minute amount stored", minutes)
 	}
 }

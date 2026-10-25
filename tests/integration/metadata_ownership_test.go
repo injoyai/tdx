@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/codes"
@@ -35,7 +36,7 @@ func (*metadataClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 func (c *metadataClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 	r := &tdx.KlineResp{Instrument: protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}}
 	for _, k := range c.days {
-		r.List = append(r.List, tdx.Kline{Standard: k})
+		r.List = append(r.List, tdx.Kline{Time: k.Time.Format(time.DateOnly), Standard: k})
 	}
 	r.Count = len(r.List)
 	return r, nil

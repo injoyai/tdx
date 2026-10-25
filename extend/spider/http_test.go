@@ -44,6 +44,11 @@ func TestTHSResponseValidation(t *testing.T) {
 		ok         bool
 	}{
 		{"valid", valid, 200, true},
+		{"odd shares", strings.Replace(valid, `"volumn":"100"`, `"volumn":"149"`, 1), 200, false},
+		{"rounds up", strings.Replace(valid, `"volumn":"100"`, `"volumn":"199"`, 1), 200, false},
+		{"negative volume", strings.Replace(valid, `"volumn":"100"`, `"volumn":"-100"`, 1), 200, false},
+		{"invalid volume", strings.Replace(valid, `"volumn":"100"`, `"volumn":"bad"`, 1), 200, false},
+		{"overflow volume", strings.Replace(valid, `"volumn":"100"`, `"volumn":"9223372036854775808"`, 1), 200, false},
 		{"empty", "", 200, false},
 		{"status", valid, 503, false},
 		{"no wrapper", `{}`, 200, false},

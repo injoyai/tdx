@@ -27,11 +27,6 @@ func TestQueryMinuteUsesSourceCalendar(t *testing.T) {
 			if err != nil || len(rows) != 2 || rows[0].Time != "2025-12-31 23:59" || rows[1].Time != "2026-01-01 00:01" {
 				t.Fatalf("host=%s rows=%v err=%v", loc, rows, err)
 			}
-			for _, row := range rows {
-				if row.TradingDate != "" {
-					t.Fatalf("invented source semantics: %+v", row)
-				}
-			}
 		}
 	}
 }

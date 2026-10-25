@@ -120,7 +120,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 - K 线 `Amount` 为指针，标准金额有值；扩展金额与持仓字段重叠，统一金额暂为 nil。期货持仓、结算价等保留在 `Extended` 中。原始结构的字段仍按各自既有契约解释，存在字段不代表其语义在全部市场已确认。
 - 分笔公共 `Direction` 为 1 买、-1 卖、0 中性。扩展分笔的原始整数价格尺度未确认，公共 `Price` 为 nil，原始值保留在 `Extended.Price`；不会擅自除以 100/1000。[pytdx 上游分笔解析](https://github.com/rainx/pytdx/blob/master/pytdx/parser/ex_get_transaction_data.py) 同样保留整数原始价格。
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
-- K 线 `Time` 保留源精度：日及更长周期为 `YYYY-MM-DD`，日内周期为 `YYYY-MM-DD HH:MM`；分时／分笔为 `HH:MM`／`HH:MM:SS`。不为日线补造 15:00。`Kline.TradingDate` 仅填写已确认交易日；扩展未知为空，历史分笔的 `Date` 仍是请求交易日期，不等同于夜盘自然日。
+- K 线 `Time` 保留源精度：日及更长周期为 `YYYY-MM-DD`，日内周期为 `YYYY-MM-DD HH:MM`；分时／分笔为 `HH:MM`／`HH:MM:SS`。不为日线补造 15:00。K 线不再附加 `TradingDate`；历史分笔的 `Date` 仍是请求交易日期，不等同于夜盘自然日。
 - 行情结果只保留源日期／日期时分、分时／分笔钟面时间及已确认的交易日；已移除 `TimeZone` 和 `Timestamp()`，不附加或生成 Unix 时间戳。不根据证券所在地猜测来源时区，不修改全局 `time.Local`。需要真实时刻转换时，由调用方在确认来源口径后自行处理。
 - 标准原始 `Kline.Time`／`Trade.Time`／`Gbbq.Time`、本地文件及同花顺适配沿用 `protocol.Location()` 的固定东八区约定；原始日线的 15:00／00:00 是内部日期标签。pull 按源日期时分保存和查询，扩展不再按东八区生成 Unix。新存储格式及接口变更见 [迁移说明](v2-migration.md#源时间交易日与真实时刻)。
 
@@ -128,7 +128,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 ## 指标与本地文件的量单位适配
 
-`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于需要协议原始字段的复权等处理；标准指数的原始成交量仍为股。`VWAP()` 与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`：
+`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于需要协议原始字段的复权等处理；标准指数的原始成交量仍为股。`VWAP()`、CSV 导出与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`：
 
 ```go
 r, err := c.GetKlineDay("sh000001", 0, 100)
@@ -138,7 +138,7 @@ if err != nil { return err }
 fmt.Println(ks.VWAP())
 ```
 
-`Klines()` 检查标准来源与旧数量上限，复制记录后将统一 `Kline.Volume` 的股数除以 100，非整百股报错以避免截断。扩展市场会报错。副本可用于标准指标与本地文件，转换和后续修改都不会污染原始协议记录。
+`Klines()` 检查标准来源，不经过旧响应的 uint16 条数转换，复制记录后将统一 `Kline.Volume` 的股数除以 100，非整百股报错以避免截断。扩展市场会报错。副本可用于标准指标与本地文件，转换和后续修改都不会污染原始协议记录。
 
 `extend.DoIncomes` 按输入时刻所在的固定东八区日期选取标准日线，从该日零点开始，兼容本地日线零点和协议日线 15:00 时间标签；主机时区不再决定收益起始边界。
 

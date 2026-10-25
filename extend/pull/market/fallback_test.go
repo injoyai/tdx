@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -101,11 +102,11 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 	fail := true
 	want := errors.New("trade page failed")
 	fallback := &minuteFallback{
-		days: func(time.Time) (protocol.Klines, error) {
-			return protocol.Klines{
-				{Time: day, Volume: 1}, {Time: day2, Volume: 1},
-				{Time: day.AddDate(0, 0, 2), Volume: 0}, // 停牌不请求
-				{Time: now, Volume: 1},                  // 原生范围不请求
+		days: func(time.Time) ([]tdx.Kline, error) {
+			return []tdx.Kline{
+				{Time: day.Format(time.DateOnly), Volume: 1}, {Time: day2.Format(time.DateOnly), Volume: 1},
+				{Time: day.AddDate(0, 0, 2).Format(time.DateOnly), Volume: 0}, // 停牌不请求
+				{Time: now.Format(time.DateOnly), Volume: 1},                  // 原生范围不请求
 			}, nil
 		},
 		trades: func(d time.Time) (protocol.Trades, error) {
@@ -175,9 +176,9 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 	now := s.Start().AddDate(0, 0, 2).Add(16 * time.Hour)
 	calls := 0
 	fallback := &minuteFallback{
-		days: func(time.Time) (protocol.Klines, error) {
+		days: func(time.Time) ([]tdx.Kline, error) {
 			calls++
-			return protocol.Klines{{Time: s.Start(), Volume: 1}}, nil
+			return []tdx.Kline{{Time: s.Start().Format(time.DateOnly), Volume: 1}}, nil
 		},
 		trades: func(time.Time) (protocol.Trades, error) { return nil, nil },
 	}
@@ -227,8 +228,8 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 	}
 	calls := 0
 	fallback := &minuteFallback{
-		days: func(time.Time) (protocol.Klines, error) {
-			return protocol.Klines{{Time: day, Volume: 1}, {Time: day.AddDate(0, 0, 1), Volume: 1}}, nil
+		days: func(time.Time) ([]tdx.Kline, error) {
+			return []tdx.Kline{{Time: day.Format(time.DateOnly), Volume: 1}, {Time: day.AddDate(0, 0, 1).Format(time.DateOnly), Volume: 1}}, nil
 		},
 		trades: func(d time.Time) (protocol.Trades, error) {
 			calls++
@@ -309,8 +310,8 @@ func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
 	}
 	calls := 0
 	fallback := &minuteFallback{
-		days: func(time.Time) (protocol.Klines, error) {
-			return protocol.Klines{{Time: day, Volume: 1}}, nil
+		days: func(time.Time) ([]tdx.Kline, error) {
+			return []tdx.Kline{{Time: day.Format(time.DateOnly), Volume: 1}}, nil
 		},
 		trades: func(d time.Time) (protocol.Trades, error) {
 			calls++

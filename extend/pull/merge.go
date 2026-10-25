@@ -16,15 +16,11 @@ func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
 				k.Open = v.Open
 			}
 			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
-			k.Time, k.TradingDate, k.Close = v.Time, v.TradingDate, v.Close
+			k.Time, k.Close = v.Time, v.Close
 			k.Volume += v.Volume
 			k.Amount += v.Amount
-			k.AmountUnknown = k.AmountUnknown || v.AmountUnknown
 			k.Turnover += v.Turnover
 			k.FloatStock, k.TotalStock = v.FloatStock, v.TotalStock
-		}
-		if k.AmountUnknown {
-			k.Amount = 0
 		}
 		out = append(out, &k)
 		start = end
@@ -47,16 +43,12 @@ func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
 				k.Open = v.Open
 			}
 			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
-			k.Time, k.TradingDate, k.Close = v.Time, v.TradingDate, v.Close
+			k.Time, k.Close = v.Time, v.Close
 			k.Volume += v.Volume
 			k.Amount += v.Amount
-			k.AmountUnknown = k.AmountUnknown || v.AmountUnknown
 			if v.Source != "" {
 				k.Source = v.Source
 			}
-		}
-		if k.AmountUnknown {
-			k.Amount = 0
 		}
 		out = append(out, &k)
 		start = end

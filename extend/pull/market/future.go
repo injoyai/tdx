@@ -105,7 +105,7 @@ func (u *exUnit) marketOf(code pull.Code) (uint8, string, error) {
 }
 
 // bars 复用客户端分页；过滤 Until 包含的界外停止记录。
-func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from string) ([]protocol.ExKline, error) {
+func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from string) ([]tdx.Kline, error) {
 	p, err := u.Ex(s)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from stri
 	if err != nil {
 		return nil, err
 	}
-	var out []protocol.ExKline
+	var out []tdx.Kline
 	err = p.Do(func(c tdx.Client) error {
 		var parseErr error
 		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: protocol.Exchange(market), Code: bare}).String(), func(k tdx.Kline) bool {
@@ -147,11 +147,8 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from stri
 			if at.Format(layout) != k.Time {
 				return fmt.Errorf("无效源时间 %q", k.Time)
 			}
-			if k.Extended == nil {
-				return fmt.Errorf("缺少扩展 K 线原始记录")
-			}
 			if k.Time >= from {
-				out = append(out, *k.Extended)
+				out = append(out, k)
 			}
 		}
 		return nil
@@ -176,14 +173,14 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	}
 	out := make([]*pull.KlineDay, 0, len(bars))
 	for _, k := range bars {
-		volume, err := info.Day.ToStorageVolume(int64(k.Trade))
-		if err != nil {
-			return err
+		row := &pull.KlineDay{
+			Time: k.Time, Open: k.Open, High: k.High,
+			Low: k.Low, Close: k.Close, Volume: k.Volume,
 		}
-		out = append(out, &pull.KlineDay{
-			Time: k.Datetime, Open: k.Open, High: k.High,
-			Low: k.Low, Close: k.Close, Volume: volume, AmountUnknown: true,
-		})
+		if k.Amount != nil {
+			row.Amount = *k.Amount
+		}
+		out = append(out, row)
 	}
 	return saveDays(s, code, from, out)
 }
@@ -201,14 +198,14 @@ func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		}
 		out := make([]*pull.KlineMinute, 0, len(bars))
 		for _, k := range bars {
-			volume, err := info.Minute.ToStorageVolume(int64(k.Trade))
-			if err != nil {
-				return nil, err
+			row := &pull.KlineMinute{
+				Time: k.Time, Open: k.Open, High: k.High,
+				Low: k.Low, Close: k.Close, Volume: k.Volume,
 			}
-			out = append(out, &pull.KlineMinute{
-				Time: k.Datetime, Open: k.Open, High: k.High,
-				Low: k.Low, Close: k.Close, Volume: volume, AmountUnknown: true,
-			})
+			if k.Amount != nil {
+				row.Amount = *k.Amount
+			}
+			out = append(out, row)
 		}
 		return out, nil
 	}, nil)

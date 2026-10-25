@@ -7,32 +7,32 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func TestAmountUsesStoredStatus(t *testing.T) {
+func TestAmountPreservesStoredValue(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: protocol.MarketFuture, Code: "cff/IF2609"}
 	at := time.Date(2026, 10, 20, 15, 0, 0, 0, protocol.Location())
-	if err := s.SaveDay(c, "", []*KlineDay{{Time: at.Format(time.DateOnly), Amount: 123}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly), Amount: 456, AmountUnknown: true}}); err != nil {
+	if err := s.SaveDay(c, "", []*KlineDay{{Time: at.Format(time.DateOnly), Amount: 123}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly), Amount: 456}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMinute(c, 2026, "", []*KlineMinute{{Time: at.Format("2006-01-02 15:04"), Amount: 123}, {Time: at.Add(time.Minute).Format("2006-01-02 15:04"), Amount: 456, AmountUnknown: true}}); err != nil {
+	if err := s.SaveMinute(c, 2026, "", []*KlineMinute{{Time: at.Format("2006-01-02 15:04"), Amount: 123}, {Time: at.Add(time.Minute).Format("2006-01-02 15:04"), Amount: 456}}); err != nil {
 		t.Fatal(err)
 	}
 	days, err := s.QueryDay(c, "", "")
-	if err != nil || len(days) != 2 || days[0].AmountUnknown || days[0].Amount != 123 || !days[1].AmountUnknown || days[1].Amount != 0 {
+	if err != nil || len(days) != 2 || days[0].Amount != 123 || days[1].Amount != 456 {
 		t.Fatal(days, err)
 	}
 	minutes, err := s.QueryMinute(c, at.Format("2006-01-02 15:04"), at.Add(time.Minute).Format("2006-01-02 15:04"))
-	if err != nil || len(minutes) != 2 || minutes[0].AmountUnknown || minutes[0].Amount != 123 || !minutes[1].AmountUnknown || minutes[1].Amount != 0 {
+	if err != nil || len(minutes) != 2 || minutes[0].Amount != 123 || minutes[1].Amount != 456 {
 		t.Fatal(minutes, err)
 	}
 }
 
-func TestAmountUnknownStorageAndAggregation(t *testing.T) {
+func TestAmountStorageAndAggregation(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	at := time.Date(2026, 10, 19, 9, 31, 0, 0, protocol.Location())
-	days := []*KlineDay{{Time: at.Format(time.DateOnly), Amount: 100}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly), AmountUnknown: true}}
-	minutes := []*KlineMinute{{Time: at.Format("2006-01-02 15:04"), Amount: 100}, {Time: at.Add(time.Minute).Format("2006-01-02 15:04"), AmountUnknown: true}}
+	days := []*KlineDay{{Time: at.Format(time.DateOnly), Amount: 100}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly)}}
+	minutes := []*KlineMinute{{Time: at.Format("2006-01-02 15:04"), Amount: 100}, {Time: at.Add(time.Minute).Format("2006-01-02 15:04")}}
 	if err := s.SaveDay(c, "", days); err != nil {
 		t.Fatal(err)
 	}
@@ -47,10 +47,10 @@ func TestAmountUnknownStorageAndAggregation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gotDay) != 2 || gotDay[0].AmountUnknown || !gotDay[1].AmountUnknown || gotDay[0].Amount != 100 {
+	if len(gotDay) != 2 || gotDay[0].Amount != 100 {
 		t.Fatal(gotDay)
 	}
-	if len(gotMin) != 2 || gotMin[0].AmountUnknown || !gotMin[1].AmountUnknown || gotMin[0].Amount != 100 {
+	if len(gotMin) != 2 || gotMin[0].Amount != 100 {
 		t.Fatal(gotMin)
 	}
 	calendar, err := DayToCalendar(days, CalendarWeek)
@@ -62,13 +62,13 @@ func TestAmountUnknownStorageAndAggregation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, rows := range [][]*KlineDay{DayToPeriod(days, 2), calendar} {
-		if len(rows) != 1 || rows[0].Amount != 0 || !rows[0].AmountUnknown {
-			t.Fatal("partial daily amount exposed", rows)
+		if len(rows) != 1 || rows[0].Amount != 100 {
+			t.Fatal("daily amount sum changed", rows)
 		}
 	}
 	for _, rows := range [][]*KlineMinute{MinuteToPeriod(minutes, 2), sessions} {
-		if len(rows) != 1 || rows[0].Amount != 0 || !rows[0].AmountUnknown {
-			t.Fatal("partial minute amount exposed", rows)
+		if len(rows) != 1 || rows[0].Amount != 100 {
+			t.Fatal("minute amount sum changed", rows)
 		}
 	}
 	if days[0].Amount != 100 || minutes[0].Amount != 100 {

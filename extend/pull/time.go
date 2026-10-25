@@ -41,9 +41,6 @@ func validateDays(from string, rows []*KlineDay) error {
 		if _, err := parseTime(k.Time, time.DateOnly); err != nil {
 			return err
 		}
-		if err := validateRange(k.TradingDate, "", time.DateOnly); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -62,9 +59,6 @@ func validateMinutes(year int, from string, rows []*KlineMinute) error {
 		}
 		if t.Year() != year {
 			return fmt.Errorf("pull: 源时间 %s 不属于 %d 年", k.Time, year)
-		}
-		if err := validateRange(k.TradingDate, "", time.DateOnly); err != nil {
-			return err
 		}
 	}
 	return nil

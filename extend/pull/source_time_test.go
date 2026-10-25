@@ -38,13 +38,15 @@ func TestMinuteSchemaWithoutTimestampColumns(t *testing.T) {
 		t.Fatal("minute column count", columns, err)
 	}
 	for _, col := range columns {
-		if col["name"] == "Unix" || col["name"] == "TimeZone" {
+		if col["name"] == "Unix" || col["name"] == "TimeZone" || col["name"] == "TradingDate" || col["name"] == "AmountUnknown" {
 			t.Fatal("timestamp column created", col)
 		}
 	}
 	// 模拟上一版源时间主键库；已有额外列不应触发删表或损坏源时间记录。
 	for _, sql := range []string{
 		"ALTER TABLE KlineMinute ADD COLUMN Unix BIGINT NULL",
+		"ALTER TABLE KlineMinute ADD COLUMN TradingDate TEXT NULL",
+		"ALTER TABLE KlineMinute ADD COLUMN AmountUnknown INTEGER DEFAULT 0",
 		"ALTER TABLE KlineMinute ADD COLUMN TimeZone TEXT NULL",
 		"INSERT INTO KlineMinute (Time, Close, Unix, TimeZone) VALUES ('2026-01-05 09:31', 10, 1234567890, 'UTC+08:00')",
 	} {
@@ -76,7 +78,7 @@ func TestMinuteSchemaWithoutTimestampColumns(t *testing.T) {
 func TestSourceTimeValidation(t *testing.T) {
 	s := testService(t)
 	code := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	row := &KlineMinute{Time: "2026-01-05 09:31", TradingDate: "2026-01-05", Close: 10}
+	row := &KlineMinute{Time: "2026-01-05 09:31", Close: 10}
 	if err := s.SaveMinute(code, 2026, "", []*KlineMinute{row}); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +91,6 @@ func TestSourceTimeValidation(t *testing.T) {
 		{Time: "2025-01-05 09:31"},
 		{Time: "2026-02-30 09:31"},
 		{Time: "2026-01-05 9:31"},
-		{Time: row.Time, TradingDate: "20260105"},
 	} {
 		if err := s.SaveMinute(code, 2026, "", []*KlineMinute{bad}); err == nil {
 			t.Fatalf("accepted invalid source row %+v", bad)
@@ -119,19 +120,19 @@ func TestSourceTimeValidation(t *testing.T) {
 	}
 }
 
-func TestCalendarUsesSourceDateAndExplicitTradingDate(t *testing.T) {
-	days := []*KlineDay{{Time: "2026-01-02", TradingDate: "2026-01-05", Volume: 1}, {Time: "2026-01-05", TradingDate: "2026-01-05", Volume: 2}}
-	minutes := []*KlineMinute{{Time: "2026-01-02 21:01", TradingDate: "2026-01-05", Volume: 1}, {Time: "2026-01-03 00:01", TradingDate: "2026-01-05", Volume: 2}}
+func TestCalendarUsesSourceDate(t *testing.T) {
+	days := []*KlineDay{{Time: "2026-01-02", Volume: 1}, {Time: "2026-01-05", Volume: 2}}
+	minutes := []*KlineMinute{{Time: "2026-01-02 21:01", Volume: 1}, {Time: "2026-01-03 00:01", Volume: 2}}
 	old := time.Local
 	defer func() { time.Local = old }()
 	for _, loc := range []*time.Location{time.UTC, protocol.Location(), time.FixedZone("west", -8*3600)} {
 		time.Local = loc
 		week, err := DayToCalendar(days, CalendarWeek)
-		if err != nil || len(week) != 1 || week[0].Volume != 3 || week[0].TradingDate != "2026-01-05" {
+		if err != nil || len(week) != 2 || week[0].Volume != 1 || week[1].Volume != 2 {
 			t.Fatal(week, err)
 		}
 		night, err := MinuteToSessions(minutes, 240, []TradingSession{{1260, 150}})
-		if err != nil || len(night) != 1 || night[0].Volume != 3 || night[0].TradingDate != "2026-01-05" || night[0].Time != "2026-01-03 00:01" {
+		if err != nil || len(night) != 1 || night[0].Volume != 3 || night[0].Time != "2026-01-03 00:01" {
 			t.Fatal(night, err)
 		}
 	}

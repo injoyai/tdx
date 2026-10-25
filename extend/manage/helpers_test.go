@@ -22,7 +22,7 @@ func (c *testClient) Close() error { c.closed.Add(1); return nil }
 
 func (*testClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 	k := &protocol.Kline{Time: tdx.IntegerDay(time.Now().In(protocol.Location())).Add(15 * time.Hour)}
-	return &tdx.KlineResp{Count: 1, List: []tdx.Kline{{Standard: k}}}, nil
+	return &tdx.KlineResp{Count: 1, List: []tdx.Kline{{Time: k.Time.Format(time.DateOnly), Standard: k}}}, nil
 }
 
 func (*testClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {

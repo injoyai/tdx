@@ -23,7 +23,6 @@ type KlineResp struct {
 // Kline 是统一 K 线记录，Standard/Extended/RangeExtended 按查询来源保留原始字段。
 type Kline struct {
 	Time          string   // 源日期 YYYY-MM-DD，日内周期为 YYYY-MM-DD HH:MM
-	TradingDate   string   // 已确认交易日 YYYY-MM-DD；未知为空，不推断夜盘归属
 	Open          float64  // 开盘价，原币种/报价单位
 	High          float64  // 最高价，原币种/报价单位
 	Low           float64  // 最低价，原币种/报价单位
@@ -606,24 +605,25 @@ func (c *MarketClient) GetZHBFiles() (map[string][]byte, error) {
 
 func standardKline(k *protocol.Kline) Kline {
 	amount := k.Amount
-	return Kline{Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: &amount, Standard: k}
+	return Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
 // Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。
 // 使用统一记录的股数；不能无损换算时返回错误，不修改原始协议记录。
 func (r *KlineResp) Klines() (protocol.Klines, error) {
-	raw, err := r.StandardResponse()
-	if err != nil {
-		return nil, err
+	if r.Instrument.Exchange > protocol.ExchangeBJ {
+		return nil, errors.New("扩展 K线不能转换为标准协议数据")
 	}
-	out := make(protocol.Klines, 0, len(raw.List))
-	for j, k := range raw.List {
-		volume := r.List[j].Volume
-		if volume < 0 || volume%protocol.SharesPerLot != 0 {
+	out := make(protocol.Klines, 0, len(r.List))
+	for _, k := range r.List {
+		if k.Standard == nil {
+			return nil, errors.New("缺少标准 K线原始数据")
+		}
+		if k.Volume < 0 || k.Volume%protocol.SharesPerLot != 0 {
 			return nil, errors.New("成交量股数不能无损转换为整数手")
 		}
-		copy := *k
-		copy.Volume = protocol.FromShares(volume)
+		copy := *k.Standard
+		copy.Volume = protocol.FromShares(k.Volume)
 		out = append(out, &copy)
 	}
 	return out, nil

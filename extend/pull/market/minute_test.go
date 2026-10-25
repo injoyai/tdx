@@ -30,7 +30,7 @@ func TestBondMinuteUsesPlainPaging(t *testing.T) {
 		}
 		c := &plainMinuteClient{}
 		u := stdUnit{name: market}
-		rows, err := u.minUntil(c, "sh110075", func(*protocol.Kline) bool { return false })
+		rows, err := u.minUntil(c, "sh110075", "2026-01-01 00:00")
 		if err != nil || len(rows) != 1 || c.category != protocol.TypeKlineMinute {
 			t.Fatal(market, rows, c.category, err)
 		}
@@ -222,7 +222,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 	defer s.Close()
 	u := &exUnit{name: protocol.MarketUS, markets: []uint8{marketUS}}
 	rows, err := u.bars(s, pull.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly))
-	if err != nil || len(rows) != 2 || rows[0].Datetime != c.rows[1].Time || c.calls != 1 {
+	if err != nil || len(rows) != 2 || rows[0].Time != c.rows[1].Time || c.calls != 1 {
 		t.Fatal(rows, c.calls, err)
 	}
 	c.err = errors.New("page failed")
