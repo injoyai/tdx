@@ -11,11 +11,11 @@ func TestTradesKeepTradingDayAndSession(t *testing.T) {
 	defer func() { time.Local = previous }()
 	at := time.Date(2026, 10, 20, 9, 29, 0, 0, Location())
 	trades := Trades{
-		{Time: at, Price: 10000, Volume: 100},
-		{Time: at.Add(time.Minute), Price: 11000, Volume: 1},
-		{Time: time.Date(2026, 10, 20, 11, 30, 0, 0, Location()), Price: 12000, Volume: 2},
-		{Time: time.Date(2026, 10, 20, 13, 0, 0, 0, Location()), Price: 13000, Volume: 3},
-		{Time: at.AddDate(0, 0, 1), Price: 14000, Volume: 4},
+		{Time: at, Price: 10, Volume: 100},
+		{Time: at.Add(time.Minute), Price: 11, Volume: 1},
+		{Time: time.Date(2026, 10, 20, 11, 30, 0, 0, Location()), Price: 12, Volume: 2},
+		{Time: time.Date(2026, 10, 20, 13, 0, 0, 0, Location()), Price: 13, Volume: 3},
+		{Time: at.AddDate(0, 0, 1), Price: 14, Volume: 4},
 	}
 	ks := trades.Klines()
 	if len(ks) != 482 {

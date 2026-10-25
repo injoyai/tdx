@@ -20,11 +20,11 @@ type minuteFallback struct {
 // 本地数据参与合并，避免补旧日期时被现有删尾重插规则删除；原生数据优先。
 func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endValue, boundaryValue string,
 	native []*pull.KlineMinute) ([]*pull.KlineMinute, error) {
-	from, err := protocol.ParseSourceTime(fromValue, protocol.Location())
+	from, err := time.ParseInLocation(protocol.TimeLayout, fromValue, protocol.Location())
 	if err != nil {
 		return nil, err
 	}
-	end, err := protocol.ParseSourceTime(endValue, protocol.Location())
+	end, err := time.ParseInLocation(protocol.TimeLayout, endValue, protocol.Location())
 	if err != nil {
 		return nil, err
 	}
@@ -148,11 +148,10 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	ks := normalized.Klines()
 	out := make([]*pull.KlineMinute, 0, len(ks))
 	for _, k := range ks {
-		unix := k.Time.Unix()
 		out = append(out, &pull.KlineMinute{
-			Time: k.Time.Format(protocol.TimeLayout), TradingDate: day.Format(time.DateOnly), Unix: &unix, TimeZone: protocol.Location().String(), Open: k.Open.Float64(), High: k.High.Float64(),
-			Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: protocol.ToShares(k.Volume),
-			Amount: k.Amount.Float64(), Source: pull.MinuteSourceTrade,
+			Time: k.Time.Format(protocol.TimeLayout), TradingDate: day.Format(time.DateOnly), Open: k.Open, High: k.High,
+			Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume),
+			Amount: k.Amount, Source: pull.MinuteSourceTrade,
 		})
 	}
 	return out, nil

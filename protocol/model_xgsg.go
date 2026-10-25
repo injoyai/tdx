@@ -14,7 +14,7 @@ type TdxXgsg struct {
 	Market     uint8    // [0] 市场 0=深 1=沪 2=京
 	Code       string   // [1] 申购代码
 	Date       string   // [2] 申购日期 YYYYMMDD
-	IssuePrice float64  // [3] 发行价
+	IssuePrice float64  // [3] 发行价，元/股
 	Name       string   // [14] 证券名称
 	Fields     []string // 全部 18 个原始字段
 }

@@ -65,11 +65,7 @@ func klineRequest(code string, category uint8, count uint16) (*KlineResp, protoc
 	case protocol.TypeKlineMinute, protocol.TypeKlineMinute2:
 		category = info.Minute.Category
 	}
-	zone := ""
-	if info.Protocol == protocol.ProtocolStandard {
-		zone = protocol.Location().String()
-	}
-	return &KlineResp{Instrument: i, Category: category, TimeZone: zone}, info, nil
+	return &KlineResp{Instrument: i, Category: category}, info, nil
 }
 
 func codePage(out *CodeResp, start uint32, count uint16) *CodeResp {

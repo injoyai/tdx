@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// 记录布局：时间(2 字节, 小时*60+分钟) 价格(4 float32*1000) 匹配量(4) 未匹配量(4 int32) padding(1) 秒(1)
+// 记录布局：时间(2 字节, 小时*60+分钟) 价格(4 float32(元)) 匹配量(4) 未匹配量(4 int32) padding(1) 秒(1)
 func auctionRecord(minute uint16, price float32, match uint32, unmatched int32, sec byte) []byte {
 	b := make([]byte, 16)
 	b[0], b[1] = byte(minute), byte(minute>>8)
@@ -26,9 +26,9 @@ func auctionRecord(minute uint16, price float32, match uint32, unmatched int32, 
 func TestCallAuctionDecodeUnmatchedSideAndWidth(t *testing.T) {
 	payload := []byte{3, 0} // count = 3
 	payload = append(payload,
-		auctionRecord(9*60+15, 11.75, 725, -78604, 0)...)  // 负值：卖盘未匹配，且 |值| > 32767
+		auctionRecord(9*60+15, 11.75, 725, -78604, 0)...) // 负值：卖盘未匹配，且 |值| > 32767
 	payload = append(payload,
-		auctionRecord(9*60+15, 11.7, 920, 414, 9)...)      // 正值：买盘未匹配
+		auctionRecord(9*60+15, 11.7, 920, 414, 9)...) // 正值：买盘未匹配
 	payload = append(payload,
 		auctionRecord(9*60+24, 16.34, 5401, 109912, 57)...) // 涨停一字场景：买盘排队 109912 手
 
@@ -61,7 +61,7 @@ func TestCallAuctionDecodeUnmatchedSideAndWidth(t *testing.T) {
 		if c.item.Unmatched != c.wantUn {
 			t.Errorf("%s: Unmatched = %d, want %d（旧实现只读低 2 字节会截断）", c.name, c.item.Unmatched, c.wantUn)
 		}
-		if got := float64(c.item.Price) / 1000; got != c.wantPrice {
+		if got := c.item.Price; got != float64(float32(c.wantPrice)) {
 			t.Errorf("%s: Price = %v, want %v", c.name, got, c.wantPrice)
 		}
 	}

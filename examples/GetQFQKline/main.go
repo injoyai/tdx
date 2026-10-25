@@ -32,10 +32,10 @@ func main() {
 	hfq := gb.HFQ(*code, resp.List)
 	for _, k := range qfq[max(0, len(qfq)-5):] {
 		fmt.Printf("%s 前复权 开%.2f 高%.2f 低%.2f 收%.2f\n",
-			k.Time.Format(time.DateOnly), k.Open.Float64(), k.High.Float64(), k.Low.Float64(), k.Close.Float64())
+			k.Time.Format(time.DateOnly), k.Open, k.High, k.Low, k.Close)
 	}
 	for _, k := range hfq[max(0, len(hfq)-5):] {
-		fmt.Printf("%s 后复权 收%.2f\n", k.Time.Format(time.DateOnly), k.Close.Float64())
+		fmt.Printf("%s 后复权 收%.2f\n", k.Time.Format(time.DateOnly), k.Close)
 	}
 	xrxds := gb.GetXRXDs(*code)
 	logs.Debug("除权除息记录:", len(xrxds))

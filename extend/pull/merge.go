@@ -47,7 +47,7 @@ func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
 				k.Open = v.Open
 			}
 			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
-			k.Time, k.TradingDate, k.Unix, k.TimeZone, k.Close = v.Time, v.TradingDate, v.Unix, v.TimeZone, v.Close
+			k.Time, k.TradingDate, k.Close = v.Time, v.TradingDate, v.Close
 			k.Volume += v.Volume
 			k.Amount += v.Amount
 			k.AmountUnknown = k.AmountUnknown || v.AmountUnknown

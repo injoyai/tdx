@@ -194,7 +194,7 @@ func isFuturesCode(s string) bool {
 	return hasLetter && hasDigit
 }
 
-func basePrice(code string) Price {
+func basePrice(code string) float64 {
 	if IsETF(code) {
 		return 10
 	}

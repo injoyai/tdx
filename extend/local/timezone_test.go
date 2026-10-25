@@ -14,7 +14,7 @@ func TestAdaptersUseExchangeTimezone(t *testing.T) {
 	time.Local = time.UTC
 	defer func() { time.Local = old }()
 	at := time.Date(2026, 10, 20, 9, 31, 0, 0, protocol.Location())
-	data, err := WriteMinute5("sz000001", protocol.Klines{{Time: at, Open: 10000, High: 10000, Low: 10000, Close: 10000, Volume: 1, Amount: 1000000}})
+	data, err := WriteMinute5("sz000001", protocol.Klines{{Time: at, Open: 10, High: 10, Low: 10, Close: 10, Volume: 1, Amount: 1000}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestAdaptersUseExchangeTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	day, err := WriteDay("sz000001", protocol.Klines{{Time: at, Open: 10000, High: 10000, Low: 10000, Close: 10000, Volume: 1}})
+	day, err := WriteDay("sz000001", protocol.Klines{{Time: at, Open: 10, High: 10, Low: 10, Close: 10, Volume: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestAdaptersUseExchangeTimezone(t *testing.T) {
 	if !local[0].Time.Equal(online) {
 		t.Errorf("same minute clock: local=%s, protocol=%s, Unix delta=%d seconds", local[0].Time, online, local[0].Time.Unix()-online.Unix())
 	}
-	trades := protocol.Trades{{Time: at, Price: 10000, Volume: 1}}
+	trades := protocol.Trades{{Time: at, Price: 10, Volume: 1}}
 	bars := trades.Klines()
 	if bars[0].Time.Format(time.DateOnly) != at.Format(time.DateOnly) {
 		t.Errorf("Trades.Klines: input=%s, first=%s; day changed", at, bars[0].Time)

@@ -31,7 +31,7 @@ type CodeModel struct {
 	Exchange  string  `json:"exchange" xorm:"index"`   //交易所
 	Multiple  uint16  `json:"multiple"`                //倍数
 	Decimal   int8    `json:"decimal"`                 //小数位
-	LastPrice float64 `json:"lastPrice"`               //昨收价格
+	LastPrice float64 `json:"lastPrice"`               // 来源代码表的昨收参考值，保留其报价单位和有效性边界
 	EditDate  int64   `json:"editDate" xorm:"updated"` //修改时间
 	InDate    int64   `json:"inDate" xorm:"created"`   //创建时间
 }
@@ -45,8 +45,9 @@ func (c *CodeModel) FullCode() string {
 	return c.Exchange + c.Code
 }
 
-func (c *CodeModel) Price(p protocol.Price) protocol.Price {
-	return protocol.Price(float64(p) * math.Pow10(int(2-c.Decimal)))
+// Price 按代码精度校准标准报价；p 已按默认整数分换算，返回实际元/指数点报价。
+func (c *CodeModel) Price(p float64) float64 {
+	return p * math.Pow10(int(2-c.Decimal))
 }
 
 type CodeModels []*CodeModel

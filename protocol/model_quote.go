@@ -131,27 +131,27 @@ func (quote) Decode(bs []byte) (QuotesResp, error) {
 			Code:     string(GBKToUTF8(prefix[1:7])),
 			Active1:  Uint16(prefix[7:9]),
 		}
-		closePrice := Price(d.number()) * 10
+		closePrice := int64(d.number())
 		sec.Kline = &Kline{
-			Time: time.Now(), Close: closePrice,
-			Last: closePrice + Price(d.number())*10,
-			Open: closePrice + Price(d.number())*10,
-			High: closePrice + Price(d.number())*10,
-			Low:  closePrice + Price(d.number())*10,
+			Time: time.Now(), Close: float64(closePrice) / 100,
+			Last: float64(closePrice+int64(d.number())) / 100,
+			Open: float64(closePrice+int64(d.number())) / 100,
+			High: float64(closePrice+int64(d.number())) / 100,
+			Low:  float64(closePrice+int64(d.number())) / 100,
 		}
 		sec.Reserved0 = d.number()
 		sec.ServerTime = fmt.Sprintf("%d", sec.Reserved0)
 		sec.Reserved1 = d.number()
 		sec.Kline.Volume = int64(d.number())
 		sec.Intuition = d.number()
-		sec.Kline.Amount = Yuan(float32Value(d.uint32()))
+		sec.Kline.Amount = float32Value(d.uint32())
 		sec.InsideDish = d.number()
 		sec.OuterDisc = d.number()
 		sec.Reserved2 = d.number()
 		sec.Reserved3 = d.number()
 		for level := 0; level < 5; level++ {
-			buyPrice := closePrice + Price(d.number())*10
-			sellPrice := closePrice + Price(d.number())*10
+			buyPrice := float64(closePrice+int64(d.number())) / 100
+			sellPrice := float64(closePrice+int64(d.number())) / 100
 			sec.BuyLevel[level] = PriceLevel{Buy: true, Price: buyPrice, Number: d.number()}
 			sec.SellLevel[level] = PriceLevel{Price: sellPrice, Number: d.number()}
 		}

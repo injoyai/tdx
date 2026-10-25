@@ -393,7 +393,7 @@ func TestUnifiedKlinePaginationLast(t *testing.T) {
 		return completionStandardBars(days, nil, false)
 	})
 	r, err := c.GetKlineDayAll("sz000001")
-	if err != nil || r.Count != 801 || r.List[1].Standard.Last != 10000 {
+	if err != nil || r.Count != 801 || r.List[1].Standard.Last != 10 {
 		t.Fatal("cross-page previous close lost", err)
 	}
 }
@@ -585,10 +585,10 @@ func TestUnifiedAuctionMinute(t *testing.T) {
 		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0} // 历史9:25成交1手、10元。
 	})
 	r, err := c.GetKlineMinute241Until("sz000001", func(Kline) bool { return false })
-	if err != nil || r.Count != 2 || r.List[0].Time != "2026-10-09 09:30" || r.List[0].Volume != 100 || r.List[1].Volume != 0 || r.List[1].Standard.Last != 10000 {
+	if err != nil || r.Count != 2 || r.List[0].Time != "2026-10-09 09:30" || r.List[0].Volume != 100 || r.List[1].Volume != 0 || r.List[1].Standard.Last != 10 {
 		t.Fatal("auction split changed", r, err)
 	}
-	if r.List[0].Standard.Amount != 1000000 || *r.List[0].Amount != 1000 {
+	if r.List[0].Standard.Amount != 1000 || *r.List[0].Amount != 1000 {
 		t.Fatal("auction amount units changed", r)
 	}
 	before := c.Info.WriteCount

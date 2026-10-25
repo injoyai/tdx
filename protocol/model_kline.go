@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"time"
 
@@ -46,42 +47,43 @@ type KlineResp struct {
 	List  []*Kline
 }
 
+// Kline 的价格使用 float64 元值（指数为点），成交额为元；成交量保留标准协议口径。
 type Kline struct {
-	Last      Price     //昨日收盘价
-	Open      Price     //开盘价
-	High      Price     //最高价
-	Low       Price     //最低价
-	Close     Price     //收盘价,如果是当天,则是最新价/实时价
+	Last      float64   // 昨收价，元（指数为点）
+	Open      float64   // 开盘价，元（指数为点）
+	High      float64   // 最高价，元（指数为点）
+	Low       float64   // 最低价，元（指数为点）
+	Close     float64   // 收盘价/该周期最新价，元（指数为点）
 	Order     int       //成交单数,不一定有值
 	Volume    int64     // 原始量：股票通常为手、标准指数为股；指标/本地文件须先统一为手
-	Amount    Price     //成交额
+	Amount    float64   // 成交额，元
 	Time      time.Time //时间
 	UpCount   int       //上涨数量,指数有效
 	DownCount int       //下跌数量,指数有效
 }
 
 func (k *Kline) String() string {
-	return fmt.Sprintf("%s 昨收盘：%.3f 开盘价：%.3f 最高价：%.3f 最低价：%.3f 收盘价：%.3f 涨跌：%s 涨跌幅：%0.2f 成交量：%s 成交额：%s 涨跌数: %d/%d",
+	return fmt.Sprintf("%s 昨收盘：%.3f 开盘价：%.3f 最高价：%.3f 最低价：%.3f 收盘价：%.3f 涨跌：%.3f 涨跌幅：%0.2f 成交量：%s 成交额：%s 涨跌数: %d/%d",
 		k.Time.Format("2006-01-02 15:04:05"),
-		k.Last.Float64(), k.Open.Float64(), k.High.Float64(), k.Low.Float64(), k.Close.Float64(),
+		k.Last, k.Open, k.High, k.Low, k.Close,
 		k.RisePrice(), k.RiseRate(),
-		Int64UnitString(k.Volume), FloatUnitString(k.Amount.Float64()),
+		Int64UnitString(k.Volume), FloatUnitString(k.Amount),
 		k.UpCount, k.DownCount,
 	)
 }
 
-// Amplitude 振幅
-func (k *Kline) Amplitude() Price {
+// Amplitude 返回最高价与最低价之差，单位与价格相同（元/指数点），不是百分比。
+func (k *Kline) Amplitude() float64 {
 	return k.High - k.Low
 }
 
-// MaxDifference 最大差值，最高-最低
-func (k *Kline) MaxDifference() Price {
+// MaxDifference 返回最高价与最低价之差，单位与价格相同（元/指数点）。
+func (k *Kline) MaxDifference() float64 {
 	return k.High - k.Low
 }
 
-// RisePrice 涨跌金额,第一个数据不准，仅做参考
-func (k *Kline) RisePrice() Price {
+// RisePrice 返回价格涨跌额，单位与价格相同（元/指数点）；无昨收时相对开盘价计算。
+func (k *Kline) RisePrice() float64 {
 	if k.Last == 0 {
 		//稍微数据准确点，没减去0这么夸张，还是不准的
 		return k.Close - k.Open
@@ -90,12 +92,12 @@ func (k *Kline) RisePrice() Price {
 
 }
 
-// RiseRate 涨跌比例/涨跌幅,第一个数据不准，仅做参考
+// RiseRate 返回涨跌幅百分数（1 表示 1%）；无昨收时相对开盘价计算。
 func (k *Kline) RiseRate() float64 {
 	if k.Last == 0 {
-		return float64(k.Close-k.Open) / float64(k.Open) * 100
+		return (k.Close - k.Open) / k.Open * 100
 	}
-	return float64(k.Close-k.Last) / float64(k.Last) * 100
+	return (k.Close - k.Last) / k.Last * 100
 }
 
 type kline struct{}
@@ -158,23 +160,23 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		resp.List = make([]*Kline, 0, resp.Count)
 	}
 
-	var last Price //上条数据(昨天)的收盘价
+	var last int64 // 线上的整数厘差值先累加，再转换为元，避免累计浮点误差。
 	for i := uint16(0); i < resp.Count; i++ {
 		date := d.take(4)
 		if d.err != nil {
 			return nil, fmt.Errorf("K线记录 %d: %w", i, d.err)
 		}
 		k := &Kline{Time: GetTime([4]byte(date), c.Type)}
-		open := Price(d.number())
-		closePrice := Price(d.number())
-		high := Price(d.number())
-		low := Price(d.number())
+		open := int64(d.number())
+		closePrice := int64(d.number())
+		high := int64(d.number())
+		low := int64(d.number())
 
-		k.Last = last
-		k.Open = open + last
-		k.Close = last + open + closePrice
-		k.High = open + last + high
-		k.Low = open + last + low
+		k.Last = float64(last) / 1000
+		k.Open = float64(open+last) / 1000
+		k.Close = float64(last+open+closePrice) / 1000
+		k.High = float64(open+last+high) / 1000
+		k.Low = float64(open+last+low) / 1000
 		last = last + open + closePrice
 
 		/*
@@ -193,7 +195,7 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		*/
 		k.Volume = int64(float32Value(d.uint32()))
 		k.Volume = normalizeKlineVolume(k.Volume, c)
-		k.Amount = Price(float32Value(d.uint32()) * 1000) //从元转为厘,并去除多余的小数
+		k.Amount = float32Value(d.uint32())
 
 		switch c.Kind {
 		case KindIndex:
@@ -254,53 +256,53 @@ func FixKlineTime(ks []*Kline) []*Kline {
 
 type Klines []*Kline
 
-// MA 均线
-func (ks Klines) MA(n int) Price {
+// MA 返回最近 n 根收盘价的均值，单位与输入价格相同，不截断到厘。
+func (ks Klines) MA(n int) float64 {
 	if n <= 0 || len(ks) < n {
 		return 0
 	}
-	sum := Price(0)
+	sum := 0.0
 	// 取最后n个
 	for _, k := range ks[len(ks)-n:] {
 		sum += k.Close
 	}
-	return sum / Price(n)
+	return sum / float64(n)
 }
 
-// EMA MACD的基础
-func (ks Klines) EMA(n int) Price {
+// EMA 返回指数移动均价，单位与输入价格相同，不截断到厘。
+func (ks Klines) EMA(n int) float64 {
 	if len(ks) == 0 || n <= 0 {
 		return 0
 	}
 
 	ema := ks[0].Close
-	den := int64(n + 1)
-	num := int64(2)
+	den := float64(n) + 1
+	num := 2.0
 
 	for i := 1; i < len(ks); i++ {
-		ema = Price((int64(ks[i].Close)*num + int64(ema)*(den-num)) / den)
+		ema = (ks[i].Close*num + ema*(den-num)) / den
 	}
 	return ema
 }
 
-// MACD 常用于短线核心
-func (ks Klines) MACD() (dif, dea, hist Price) {
+// MACD 返回 DIF、DEA 和柱值，均与输入价格同单位，不是百分比。
+func (ks Klines) MACD() (dif, dea, hist float64) {
 	if len(ks) == 0 {
 		return 0, 0, 0
 	}
 
 	ema12 := ks[0].Close
 	ema26 := ks[0].Close
-	den12 := int64(13)
-	den26 := int64(27)
-	denDea := int64(10)
-	num := int64(2)
+	den12 := 13.0
+	den26 := 27.0
+	denDea := 10.0
+	num := 2.0
 
 	for i := 1; i < len(ks); i++ {
-		ema12 = Price((int64(ks[i].Close)*num + int64(ema12)*(den12-num)) / den12)
-		ema26 = Price((int64(ks[i].Close)*num + int64(ema26)*(den26-num)) / den26)
+		ema12 = (ks[i].Close*num + ema12*(den12-num)) / den12
+		ema26 = (ks[i].Close*num + ema26*(den26-num)) / den26
 		dif = ema12 - ema26
-		dea = Price((int64(dif)*num + int64(dea)*(denDea-num)) / denDea)
+		dea = (dif*num + dea*(denDea-num)) / denDea
 		hist = (dif - dea) * 2
 	}
 	return dif, dea, hist
@@ -311,11 +313,11 @@ func (ks Klines) RSI(n int) int64 {
 	if len(ks) == 0 || n <= 0 {
 		return 0
 	}
-	var gain, loss int64
+	var gain, loss float64
 	var rsi int64
 
 	for i := 1; i < len(ks); i++ {
-		diff := int64(ks[i].Close - ks[i-1].Close)
+		diff := ks[i].Close - ks[i-1].Close
 
 		if diff > 0 {
 			gain += diff
@@ -324,7 +326,7 @@ func (ks Klines) RSI(n int) int64 {
 		}
 
 		if i >= n+1 {
-			prev := int64(ks[i-n].Close - ks[i-n-1].Close)
+			prev := ks[i-n].Close - ks[i-n-1].Close
 			if prev > 0 {
 				gain -= prev
 			} else {
@@ -335,79 +337,80 @@ func (ks Klines) RSI(n int) int64 {
 		if i >= n {
 			rsi = 0
 			if gain+loss > 0 {
-				rsi = 100 * gain / (gain + loss)
+				rsi = int64(100 * gain / (gain + loss))
 			}
 		}
 	}
 	return rsi
 }
 
-// BOLL 布林带（洗盘神器）
-func (ks Klines) BOLL(n int) (upper, mid, lower Price) {
+// BOLL 返回上轨、中轨和下轨价格，单位与输入价格相同。
+func (ks Klines) BOLL(n int) (upper, mid, lower float64) {
 	if len(ks) < n || n <= 0 {
 		return 0, 0, 0
 	}
 
 	mid = ks.MA(n)
-	var sum int64
+	var sum float64
 	for _, k := range ks[len(ks)-n:] {
-		d := int64(k.Close - mid)
+		d := k.Close - mid
 		sum += d * d
 	}
-	std := I64Sqrt(sum / int64(n))
-	upper = mid + Price(std*2)
-	lower = mid - Price(std*2)
+	std := math.Sqrt(sum / float64(n))
+	upper = mid + std*2
+	lower = mid - std*2
 	return upper, mid, lower
 }
 
-// ATR 常用于判断是否该止损
-func (ks Klines) ATR(n int) Price {
+// ATR 返回平均真实波幅，单位与输入价格相同，不是百分比。
+func (ks Klines) ATR(n int) float64 {
 	if len(ks) == 0 || n <= 0 {
 		return 0
 	}
-	var sum int64
-	var atr Price
+	var sum float64
+	var atr float64
 
 	for i := 1; i < len(ks); i++ {
 		h := ks[i].High
 		l := ks[i].Low
 		pc := ks[i-1].Close
 
-		tr := max(h-l, max((h-pc).Abs(), (l-pc).Abs()))
-		sum += int64(tr)
+		tr := max(h-l, max(math.Abs(h-pc), math.Abs(l-pc)))
+		sum += tr
 
 		if i > n {
 			prev := max(ks[i-n].High-ks[i-n].Low,
-				max((ks[i-n].High-ks[i-n-1].Close).Abs(), (ks[i-n].Low-ks[i-n-1].Close).Abs()))
-			sum -= int64(prev)
+				max(math.Abs(ks[i-n].High-ks[i-n-1].Close), math.Abs(ks[i-n].Low-ks[i-n-1].Close)))
+			sum -= prev
 		}
 		if i >= n {
-			atr = Price(sum / int64(n))
+			atr = sum / float64(n)
 		}
 	}
 	return atr
 }
 
-// VWAP 成交量加权均价；Volume 为手，Amount 为实际成交额（厘）。
-func (ks Klines) VWAP() Price {
+// VWAP 返回成交量加权均价（元/指数点）；Volume 为手，Amount 为成交额（元）。
+func (ks Klines) VWAP() float64 {
 	if len(ks) == 0 {
 		return 0
 	}
-	var volSum, amtSum int64
-	var vwap Price
+	var volSum int64
+	var amtSum float64
+	var vwap float64
 
 	for i := 0; i < len(ks); i++ {
 		volSum += ks[i].Volume
-		amtSum += int64(ks[i].Amount)
+		amtSum += ks[i].Amount
 		if volSum > 0 {
-			vwap = Price(amtSum / volSum / SharesPerLot)
+			vwap = amtSum / float64(volSum) / SharesPerLot
 		}
 	}
 	return vwap
 }
 
-// LastPrice 获取最后一个K线的收盘价
-func (ks Klines) LastPrice() Price {
+// LastPrice 返回最后一根收盘价，单位与输入价格相同。
+func (ks Klines) LastPrice() float64 {
 	if len(ks) == 0 {
 		return 0
 	}
@@ -420,7 +423,8 @@ func (ks Klines) Sort() {
 	})
 }
 
-func (ks Klines) Kline(t time.Time, last Price) *Kline {
+// Kline 合并 K 线；last 和结果价格与输入价格同单位，成交额保持为元。
+func (ks Klines) Kline(t time.Time, last float64) *Kline {
 	k := &Kline{
 		Time:   t,
 		Last:   last,
@@ -501,7 +505,7 @@ func (ks Klines) Merge241(n int) Klines {
 		// 按 times 构建标准 241 根分钟
 		std := make([]*Kline, 0, len(minutes241))
 		date := dayKs[0].Time
-		var lastClose Price
+		var lastClose float64
 		var upCount, downCount int
 		for _, key := range minutes241 {
 			if k, ok := m[key]; ok {

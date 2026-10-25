@@ -30,18 +30,18 @@ func GetTHSDayKlineFactorFull(code string, c tdx.Client) ([3]protocol.Klines, []
 	}
 	mQPrice := make(map[string]float64)
 	for _, v := range ks[1] {
-		mQPrice[v.Time.Format(time.DateOnly)] = v.Close.Float64()
+		mQPrice[v.Time.Format(time.DateOnly)] = v.Close
 	}
 	mHPrice := make(map[string]float64)
 	for _, v := range ks[2] {
-		mHPrice[v.Time.Format(time.DateOnly)] = v.Close.Float64()
+		mHPrice[v.Time.Format(time.DateOnly)] = v.Close
 	}
 	fs := make([]*Factor, 0, len(ks[0]))
 	for _, v := range ks[0] {
 		fs = append(fs, &Factor{
 			Date:    v.Time.Unix(),
-			QFactor: mQPrice[v.Time.Format(time.DateOnly)] / v.Close.Float64(),
-			HFactor: mHPrice[v.Time.Format(time.DateOnly)] / v.Close.Float64(),
+			QFactor: mQPrice[v.Time.Format(time.DateOnly)] / v.Close,
+			HFactor: mHPrice[v.Time.Format(time.DateOnly)] / v.Close,
 		})
 	}
 	return ks, fs, nil
@@ -62,7 +62,7 @@ func GetTHSDayKlineFull(code string, c tdx.Client) ([3]protocol.Klines, error) {
 	if err != nil {
 		return [3]protocol.Klines{}, err
 	}
-	mAmount := make(map[string]protocol.Price)
+	mAmount := make(map[string]float64)
 	bfq := protocol.Klines(nil)
 	for _, v := range raw.List {
 		mAmount[v.Time.In(protocol.Location()).Format(time.DateOnly)] = v.Amount
@@ -193,13 +193,13 @@ func GetTHSDayKline(code string, adjustment uint8) (protocol.Klines, error) {
 				return nil, err
 			}
 			x = time.Date(year, x.Month(), x.Day(), 15, 0, 0, 0, protocol.Location())
-			low := protocol.Price(conv.Float64(prices[i*4+0]) * 1000 / priceFactor)
+			low := conv.Float64(prices[i*4+0]) / priceFactor
 			ls = append(ls, &protocol.Kline{
 				Time:   x,
-				Open:   protocol.Price(conv.Float64(prices[i*4+1])*1000/priceFactor) + low,
-				High:   protocol.Price(conv.Float64(prices[i*4+2])*1000/priceFactor) + low,
+				Open:   conv.Float64(prices[i*4+1])/priceFactor + low,
+				High:   conv.Float64(prices[i*4+2])/priceFactor + low,
 				Low:    low,
-				Close:  protocol.Price(conv.Float64(prices[i*4+3])*1000/priceFactor) + low,
+				Close:  conv.Float64(prices[i*4+3])/priceFactor + low,
 				Volume: protocol.FromShares(conv.Int64(volumes[i]) + protocol.SharesPerLot/2),
 			})
 			i++

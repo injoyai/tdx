@@ -123,20 +123,20 @@ func TestFloatUnitAdvancesUnits(t *testing.T) {
 func TestMergeRetainsFieldsAndHandlesLargePeriod(t *testing.T) {
 	at := time.Date(2025, 1, 2, 9, 31, 0, 0, Location())
 	ks := Klines{
-		{Time: at, Last: 9000, Open: 10000, High: 11000, Low: 9500, Close: 10500, Order: 2, Volume: 1, Amount: 1000000, UpCount: 3, DownCount: 4},
-		{Time: at.Add(time.Minute), Last: 10500, Open: 10500, High: 12000, Low: 10000, Close: 11500, Order: 5, Volume: 2, Amount: 2000000, UpCount: 6, DownCount: 7},
+		{Time: at, Last: 9, Open: 10, High: 11, Low: 9.5, Close: 10.5, Order: 2, Volume: 1, Amount: 1000, UpCount: 3, DownCount: 4},
+		{Time: at.Add(time.Minute), Last: 10.5, Open: 10.5, High: 12, Low: 10, Close: 11.5, Order: 5, Volume: 2, Amount: 2000, UpCount: 6, DownCount: 7},
 	}
 	original := []Kline{*ks[0], *ks[1]}
 	for _, n := range []int{2, math.MaxInt} {
 		got := ks.Merge(n)
-		want := Kline{Time: at.Add(time.Minute), Last: 9000, Open: 10000, High: 12000, Low: 9500, Close: 11500, Order: 7, Volume: 3, Amount: 3000000, UpCount: 6, DownCount: 7}
+		want := Kline{Time: at.Add(time.Minute), Last: 9, Open: 10, High: 12, Low: 9.5, Close: 11.5, Order: 7, Volume: 3, Amount: 3000, UpCount: 6, DownCount: 7}
 		if len(got) != 1 || *got[0] != want {
 			t.Fatalf("Merge(%d)=%+v", n, got)
 		}
 	}
 	for _, n := range []int{5, math.MaxInt} {
 		got := ks.Merge241(n)
-		if got[1].Last != 9000 || got[1].Order != 7 || got[1].UpCount != 6 || got[1].DownCount != 7 {
+		if got[1].Last != 9 || got[1].Order != 7 || got[1].UpCount != 6 || got[1].DownCount != 7 {
 			t.Fatalf("Merge241(%d) lost fields: %+v", n, got[1])
 		}
 	}

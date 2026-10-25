@@ -15,12 +15,12 @@ func KlinesToCSV(filename string, code, name string, ks protocol.Klines) error {
 			v.Time.Format("15:04"),
 			code,
 			name,
-			v.Open.Float64(),
-			v.High.Float64(),
-			v.Low.Float64(),
-			v.Close.Float64(),
-			v.Volume*100,
-			v.Amount.Float64(),
+			v.Open,
+			v.High,
+			v.Low,
+			v.Close,
+			v.Volume * 100,
+			v.Amount,
 		})
 	}
 
@@ -38,9 +38,9 @@ func TradesToCSV(filename string, ts protocol.Trades) error {
 		data = append(data, []any{
 			v.Time.Format(time.DateOnly),
 			v.Time.Format("15:04"),
-			v.Price.Float64(),
-			v.Volume*100,
-			v.Amount().Float64(),
+			v.Price,
+			v.Volume * 100,
+			v.Amount(),
 			v.Status,
 		})
 	}

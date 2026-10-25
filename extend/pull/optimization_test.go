@@ -31,7 +31,7 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if done, err := s.MinuteYearComplete(c, 2025, "2025-01-01 00:00"); done || err != nil {
 		t.Fatal("失败后标记完成", done, err)
 	}
-	// 测试记录使用合成时间戳；直接检查表中原值验证删除也被回滚。
+	// 直接检查源时间记录，验证删尾操作也被事务回滚。
 	db, release, err := s.openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)

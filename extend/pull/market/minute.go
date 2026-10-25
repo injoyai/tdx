@@ -123,7 +123,7 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		var daysErr error
 		supplement = &minuteFallback{trades: supplement.trades, days: func(time.Time) (protocol.Klines, error) {
 			daysOnce.Do(func() {
-				at, err := protocol.ParseSourceTime(earliest, protocol.Location())
+				at, err := time.ParseInLocation(protocol.TimeLayout, earliest, protocol.Location())
 				if err != nil {
 					daysErr = err
 					return

@@ -62,7 +62,7 @@ func ReadDay(dir string, code string) (protocol.Klines, error) {
 			High:   priceFromInt(binary.LittleEndian.Uint32(rec[8:12])),
 			Low:    priceFromInt(binary.LittleEndian.Uint32(rec[12:16])),
 			Close:  priceFromInt(binary.LittleEndian.Uint32(rec[16:20])),
-			Amount: protocol.Price(int64(math.Round(float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))) * 1000))), //元转厘
+			Amount: float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))),
 			Volume: vol,
 			Time:   t,
 		})
@@ -118,11 +118,11 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 			continue
 		}
 		ks = append(ks, &protocol.Kline{
-			Open:   protocol.Yuan(float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[4:8])))),
-			High:   protocol.Yuan(float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[8:12])))),
-			Low:    protocol.Yuan(float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[12:16])))),
-			Close:  protocol.Yuan(float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[16:20])))),
-			Amount: protocol.Price(int64(math.Round(float64(amount) * 1000))), //元转厘
+			Open:   float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[4:8]))),
+			High:   float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[8:12]))),
+			Low:    float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[12:16]))),
+			Close:  float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[16:20]))),
+			Amount: float64(amount),
 			Volume: vol,
 			Time:   t,
 		})
@@ -149,9 +149,9 @@ func readLocal(dir string, ex protocol.Exchange, sub, name string) ([]byte, erro
 	return bs, nil
 }
 
-// priceFromInt 将官方日线价格(整数,单位0.01元)转为 Price(单位厘)
-func priceFromInt(v uint32) protocol.Price {
-	return protocol.Price(v) * 10
+// priceFromInt 将文件中的整数分转换为元。
+func priceFromInt(v uint32) float64 {
+	return float64(v) / 100
 }
 
 //****//
@@ -185,7 +185,10 @@ func WriteDay(code string, ks protocol.Klines) ([]byte, error) {
 	// decodeCode 返回的 c 已带交易所前缀(如 sh000001),直接用于判断指数
 	index := protocol.IsIndex(c)
 	bs := make([]byte, 0, len(ks)*32)
-	for _, k := range ks {
+	for i, k := range ks {
+		if err := validateKline(k, true); err != nil {
+			return nil, fmt.Errorf("日线记录 %d: %w", i, err)
+		}
 		bs = append(bs, encodeDay(k, index)...)
 	}
 	return bs, nil
@@ -214,6 +217,11 @@ func writeMinute(code string, placeholder bool, ks protocol.Klines) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	for i, k := range ks {
+		if err := validateKline(k, false); err != nil {
+			return nil, fmt.Errorf("分钟记录 %d: %w", i, err)
+		}
+	}
 	// decodeCode 返回的 c 已带交易所前缀(如 sh000001),直接用于判断指数
 	index := protocol.IsIndex(c)
 	bs := make([]byte, 0, len(ks)*32)
@@ -240,6 +248,26 @@ func writeMinute(code string, placeholder bool, ks protocol.Klines) ([]byte, err
 	return bs, nil
 }
 
+// 文件价格/金额有固定位宽，转换前拒绝无法表示的浮点值。
+func validateKline(k *protocol.Kline, day bool) error {
+	if k == nil {
+		return fmt.Errorf("K线为空")
+	}
+	for _, v := range []float64{k.Open, k.High, k.Low, k.Close, k.Amount} {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > math.MaxFloat32 {
+			return fmt.Errorf("价格或金额不是可存储的有限值: %g", v)
+		}
+	}
+	if day {
+		for _, v := range []float64{k.Open, k.High, k.Low, k.Close} {
+			if v < 0 || math.Round(v*100) > math.MaxUint32 {
+				return fmt.Errorf("日线价格超出整数分范围: %g", v)
+			}
+		}
+	}
+	return nil
+}
+
 // dayHasTailPlaceholder 判断该交易日数据是否已含尾盘占位记录(当日分钟>=898 即 14:58 及之后 且 量=0额=0)
 func dayHasTailPlaceholder(dayKs protocol.Klines) bool {
 	for _, k := range dayKs {
@@ -261,7 +289,7 @@ func encodeMinutePlaceholder(k *protocol.Kline) []byte {
 	// 当日分钟数固定为当日末分钟(14:59=899),与真实文件一致
 	binary.LittleEndian.PutUint16(b[2:4], 899)
 	// 价格沿用该日最后收盘价(通达信占位记录价格通常为当日最后成交价)
-	close := float32(k.Close.Float64())
+	close := float32(k.Close)
 	binary.LittleEndian.PutUint32(b[4:8], math.Float32bits(close))
 	binary.LittleEndian.PutUint32(b[8:12], math.Float32bits(close))
 	binary.LittleEndian.PutUint32(b[12:16], math.Float32bits(close))
@@ -275,12 +303,12 @@ func encodeDay(k *protocol.Kline, index bool) []byte {
 	b := make([]byte, 32)
 	d := uint32(k.Time.Year()*10000 + int(k.Time.Month())*100 + k.Time.Day())
 	binary.LittleEndian.PutUint32(b[0:4], d)
-	binary.LittleEndian.PutUint32(b[4:8], uint32(k.Open/10)) //Price厘→0.01元
-	binary.LittleEndian.PutUint32(b[8:12], uint32(k.High/10))
-	binary.LittleEndian.PutUint32(b[12:16], uint32(k.Low/10))
-	binary.LittleEndian.PutUint32(b[16:20], uint32(k.Close/10))
-	binary.LittleEndian.PutUint32(b[20:24], math.Float32bits(float32(k.Amount.Float64()))) //厘→元
-	binary.LittleEndian.PutUint32(b[24:28], toFileVolume(k.Volume, index))                 //手→股(指数手)
+	binary.LittleEndian.PutUint32(b[4:8], uint32(math.Round(k.Open*100))) // 元转整数分，避免二进制浮点误差少写一分。
+	binary.LittleEndian.PutUint32(b[8:12], uint32(math.Round(k.High*100)))
+	binary.LittleEndian.PutUint32(b[12:16], uint32(math.Round(k.Low*100)))
+	binary.LittleEndian.PutUint32(b[16:20], uint32(math.Round(k.Close*100)))
+	binary.LittleEndian.PutUint32(b[20:24], math.Float32bits(float32(k.Amount)))
+	binary.LittleEndian.PutUint32(b[24:28], toFileVolume(k.Volume, index)) //手→股(指数手)
 	return b
 }
 
@@ -293,12 +321,12 @@ func encodeMinute(k *protocol.Kline, index bool) []byte {
 	// 当日分钟数
 	binary.LittleEndian.PutUint16(b[2:4], uint16(k.Time.Hour()*60+k.Time.Minute()))
 	// 价格(元)
-	binary.LittleEndian.PutUint32(b[4:8], math.Float32bits(float32(k.Open.Float64())))
-	binary.LittleEndian.PutUint32(b[8:12], math.Float32bits(float32(k.High.Float64())))
-	binary.LittleEndian.PutUint32(b[12:16], math.Float32bits(float32(k.Low.Float64())))
-	binary.LittleEndian.PutUint32(b[16:20], math.Float32bits(float32(k.Close.Float64())))
+	binary.LittleEndian.PutUint32(b[4:8], math.Float32bits(float32(k.Open)))
+	binary.LittleEndian.PutUint32(b[8:12], math.Float32bits(float32(k.High)))
+	binary.LittleEndian.PutUint32(b[12:16], math.Float32bits(float32(k.Low)))
+	binary.LittleEndian.PutUint32(b[16:20], math.Float32bits(float32(k.Close)))
 	// 成交额(元)
-	binary.LittleEndian.PutUint32(b[20:24], math.Float32bits(float32(k.Amount.Float64())))
+	binary.LittleEndian.PutUint32(b[20:24], math.Float32bits(float32(k.Amount)))
 	// 成交量(股, 指数手)
 	binary.LittleEndian.PutUint32(b[24:28], toFileVolume(k.Volume, index))
 	return b

@@ -18,20 +18,20 @@ type TradeResp struct {
 // Trade 分时成交, 时间没有到秒，客户端上也没有,东方客户端能显示秒
 type Trade struct {
 	Time   time.Time //时间, 09:30
-	Price  Price     //价格
+	Price  float64   // 成交价，元（指数为点）
 	Volume int       //成交量,手
 	Status int       //0是买，1是卖，2中性/汇总 中途也可能出现2,例20241115(sz000001)的14:56
 	Number int       //单数,历史数据该字段无效
 }
 
 func (t *Trade) String() string {
-	return fmt.Sprintf("%s \t%-6s \t%-6s \t%-6d(手) \t%-4d(单) \t%-4s",
+	return fmt.Sprintf("%s \t%-6g \t%-6g \t%-6d(手) \t%-4d(单) \t%-4s",
 		t.Time, t.Price, t.Amount(), t.Volume, t.Number, t.StatusString())
 }
 
-// Amount 成交额
-func (t *Trade) Amount() Price {
-	return t.Price * Price(ToShares(int64(t.Volume)))
+// Amount 返回成交额（元），按成交价乘以手数×100 计算。
+func (t *Trade) Amount() float64 {
+	return t.Price * float64(ToShares(int64(t.Volume)))
 }
 
 func (t *Trade) StatusString() string {
@@ -50,9 +50,9 @@ func (t *Trade) AvgVolume() float64 {
 	return float64(t.Volume) / float64(t.Number)
 }
 
-// AvgAmount 返回平均每单成交额，单位为厘。
-func (t *Trade) AvgAmount() Price {
-	return Price(t.AvgVolume() * float64(t.Price) * SharesPerLot)
+// AvgAmount 返回平均每单成交额，单位为元。
+func (t *Trade) AvgAmount() float64 {
+	return t.AvgVolume() * t.Price * SharesPerLot
 }
 
 // IsBuy 是否是买单
@@ -110,7 +110,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 	}
 	resp.List = make(Trades, 0, count)
 	multiple := basePrice(c.Code)
-	lastPrice := Price(0)
+	var lastPrice int64
 	for i := uint16(0); i < resp.Count; i++ {
 		if len(bs) < 2 {
 			return nil, fmt.Errorf("成交记录 %d: 时间数据不足", i)
@@ -129,8 +129,8 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 				return nil, fmt.Errorf("成交记录 %d 字段 %d: %w", i, field, err)
 			}
 		}
-		lastPrice += Price(values[0]) * 10 //把分转换成厘
-		mt.Price = lastPrice / multiple
+		lastPrice += int64(values[0]) // 先累计线上整数分，再换算为元。
+		mt.Price = float64(lastPrice) / 100 / multiple
 		mt.Volume = values[1]
 		mt.Status = values[2]
 		if !historical {
@@ -184,8 +184,8 @@ func (ts Trades) Klines() Klines {
 	return ls
 }
 
-// Kline 合并分时成交成1个k线,注意分时成交时间保持一致
-func (ts Trades) Kline(t time.Time, last Price) *Kline {
+// Kline 合并分时成交为一根 K 线；last 与分笔价格同单位（元/指数点），成交额为元。
+func (ts Trades) Kline(t time.Time, last float64) *Kline {
 	k := &Kline{
 		Time:  t,
 		Last:  last,
@@ -226,7 +226,7 @@ func (ts Trades) klinesForDay(date time.Time) Klines {
 	_1500 := 900 //15:00 的分钟
 	m := map[int]Trades{}
 	//获取开盘价,有可能前几分钟没有数据,先遍历一遍
-	var open Price
+	var open float64
 	for _, v := range ts {
 		if v.Price > 0 {
 			open = v.Price

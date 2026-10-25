@@ -15,48 +15,38 @@ import (
 // KlineResp 是统一 K 线结果，Category 为实际协议周期，List 按时间升序排列。
 type KlineResp struct {
 	Instrument protocol.Instrument
-	Category   uint8  // 实际发送的协议周期
-	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
+	Category   uint8 // 实际发送的协议周期
 	Count      int
 	List       []Kline
 }
 
 // Kline 是统一 K 线记录，Standard/Extended/RangeExtended 按查询来源保留原始字段。
 type Kline struct {
-	Time          string // 源日期 YYYY-MM-DD，日内周期为 YYYY-MM-DD HH:MM
-	TradingDate   string // 已确认交易日 YYYY-MM-DD；未知为空，不推断夜盘归属
-	Open          float64
-	High          float64
-	Low           float64
-	Close         float64
+	Time          string   // 源日期 YYYY-MM-DD，日内周期为 YYYY-MM-DD HH:MM
+	TradingDate   string   // 已确认交易日 YYYY-MM-DD；未知为空，不推断夜盘归属
+	Open          float64  // 开盘价，原币种/报价单位
+	High          float64  // 最高价，原币种/报价单位
+	Low           float64  // 最低价，原币种/报价单位
+	Close         float64  // 收盘价/该周期最新价，原币种/报价单位
 	Volume        int64    // 股票为股，期货为张
-	Amount        *float64 // nil 表示该市场的金额语义未确认
+	Amount        *float64 // 原币种成交额；nil 表示该市场的金额语义未确认
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline
 	RangeExtended *protocol.ExRangeKline // 区间协议的持仓和结算价等原始字段
 }
 
-// Timestamp 只转换带时分且来源时区已确认的记录；日期标签不能转换为成交时刻。
-func (k Kline) Timestamp(loc *time.Location) (int64, error) {
-	t, err := protocol.ParseSourceTime(k.Time, loc)
-	if err != nil {
-		return 0, err
-	}
-	return t.Unix(), nil
-}
-
 // Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量及五档买卖量使用最小单位（股票为股，期货为张）。
 type Quote struct {
 	Instrument protocol.Instrument
-	PreClose   float64
-	Open       float64
-	High       float64
-	Low        float64
-	Price      float64
-	Volume     int64 // 股票为股，期货为张
-	Bid        [5]float64
+	PreClose   float64    // 昨收/昨结，原币种/报价单位
+	Open       float64    // 开盘价，原币种/报价单位
+	High       float64    // 最高价，原币种/报价单位
+	Low        float64    // 最低价，原币种/报价单位
+	Price      float64    // 最新价，原币种/报价单位
+	Volume     int64      // 股票为股，期货为张
+	Bid        [5]float64 // 买一至买五价格，原币种/报价单位
 	BidVolume  [5]int64
-	Ask        [5]float64
+	Ask        [5]float64 // 卖一至卖五价格，原币种/报价单位
 	AskVolume  [5]int64
 	Standard   *protocol.Quote
 	Extended   *protocol.ExQuote
@@ -66,16 +56,15 @@ type Quote struct {
 type MinuteResp struct {
 	Instrument protocol.Instrument
 	Date       string // 请求日期 YYYYMMDD，不按行号推断夜盘日期
-	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Minute
 }
 
 // Minute 是统一分时记录，Standard 或 Extended 保留对应协议的原始数据。
 type Minute struct {
-	Time     string // HH:MM
-	Price    float64
-	Volume   int64 // 股票为股，期货为张
+	Time     string  // HH:MM
+	Price    float64 // 分时价格，原币种/报价单位
+	Volume   int64   // 股票为股，期货为张
 	Standard *protocol.PriceNumber
 	Extended *protocol.ExMinuteTick
 }
@@ -84,7 +73,6 @@ type Minute struct {
 type TradeResp struct {
 	Instrument protocol.Instrument
 	Date       string
-	TimeZone   string // 源时区；空表示未知，不据证券市场猜测
 	Count      int
 	List       []Trade
 }
@@ -93,7 +81,7 @@ type TradeResp struct {
 type Trade struct {
 	Date      string   // 历史查询日期 YYYYMMDD；跨日结果逐条保留，不推断当日扩展日期
 	Time      string   // HH:MM:SS，源数据无秒时为 00
-	Price     *float64 // 扩展分笔原始整数价格尺度未确认，保留 Extended.Price，公共价格为 nil
+	Price     *float64 // 成交价/最新价，原币种/报价单位；扩展分笔尺度未知时为 nil，原值见 Extended.Price
 	Volume    int64    // 股票为股，期货为张
 	Direction int      // 1 买，-1 卖，0 中性
 	Standard  *protocol.Trade
@@ -617,8 +605,8 @@ func (c *MarketClient) GetZHBFiles() (map[string][]byte, error) {
 }
 
 func standardKline(k *protocol.Kline) Kline {
-	amount := k.Amount.Float64()
-	return Kline{Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Close: k.Close.Float64(), Volume: k.Volume, Amount: &amount, Standard: k}
+	amount := k.Amount
+	return Kline{Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
 // Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。

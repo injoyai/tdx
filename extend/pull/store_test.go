@@ -457,7 +457,7 @@ func TestInsertBatchOverLimit(t *testing.T) {
 		t.Fatalf("落库数量 = %d, want 200", len(got))
 	}
 	if got[0].Time != ks[0].Time || got[199].Time != ks[199].Time {
-		t.Errorf("首尾时间戳不符: got %s..%s, want %s..%s",
+		t.Errorf("首尾源时间不符: got %s..%s, want %s..%s",
 			got[0].Time, got[199].Time, ks[0].Time, ks[199].Time)
 	}
 }

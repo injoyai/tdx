@@ -29,7 +29,7 @@ type StConn struct {
 	quoteCodes *codecache.Base
 }
 
-// GetKline 请求标准 K 线，保留整数价格及指数特有字段。
+// GetKline 请求标准 K 线，价格转换为浮点元值，并保留指数特有字段。
 func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
 	out, info, err := klineRequest(code, category, count)
 	if err != nil {
@@ -90,10 +90,10 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 			return nil, fmt.Errorf("标准行情响应品种与请求不一致: %s", i)
 		}
 		k := q.Kline
-		u := Quote{Instrument: i, PreClose: k.Last.Float64(), Open: k.Open.Float64(), High: k.High.Float64(), Low: k.Low.Float64(), Price: k.Close.Float64(), Volume: k.Volume, Standard: q}
+		u := Quote{Instrument: i, PreClose: k.Last, Open: k.Open, High: k.High, Low: k.Low, Price: k.Close, Volume: k.Volume, Standard: q}
 		for n := 0; n < 5; n++ {
-			u.Bid[n], u.BidVolume[n] = q.BuyLevel[n].Price.Float64(), int64(q.BuyLevel[n].Number)
-			u.Ask[n], u.AskVolume[n] = q.SellLevel[n].Price.Float64(), int64(q.SellLevel[n].Number)
+			u.Bid[n], u.BidVolume[n] = q.BuyLevel[n].Price, int64(q.BuyLevel[n].Number)
+			u.Ask[n], u.AskVolume[n] = q.SellLevel[n].Price, int64(q.SellLevel[n].Number)
 		}
 		scale, err := volumeScale(i)
 		if err != nil {
@@ -204,7 +204,7 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &MinuteResp{Instrument: i, Date: date, TimeZone: protocol.Location().String()}
+	out := &MinuteResp{Instrument: i, Date: date}
 	var r *protocol.MinuteResp
 	if date == "" {
 		r, err = c.getStandardMinute(standardCode(i))
@@ -220,7 +220,7 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Minute{Time: k.Time, Price: k.Price.Float64(), Volume: volume, Standard: k})
+		out.List = append(out.List, Minute{Time: k.Time, Price: k.Price, Volume: volume, Standard: k})
 	}
 
 	out.Count = len(out.List)
@@ -236,7 +236,7 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: i, Date: date, TimeZone: protocol.Location().String()}
+	out := &TradeResp{Instrument: i, Date: date}
 	var r *protocol.TradeResp
 	if date == "" {
 		r, err = c.getStandardTrade(standardCode(i), start, count)
@@ -251,7 +251,7 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 		if err != nil {
 			return nil, err
 		}
-		price := k.Price.Float64()
+		price := k.Price
 		direction := 0
 		if k.IsBuy() {
 			direction = 1

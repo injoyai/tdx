@@ -60,10 +60,12 @@ func (i *Income) String() string {
 	return fmt.Sprintf("偏移: %d, 时间: %s, 涨幅: %.1f%%", i.Offset, i.Time.Format(time.DateOnly), i.RiseRate()*100)
 }
 
-func (i *Income) Rise() protocol.Price {
+// Rise 返回收盘价涨跌额，单位与源价格相同（元/指数点）。
+func (i *Income) Rise() float64 {
 	return i.Current.Close - i.Source.Close
 }
 
+// RiseRate 返回收益比例，0.01 表示 1%，不是百分数。
 func (i *Income) RiseRate() float64 {
-	return i.Rise().Float64() / i.Source.Close.Float64()
+	return i.Rise() / i.Source.Close
 }

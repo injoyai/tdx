@@ -188,7 +188,7 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	quotes := httpData[[]tdx.Quote](t, mux, "/quote?codes=hk00700,sz000001,hk00700")
-	if len(quotes) != 3 || quotes[0].Price != 10 || quotes[0].Extended == nil || quotes[1].Price != 10 || quotes[1].Standard.Kline.Close != 10000 || quotes[2].Instrument != quotes[0].Instrument {
+	if len(quotes) != 3 || quotes[0].Price != 10 || quotes[0].Extended == nil || quotes[1].Price != 10 || quotes[1].Standard.Kline.Close != 10 || quotes[2].Instrument != quotes[0].Instrument {
 		t.Fatal("mixed quotes lost order, price or raw data", quotes)
 	}
 	for _, code := range []string{"sz000001", "hk00700"} {
@@ -205,7 +205,7 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 			}
 			row := r.List[0]
 			if code == "sz000001" {
-				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10000 || row.Volume != 100 || row.Standard.Volume != 1 {
+				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10 || row.Volume != 100 || row.Standard.Volume != 1 {
 					t.Fatal(row)
 				}
 			} else if row.Price != nil || row.Extended.Price != 10000 {
@@ -279,7 +279,7 @@ func TestUnifiedHTTPKlinePeriods(t *testing.T) {
 	for _, code := range []string{"sz000001", "sh000001"} {
 		for _, path := range paths {
 			r := httpData[tdx.KlineResp](t, mux, path+"code="+code+"&start=0&count=1")
-			if r.Count != 1 || len(r.List) != 1 || r.List[0].Close != 10 || r.List[0].Standard.Close != 10000 {
+			if r.Count != 1 || len(r.List) != 1 || r.List[0].Close != 10 || r.List[0].Standard.Close != 10 {
 				t.Fatal(path, r)
 			}
 			if code == "sh000001" && r.List[0].Standard.UpCount != 3 {

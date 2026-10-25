@@ -15,10 +15,10 @@ func fallbackTrades(day time.Time) protocol.Trades {
 		return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, day.Location())
 	}
 	return protocol.Trades{
-		{Time: stamp(9, 30), Price: 12000, Volume: 2},
-		{Time: stamp(9, 25), Price: 10000, Volume: 1},
-		{Time: stamp(9, 30), Price: 11000, Volume: 3},
-		{Time: stamp(13, 0), Price: 13000, Volume: 4},
+		{Time: stamp(9, 30), Price: 12, Volume: 2},
+		{Time: stamp(9, 25), Price: 10, Volume: 1},
+		{Time: stamp(9, 30), Price: 11, Volume: 3},
+		{Time: stamp(13, 0), Price: 13, Volume: 4},
 	}
 }
 
@@ -71,9 +71,9 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 		t.Fatal(volume, amount)
 	}
 	for _, bad := range []protocol.Trades{
-		nil, {nil}, {{Time: day, Price: 1000, Volume: 1}},
-		{{Time: day.AddDate(0, 0, -1).Add(10 * time.Hour), Price: 1000, Volume: 1}},
-		{{Time: time.Date(2025, 1, 6, 10, 0, 0, 0, time.UTC), Price: 1000}},
+		nil, {nil}, {{Time: day, Price: 1, Volume: 1}},
+		{{Time: day.AddDate(0, 0, -1).Add(10 * time.Hour), Price: 1, Volume: 1}},
+		{{Time: time.Date(2025, 1, 6, 10, 0, 0, 0, time.UTC), Price: 1}},
 	} {
 		if _, err := tradesToMinutes(day, bad); err == nil {
 			t.Fatal("无效或空分笔被当成完整数据")

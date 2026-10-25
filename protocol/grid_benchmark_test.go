@@ -14,8 +14,8 @@ func BenchmarkProtocolGrid(b *testing.B) {
 				continue
 			}
 			at := time.Date(2025, 1, day, minute/60, minute%60, 0, 0, time.Local)
-			ks = append(ks, &Kline{Time: at, Open: 10000, High: 11000, Low: 9000, Close: 10500, Volume: 1})
-			trades = append(trades, &Trade{Time: at, Price: 10500, Volume: 1, Number: 1})
+			ks = append(ks, &Kline{Time: at, Open: 10, High: 11, Low: 9, Close: 10.5, Volume: 1})
+			trades = append(trades, &Trade{Time: at, Price: 10.5, Volume: 1, Number: 1})
 		}
 	}
 	b.Run("Merge241TenDays", func(b *testing.B) {

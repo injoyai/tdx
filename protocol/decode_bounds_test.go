@@ -47,11 +47,11 @@ func TestCheckedDecodersRejectTruncatedRecords(t *testing.T) {
 	}
 	bars, _ := MKline.Decode(index, KlineCache{Type: TypeKlineDay, Kind: KindIndex})
 	b := bars.List[0]
-	if b.Open != 10 || b.Close != 12 || b.High != 14 || b.Low != 9 || b.UpCount != 3 || b.DownCount != 5 {
+	if b.Open != 0.01 || b.Close != 0.012 || b.High != 0.014 || b.Low != 0.009 || b.UpCount != 3 || b.DownCount != 5 {
 		t.Fatalf("index fields changed: %+v", b)
 	}
 	q, _ := MQuote.Decode(quote)
-	if len(q) != 1 || q[0].Code != "600000" || q[0].Kline.Close != 100 || q[0].BuyLevel[0].Price != 100 {
+	if len(q) != 1 || q[0].Code != "600000" || q[0].Kline.Close != 0.1 || q[0].BuyLevel[0].Price != 0.1 {
 		t.Fatalf("quote fields changed: %+v", q)
 	}
 	// A valid first record must not mask a truncated second record.
@@ -110,7 +110,7 @@ func TestMetadataDecodersRejectTruncatedRecords(t *testing.T) {
 		})
 	}
 	history, err := MHistoryMinute.Decode(minute)
-	if err != nil || history.Count != 1 || history.List[0].Price != 100 || history.List[0].Number != 5 || history.List[0].Time != "09:31" {
+	if err != nil || history.Count != 1 || history.List[0].Price != 0.1 || history.List[0].Number != 5 || history.List[0].Time != "09:31" {
 		t.Fatal("valid minute fields changed", history, err)
 	}
 	for _, bad := range [][]byte{{0x80}, {0x80, 0x80, 0x80, 0x80, 0x10}} {
@@ -139,7 +139,7 @@ func TestCheckedQuoteCapturedSample(t *testing.T) {
 	if err != nil || len(quotes) != 2 {
 		t.Fatal("captured quote decoding", len(quotes), err)
 	}
-	if quotes[0].Code != "000001" || quotes[1].Code != "600038" || quotes[0].Kline.Close != 12020 || quotes[1].Kline.Close != 3200 {
+	if quotes[0].Code != "000001" || quotes[1].Code != "600038" || quotes[0].Kline.Close != 12.02 || quotes[1].Kline.Close != 3.2 {
 		t.Fatal("quote record boundaries or prices changed", quotes)
 	}
 	for n := 0; n < len(data); n++ {

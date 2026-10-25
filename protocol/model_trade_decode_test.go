@@ -24,7 +24,7 @@ func TestTradeDecodeBounds(t *testing.T) {
 			}
 			valid := append(append([]byte(nil), header...), record...)
 			r, err := decode(valid, cache)
-			if err != nil || len(r.List) != 1 || r.List[0].Price != Yuan(10) ||
+			if err != nil || len(r.List) != 1 || r.List[0].Price != 10 ||
 				r.List[0].Volume != 1 || r.List[0].Status != 1 || r.List[0].Time.Format("15:04") != "09:30" {
 				t.Fatal("valid record changed", r, err)
 			}

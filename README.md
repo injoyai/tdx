@@ -73,7 +73,7 @@ _ = a; _ = h; _ = f
 
 v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。内置数据库使用 SQLite，已移除 MySQL 专用入口和驱动注册。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
 
-行情时间保留源精度：日及更长周期返回日期，日内周期返回日期时分；标准来源时区固定东八区，扩展未知为空。pull 使用源时间主键和新数据目录，不兼容旧 Unix 主键库，详见 [源时间与存储说明](docs/v2-migration.md#源时间交易日与真实时刻)。
+行情时间保留源精度：日及更长周期返回日期，日内周期返回日期时分，不返回 `TimeZone` 或 Unix 时间戳。pull 使用源时间主键和新数据目录，不兼容旧 Unix 主键库，详见 [源时间与存储说明](docs/v2-migration.md#源时间交易日与真实时刻)。
 
 ```go
 package main
@@ -164,7 +164,7 @@ qfq, _ := gb.QFQKlineDay("sh600519") // 前复权日线
 hfq, _ := gb.HFQKlineDay("sh600519") // 后复权日线
 for _, k := range qfq {
 	fmt.Printf("%s 开%.2f 高%.2f 低%.2f 收%.2f\n",
-		k.Time.Format("2006-01-02"), k.Open.Float64(), k.High.Float64(), k.Low.Float64(), k.Close.Float64())
+		k.Time.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close)
 }
 
 // 方式二: 已有不复权 K 线时直接复权
@@ -176,11 +176,11 @@ _ = qfq2
 // 方式三: 仅取复权因子(每个除权区间一个仿射系数), 自行施加
 fs := gb.GetFactors("sh600519", raw.List)
 for _, f := range fs {
-	_ = f.QFQPrice(protocol.Yuan(100)) // 对任意原始价做前复权
+	_ = f.QFQPrice(100) // 对任意原始价做前复权
 }
 ```
 
-> 价格类型 `protocol.Price` 为 **int64, 单位厘(元×1000)**，`.Float64()` 得元。股票最小变动 0.01 元(分)，ETF/可转债/指数到 0.001 元(厘)。
+> 行情价格统一使用 `float64`，标准协议模型的价格及成交额单位为元；跨市场业务结果使用证券原币种/报价单位，不做汇率换算。协议和文件中的整数尺度仅在读写边界转换。旧 `protocol.Price`、`Yuan` 及价格转换方法已移除，详见 [价格迁移说明](docs/v2-migration.md#价格统一为-float64)。
 > 完整演示见 [`examples/GetQFQKline`](examples/GetQFQKline)。
 
 ---

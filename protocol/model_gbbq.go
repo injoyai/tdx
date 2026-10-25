@@ -189,22 +189,22 @@ type XRXD struct {
 	Code        string    //例sh600000
 	Time        time.Time //时间
 	Fenhong     float64   //分红,10股分n元
-	Peigujia    float64   //配股价
+	Peigujia    float64   // 配股价，元/股
 	Songzhuangu float64   //送转股
 	Peigu       float64   //配股
 }
 
-// Pre 计算除权除息之后的价格,10元,10股分5元->9.5元
-func (x *XRXD) Pre(p Price) Price {
+// Pre 计算除权除息参考价，p 与返回值均为元，不截断到厘；10元、10股分5元得到9.5元。
+func (x *XRXD) Pre(p float64) float64 {
 	if x == nil {
 		return p
 	}
-	numerator := (p.Float64()*10 - x.Fenhong) + (x.Peigu * x.Peigujia)
+	numerator := (p*10 - x.Fenhong) + (x.Peigu * x.Peigujia)
 	denominator := 10 + x.Songzhuangu + x.Peigu
 	if denominator == 0 {
 		return p
 	}
-	return Price((numerator / denominator) * 1000)
+	return numerator / denominator
 }
 
 // mc 单个除权除息事件(category=1)的仿射系数:
@@ -356,7 +356,7 @@ func (ks PreKlines) Factors() []*Factor {
 
 type Factor struct {
 	Time time.Time //日期
-	Last Price     //昨收价
+	Last float64   // 昨收价，元；不是整数厘
 
 	// 仿射复权系数: price_adj = round_half_up(Mul*price_raw + Add)
 	QFQMul float64 //前复权乘法因子 A
@@ -365,21 +365,21 @@ type Factor struct {
 	HFQAdd float64 //后复权加法偏移(单位:元)
 }
 
-// QFQPrice 前复权价格(对不复权原始价 raw 做仿射 + 四舍五入到 2 位小数)。
-func (f *Factor) QFQPrice(raw Price) Price {
-	return roundHalfUpYuan(f.QFQMul*raw.Float64() + f.QFQAdd)
+// QFQPrice 计算前复权价；raw 与返回值均为元，结果四舍五入到分。
+func (f *Factor) QFQPrice(raw float64) float64 {
+	return roundHalfUpYuan(f.QFQMul*raw + f.QFQAdd)
 }
 
-// HFQPrice 后复权价格(对不复权原始价 raw 做仿射 + 四舍五入到 2 位小数)。
-func (f *Factor) HFQPrice(raw Price) Price {
-	return roundHalfUpYuan(f.HFQMul*raw.Float64() + f.HFQAdd)
+// HFQPrice 计算后复权价；raw 与返回值均为元，结果四舍五入到分。
+func (f *Factor) HFQPrice(raw float64) float64 {
+	return roundHalfUpYuan(f.HFQMul*raw + f.HFQAdd)
 }
 
-// roundHalfUpYuan 把"元"值四舍五入(逢五进一)到 2 位小数后转为 Price(厘)。
+// roundHalfUpYuan 将元值四舍五入（逢五进一）到分，返回单位仍为元。
 // 通达信用四舍五入, 非银行家舍入; math.Round 对 .5 远离零取整, 正好是逢五进一。
-func roundHalfUpYuan(yuan float64) Price {
+func roundHalfUpYuan(yuan float64) float64 {
 	cents := math.Round(yuan * 100)
-	return Price(cents * 10) // 1 分 = 10 厘
+	return cents / 100
 }
 
 // ApplyQFQ 用前复权因子 fs 按日期对齐, 把不复权日线 ks 整段转为前复权日线。

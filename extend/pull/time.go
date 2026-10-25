@@ -30,15 +30,6 @@ func validateRange(start, end, layout string) error {
 	return nil
 }
 
-// Timestamp 仅在调用方已确认来源时区后转换；不会改变存储的源时间。
-func (k KlineMinute) Timestamp(loc *time.Location) (int64, error) {
-	t, err := protocol.ParseSourceTime(k.Time, loc)
-	if err != nil {
-		return 0, err
-	}
-	return t.Unix(), nil
-}
-
 func validateDays(from string, rows []*KlineDay) error {
 	if err := validateRange(from, "", time.DateOnly); err != nil {
 		return err
@@ -74,29 +65,6 @@ func validateMinutes(year int, from string, rows []*KlineMinute) error {
 		}
 		if err := validateRange(k.TradingDate, "", time.DateOnly); err != nil {
 			return err
-		}
-		if k.Unix == nil && k.TimeZone == "" {
-			continue
-		}
-		if k.TimeZone == "Local" {
-			return fmt.Errorf("pull: 来源时区须显式指定，不能使用主机 Local")
-		}
-		if k.Unix == nil || k.TimeZone == "" {
-			return fmt.Errorf("pull: Unix 和 TimeZone 须同时提供")
-		}
-		loc := protocol.Location()
-		if k.TimeZone != loc.String() {
-			loc, err = time.LoadLocation(k.TimeZone)
-			if err != nil {
-				return err
-			}
-		}
-		stamp, err := k.Timestamp(loc)
-		if err != nil {
-			return fmt.Errorf("pull: %w", err)
-		}
-		if stamp != *k.Unix {
-			return fmt.Errorf("pull: 时间戳与源时间 %s、时区 %s 不一致", k.Time, k.TimeZone)
 		}
 	}
 	return nil

@@ -249,11 +249,11 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		}
 		d := &pull.KlineDay{
 			Time: k.Time.Format(time.DateOnly), TradingDate: k.Time.Format(time.DateOnly),
-			Open:   k.Open.Float64(),
-			High:   k.High.Float64(),
-			Low:    k.Low.Float64(),
-			Close:  k.Close.Float64(),
-			Amount: k.Amount.Float64(),
+			Open:   k.Open,
+			High:   k.High,
+			Low:    k.Low,
+			Close:  k.Close,
+			Amount: k.Amount,
 			Volume: volume,
 		}
 		// 换手率/股本回填：仅股票有（Gbbq 非股票返回 nil）
@@ -310,7 +310,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		}
 	}
 	return pullMinutes(s, code, time.Now(), func(from string) ([]*pull.KlineMinute, error) {
-		startAt, err := protocol.ParseSourceTime(from, protocol.Location())
+		startAt, err := time.ParseInLocation(protocol.TimeLayout, from, protocol.Location())
 		if err != nil {
 			return nil, err
 		}
@@ -329,11 +329,10 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 			if err != nil {
 				return nil, err
 			}
-			unix := k.Time.Unix()
 			out = append(out, &pull.KlineMinute{
-				Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Unix: &unix, TimeZone: protocol.Location().String(), Open: k.Open.Float64(), High: k.High.Float64(),
-				Low: k.Low.Float64(), Close: k.Close.Float64(),
-				Volume: volume, Amount: k.Amount.Float64(),
+				Time: k.Time.Format(protocol.TimeLayout), TradingDate: k.Time.Format(time.DateOnly), Open: k.Open, High: k.High,
+				Low: k.Low, Close: k.Close,
+				Volume: volume, Amount: k.Amount,
 			})
 		}
 		return out, nil

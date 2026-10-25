@@ -64,7 +64,7 @@ func TestTHSResponseValidation(t *testing.T) {
 			if (err == nil) != tc.ok {
 				t.Fatal(got, err)
 			}
-			if tc.ok && (len(got) != 1 || got[0].Open != 10010 || got[0].High != 10020 || got[0].Low != 10000 || got[0].Close != 10030 || got[0].Volume != 1 || got[0].Time.Format("20060102") != "20260105") {
+			if tc.ok && (len(got) != 1 || got[0].Open != 10.01 || got[0].High != 10.02 || got[0].Low != 10 || got[0].Close != 10.03 || got[0].Volume != 1 || got[0].Time.Format("20060102") != "20260105") {
 				t.Fatal("valid payload changed", got)
 			}
 		})

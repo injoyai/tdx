@@ -159,7 +159,7 @@ func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*K
 		} else {
 			last := out[len(out)-1]
 			last.High, last.Low = max(last.High, k.High), min(last.Low, k.Low)
-			last.Close, last.Time, last.TradingDate, last.Unix, last.TimeZone = k.Close, k.Time, k.TradingDate, k.Unix, k.TimeZone
+			last.Close, last.Time, last.TradingDate = k.Close, k.Time, k.TradingDate
 			last.Volume += k.Volume
 			last.Amount += k.Amount
 			last.AmountUnknown = last.AmountUnknown || k.AmountUnknown

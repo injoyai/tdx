@@ -48,42 +48,42 @@ type ExInstrument struct {
 type ExQuote struct {
 	Market    uint8      `json:"market"`
 	Code      string     `json:"code"`
-	PreClose  float64    `json:"preClose"`
-	Open      float64    `json:"open"`
-	High      float64    `json:"high"`
-	Low       float64    `json:"low"`
-	Price     float64    `json:"price"`
+	PreClose  float64    `json:"preClose"`  // 昨收/昨结，原始浮点值，原币种/报价单位
+	Open      float64    `json:"open"`      // 开盘价，原始浮点值，原币种/报价单位
+	High      float64    `json:"high"`      // 最高价，原始浮点值，原币种/报价单位
+	Low       float64    `json:"low"`       // 最低价，原始浮点值，原币种/报价单位
+	Price     float64    `json:"price"`     // 最新价，原币种/报价单位
 	KaiCang   uint32     `json:"kaiCang"`   // 开仓
 	ZongLiang uint32     `json:"zongLiang"` // 总量
 	XianLiang uint32     `json:"xianLiang"` // 现量
 	NeiPan    uint32     `json:"neiPan"`    // 内盘
 	WaiPan    uint32     `json:"waiPan"`    // 外盘
 	ChiCang   uint32     `json:"chiCang"`   // 持仓
-	Bid       [5]float64 `json:"bid"`
+	Bid       [5]float64 `json:"bid"`       // 买一至买五价格，原币种/报价单位
 	BidVol    [5]uint32  `json:"bidVol"`
-	Ask       [5]float64 `json:"ask"`
+	Ask       [5]float64 `json:"ask"` // 卖一至卖五价格，原币种/报价单位
 	AskVol    [5]uint32  `json:"askVol"`
 }
 
 // ExKline 扩展K线一根。
 type ExKline struct {
 	Datetime string  `json:"datetime"`
-	Open     float64 `json:"open"`
-	High     float64 `json:"high"`
-	Low      float64 `json:"low"`
-	Close    float64 `json:"close"`
+	Open     float64 `json:"open"`     // 开盘价，原始浮点值，原币种/报价单位
+	High     float64 `json:"high"`     // 最高价，原始浮点值，原币种/报价单位
+	Low      float64 `json:"low"`      // 最低价，原始浮点值，原币种/报价单位
+	Close    float64 `json:"close"`    // 收盘价/该周期最新价，原始浮点值，原币种/报价单位
 	Position uint32  `json:"position"` // 持仓
 	Trade    uint32  `json:"trade"`    // 成交量
-	Price    float64 `json:"price"`    // 结算价
-	Amount   float64 `json:"amount"`   // 成交额(=position 字节按 float 重解释,与 pytdx 一致)
+	Price    float64 `json:"price"`    // 结算价，原币种/报价单位
+	Amount   float64 `json:"amount"`   // position 字节按 float32 重解释的原始值，金额单位/语义未确认
 }
 
 // ExMinuteTick 扩展分时一笔。
 type ExMinuteTick struct {
 	Hour         int     `json:"hour"`
 	Minute       int     `json:"minute"`
-	Price        float64 `json:"price"`
-	AvgPrice     float64 `json:"avgPrice"`
+	Price        float64 `json:"price"`    // 分时价格，原币种/报价单位
+	AvgPrice     float64 `json:"avgPrice"` // 分时均价，原币种/报价单位
 	Volume       uint32  `json:"volume"`
 	OpenInterest uint32  `json:"openInterest"`
 }
@@ -93,7 +93,7 @@ type ExTradeTick struct {
 	Hour       int    `json:"hour"`
 	Minute     int    `json:"minute"`
 	Second     int    `json:"second"`
-	Price      uint32 `json:"price"`
+	Price      uint32 `json:"price"` // 原始整数价格，尺度未确认；不可直接当作元值或自行除以100/1000
 	Volume     uint32 `json:"volume"`
 	ZengCang   int32  `json:"zengCang"` // 增仓
 	Nature     uint16 `json:"nature"`
@@ -104,32 +104,32 @@ type ExTradeTick struct {
 // ExRangeKline 扩展历史K线区间一根。
 type ExRangeKline struct {
 	Datetime        string  `json:"datetime"`
-	Open            float64 `json:"open"`
-	High            float64 `json:"high"`
-	Low             float64 `json:"low"`
-	Close           float64 `json:"close"`
+	Open            float64 `json:"open"`  // 开盘价，原始浮点值，原币种/报价单位
+	High            float64 `json:"high"`  // 最高价，原始浮点值，原币种/报价单位
+	Low             float64 `json:"low"`   // 最低价，原始浮点值，原币种/报价单位
+	Close           float64 `json:"close"` // 收盘价/该周期最新价，原始浮点值，原币种/报价单位
 	Position        uint32  `json:"position"`
 	Trade           uint32  `json:"trade"`
-	SettlementPrice float64 `json:"settlementPrice"`
+	SettlementPrice float64 `json:"settlementPrice"` // 结算价，原币种/报价单位
 }
 
 // QuoteListItem 批量行情列表项(期货 category=3 / 港股 category=2)。
 type QuoteListItem struct {
 	Market    uint8      `json:"market"`
 	Code      string     `json:"code"`
-	PreClose  float64    `json:"preClose"` // 昨收/昨结
-	Open      float64    `json:"open"`
-	High      float64    `json:"high"`
-	Low       float64    `json:"low"`
-	Price     float64    `json:"price"`     // 现价/卖出
+	PreClose  float64    `json:"preClose"`  // 昨收/昨结，原始浮点值，原币种/报价单位
+	Open      float64    `json:"open"`      // 开盘价，原始浮点值，原币种/报价单位
+	High      float64    `json:"high"`      // 最高价，原始浮点值，原币种/报价单位
+	Low       float64    `json:"low"`       // 最低价，原始浮点值，原币种/报价单位
+	Price     float64    `json:"price"`     // 现价/卖出价，原币种/报价单位
 	ZongLiang uint32     `json:"zongLiang"` // 总量
-	Amount    float64    `json:"amount"`    // 总金额
+	Amount    float64    `json:"amount"`    // 原始总金额字段，单位/统计口径待确认
 	Inner     uint32     `json:"inner"`     // 内盘
 	Outer     uint32     `json:"outer"`     // 外盘
 	ChiCang   uint32     `json:"chiCang"`   // 持仓(期货)
-	Bid       [5]float64 `json:"bid"`
+	Bid       [5]float64 `json:"bid"`       // 买一至买五价格，原币种/报价单位
 	BidVol    [5]uint32  `json:"bidVol"`
-	Ask       [5]float64 `json:"ask"`
+	Ask       [5]float64 `json:"ask"` // 卖一至卖五价格，原币种/报价单位
 	AskVol    [5]uint32  `json:"askVol"`
 }
 

@@ -34,11 +34,6 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 		Count: Uint16(bs[:2]),
 	}
 
-	multiple := Price(1) * 10
-	//if bs[5] > 0x40 {
-	//multiple = 10
-	//}
-
 	//2-4字节是啥?
 	d := wireDecoder{bs: bs[6:]}
 	if int(resp.Count) > len(d.bs)/3 {
@@ -48,10 +43,10 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 		resp.List = make([]PriceNumber, 0, resp.Count)
 	}
 
-	lastPrice := Price(0)
+	var lastPrice int64
 	t := time.Date(0, 0, 0, 9, 30, 0, 0, Location())
 	for i := uint16(0); i < resp.Count; i++ {
-		price := Price(d.number())
+		price := int64(d.number())
 		d.number() // 未知字段
 		lastPrice += price
 		number := d.number()
@@ -64,7 +59,7 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 		}
 		resp.List = append(resp.List, PriceNumber{
 			Time:   t.Add(time.Minute * time.Duration(i+1)).Format("15:04"),
-			Price:  lastPrice * multiple,
+			Price:  float64(lastPrice) / 100,
 			Number: number,
 		})
 	}

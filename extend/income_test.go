@@ -9,7 +9,7 @@ import (
 
 func TestDoIncomesBounds(t *testing.T) {
 	day := time.Date(2026, 1, 5, 15, 0, 0, 0, protocol.Location())
-	ks := protocol.Klines{{Time: day, Close: 1000}, {Time: day.AddDate(0, 0, 1), Close: 2000}}
+	ks := protocol.Klines{{Time: day, Close: 1}, {Time: day.AddDate(0, 0, 1), Close: 2}}
 	for _, tc := range []struct {
 		name  string
 		ks    protocol.Klines
@@ -28,7 +28,7 @@ func TestDoIncomesBounds(t *testing.T) {
 			if len(got) != tc.want {
 				t.Fatalf("got %d incomes, want %d", len(got), tc.want)
 			}
-			if tc.name == "normal" && (got[0].Source.Close != 1000 || got[0].Current.Close != 2000 || got[0].RiseRate() != 1) {
+			if tc.name == "normal" && (got[0].Source.Close != 1 || got[0].Current.Close != 2 || got[0].RiseRate() != 1) {
 				t.Fatal(got[0])
 			}
 		})

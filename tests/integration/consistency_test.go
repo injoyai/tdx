@@ -45,7 +45,7 @@ func (*consistencyClient) GetKlineDayAll(code string) (*tdx.KlineResp, error) {
 	}
 	r := &tdx.KlineResp{Instrument: i}
 	for _, d := range []int{19, 20, 21} {
-		k := &protocol.Kline{Time: consistencyDay(d), Open: 10000, High: 10000, Low: 10000, Close: 10000}
+		k := &protocol.Kline{Time: consistencyDay(d), Open: 10, High: 10, Low: 10, Close: 10}
 		r.List = append(r.List, tdx.Kline{Time: k.Time.Format("2006-01-02 15:04"), Standard: k})
 	}
 	r.Count = len(r.List)
@@ -161,7 +161,7 @@ func TestConsistencyNilDatabaseFactories(t *testing.T) {
 }
 
 func TestConsistencyIncomeDateZone(t *testing.T) {
-	ks := protocol.Klines{{Time: consistencyDay(19), Close: 10000}, {Time: consistencyDay(20), Close: 11000}}
+	ks := protocol.Klines{{Time: consistencyDay(19), Close: 10}, {Time: consistencyDay(20), Close: 11}}
 	for _, loc := range []*time.Location{protocol.Location(), time.UTC} {
 		start := time.Date(2026, 10, 19, 0, 0, 0, 0, loc)
 		got := extend.DoIncomes(ks, start, 1)
@@ -226,7 +226,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 }
 
 func TestConsistencyIndexConsumers(t *testing.T) {
-	k := &protocol.Kline{Time: consistencyDay(19), Open: 10800, High: 10800, Low: 10800, Close: 10800, Volume: 20000, Amount: protocol.Yuan(216000)}
+	k := &protocol.Kline{Time: consistencyDay(19), Open: 10.8, High: 10.8, Low: 10.8, Close: 10.8, Volume: 20000, Amount: 216000}
 	r := &tdx.KlineResp{Instrument: protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}, List: []tdx.Kline{{Standard: k, Volume: k.Volume}}}
 	raw, err := r.StandardResponse()
 	if err != nil {
@@ -239,7 +239,7 @@ func TestConsistencyIndexConsumers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ks.VWAP(); got != protocol.Yuan(10.8) {
+	if got := ks.VWAP(); got != 10.8 {
 		t.Errorf("20000 shares, amount 216000 yuan: VWAP=%v, want 10.8 yuan", got)
 	}
 	bs, err := local.WriteDay("sh000001", ks)

@@ -14,12 +14,12 @@ type MinuteResp struct {
 
 type PriceNumber struct {
 	Time   string
-	Price  Price
+	Price  float64 // 分时价格，元（指数为点）；已按协议尺度换算
 	Number int
 }
 
 func (p PriceNumber) String() string {
-	return fmt.Sprintf("%s \t%-6s \t%-6d(手)", p.Time, p.Price, p.Number)
+	return fmt.Sprintf("%s \t%-6g \t%-6d(手)", p.Time, p.Price, p.Number)
 }
 
 type minute struct{}
@@ -58,7 +58,7 @@ func (*minute) Decode(bs []byte) (*MinuteResp, error) {
 
 	t := time.Date(0, 0, 0, 9, 0, 0, 0, Location())
 	for i := uint16(0); i < resp.Count; i++ {
-		price := Price(d.number())
+		price := float64(d.number()) / 1000
 		d.number() // 未知字段
 		number := d.number()
 		if d.err != nil {

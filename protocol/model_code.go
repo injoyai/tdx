@@ -16,7 +16,7 @@ type Code struct {
 	Code      string  //股票代码
 	Multiple  uint16  //倍数,基本是0x64=100
 	Decimal   int8    //小数点,基本是2
-	LastPrice float64 //昨收价格,单位元,对个股无效,对指数有效,对其他未知
+	LastPrice float64 // 来源代码表的昨收参考值，指数为点；个股无效，其他品种语义待确认
 }
 
 func (c *Code) String() string {

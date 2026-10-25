@@ -6,10 +6,12 @@ import (
 )
 
 func TestXRXDFQ(t *testing.T) {
-	p := Yuan(10)         //10元
+	p := 10.0             //10元
 	x := XRXD{Fenhong: 5} //10股分红5元
 	p2 := x.Pre(p)
-	t.Log("复权价:", p2)
+	if p2 != 9.5 {
+		t.Fatal("复权价", p2)
+	}
 }
 
 // ───────── 仿射复权 vs 通达信桌面端 实盘核对 ─────────
@@ -49,11 +51,11 @@ func buildKlines(ks []fixKline) []*Kline {
 	for _, k := range ks {
 		out = append(out, &Kline{
 			Time:  fixDate(k.date),
-			Open:  Price(k.o),
-			High:  Price(k.h),
-			Low:   Price(k.l),
-			Close: Price(k.c),
-			Last:  Price(k.c),
+			Open:  float64(k.o) / 1000,
+			High:  float64(k.h) / 1000,
+			Low:   float64(k.l) / 1000,
+			Close: float64(k.c) / 1000,
+			Last:  float64(k.c) / 1000,
 		})
 	}
 	return out
@@ -77,8 +79,8 @@ func factorByDate(fs []*Factor) map[int]*Factor {
 
 const naN = -999999.0
 
-func approxYuan(got Price, expYuan float64) bool {
-	d := got.Float64() - expYuan
+func approxYuan(got float64, expYuan float64) bool {
+	d := got - expYuan
 	if d < 0 {
 		d = -d
 	}
@@ -138,11 +140,11 @@ func TestFactorsQFQTDX(t *testing.T) {
 					t.Fatalf("%d 未生成因子", a.date)
 				}
 				k := raw[a.date]
-				got := [4]Price{
-					f.QFQPrice(Price(k.o)),
-					f.QFQPrice(Price(k.h)),
-					f.QFQPrice(Price(k.l)),
-					f.QFQPrice(Price(k.c)),
+				got := [4]float64{
+					f.QFQPrice(float64(k.o) / 1000),
+					f.QFQPrice(float64(k.h) / 1000),
+					f.QFQPrice(float64(k.l) / 1000),
+					f.QFQPrice(float64(k.c) / 1000),
 				}
 				exp := [4]float64{a.o, a.h, a.l, a.c}
 				names := [4]string{"开", "高", "低", "收"}
@@ -152,7 +154,7 @@ func TestFactorsQFQTDX(t *testing.T) {
 					}
 					if !approxYuan(got[i], exp[i]) {
 						t.Errorf("%d %s前复权: got %.2f, 通达信 %.2f  (%s)",
-							a.date, names[i], got[i].Float64(), exp[i], a.note)
+							a.date, names[i], got[i], exp[i], a.note)
 					}
 				}
 			}
@@ -172,10 +174,10 @@ func TestFactorsQFQKnownException(t *testing.T) {
 	if f == nil {
 		t.Fatal("20060526 未生成因子")
 	}
-	got := f.QFQPrice(Price(39490)) // 该日不复权开盘 39.49 元
+	got := f.QFQPrice(39.49) // 该日不复权开盘 39.49 元
 	if !approxYuan(got, -260.97) {
 		t.Errorf("已知特例点漂移: 600519 20060526 开盘 got %.2f, 期望本算法 -260.97 (通达信 -260.98)",
-			got.Float64())
+			got)
 	}
 }
 
@@ -189,7 +191,7 @@ func TestFactorsHFQAffine(t *testing.T) {
 	}
 	a0, b0 := fs[0].QFQMul, fs[0].QFQAdd
 	for _, f := range fs {
-		want := roundHalfUpYuan((f.QFQMul*f.Last.Float64() + f.QFQAdd - b0) / a0)
+		want := roundHalfUpYuan((f.QFQMul*f.Last + f.QFQAdd - b0) / a0)
 		got := f.HFQPrice(f.Last)
 		if got != want {
 			t.Errorf("%s HFQ 不一致: got %v want %v", f.Time.Format(time.DateOnly), got, want)
@@ -212,11 +214,11 @@ func TestFactorsFutureExDayIgnored(t *testing.T) {
 	fs := xs.Pre(ks).Factors()
 	byDate := factorByDate(fs)
 	// 未来事件未生效: 锚定日因子应为 A=1,B=0, 前复权价=不复权价。
-	if f := byDate[20160105]; f == nil || !approxYuan(f.QFQPrice(Price(15490)), 15.49) {
-		t.Errorf("未来 ex-day 被错误施加: 20160105 前复权收 got %.2f, 期望 15.49", byDate[20160105].QFQPrice(Price(15490)).Float64())
+	if f := byDate[20160105]; f == nil || !approxYuan(f.QFQPrice(15.49), 15.49) {
+		t.Errorf("未来 ex-day 被错误施加: 20160105 前复权收 got %.2f, 期望 15.49", byDate[20160105].QFQPrice(15.49))
 	}
-	if f := byDate[20160104]; f == nil || !approxYuan(f.QFQPrice(Price(15170)), 15.17) {
-		t.Errorf("未来 ex-day 被错误施加: 20160104 前复权收 got %.2f, 期望 15.17", byDate[20160104].QFQPrice(Price(15170)).Float64())
+	if f := byDate[20160104]; f == nil || !approxYuan(f.QFQPrice(15.17), 15.17) {
+		t.Errorf("未来 ex-day 被错误施加: 20160104 前复权收 got %.2f, 期望 15.17", byDate[20160104].QFQPrice(15.17))
 	}
 }
 

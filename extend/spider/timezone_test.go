@@ -30,12 +30,12 @@ func TestTHSUsesExchangeTimezone(t *testing.T) {
 	dataHTTPClient = &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(valid)), Header: make(http.Header)}, nil
 	})}
-	raw := &protocol.Kline{Time: time.Date(2026, 1, 5, 0, 0, 0, 0, protocol.Location()), Close: 10030, Amount: 987654321}
+	raw := &protocol.Kline{Time: time.Date(2026, 1, 5, 0, 0, 0, 0, protocol.Location()), Close: 10.03, Amount: 987654.321}
 	full, err := GetTHSDayKlineFull("sz000001", &timezoneDailyClient{k: raw})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if full[1][0].Amount != raw.Amount || full[2][0].Amount != raw.Amount {
-		t.Errorf("THS amount join: raw=%d, QFQ=%d, HFQ=%d, rawTime=%s, THSTime=%s", raw.Amount, full[1][0].Amount, full[2][0].Amount, raw.Time, full[1][0].Time)
+		t.Errorf("THS amount join: raw=%g, QFQ=%g, HFQ=%g, rawTime=%s, THSTime=%s", raw.Amount, full[1][0].Amount, full[2][0].Amount, raw.Time, full[1][0].Time)
 	}
 }

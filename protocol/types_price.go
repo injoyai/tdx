@@ -4,36 +4,10 @@ import (
 	"fmt"
 )
 
-// Price 价格，单位厘
-type Price int64
-
-func (p Price) Float64() float64 {
-	return float64(p) / 1000
-}
-
-func (p Price) Int64() int64 {
-	return int64(p)
-}
-
-func (p Price) String() string {
-	return fmt.Sprintf("%s元", FloatUnitString(p.Float64()))
-}
-
-func (p Price) Abs() Price {
-	if p < 0 {
-		return -p
-	}
-	return p
-}
-
-func Yuan(f float64) Price {
-	return Price(f * 1000)
-}
-
 type PriceLevel struct {
-	Buy    bool  //买卖
-	Price  Price //价 想买卖的价格
-	Number int   //量 想买卖的数量
+	Buy    bool    //买卖
+	Price  float64 // 档位报价，元（指数为点）
+	Number int     //量 想买卖的数量
 }
 
 type PriceLevels [5]PriceLevel
@@ -42,20 +16,21 @@ func (ps PriceLevels) String() string {
 	s := ""
 	if ps[0].Buy {
 		for i, v := range ps {
-			s += fmt.Sprintf("买%d  %s  %s\n", i+1, v.Price, IntUnitString(v.Number))
+			s += fmt.Sprintf("买%d  %g元  %s\n", i+1, v.Price, IntUnitString(v.Number))
 		}
 
 	} else {
 		for i := 4; i >= 0; i-- {
-			s += fmt.Sprintf("卖%d  %s  %s\n", i+1, ps[i].Price, IntUnitString(ps[i].Number))
+			s += fmt.Sprintf("卖%d  %g元  %s\n", i+1, ps[i].Price, IntUnitString(ps[i].Number))
 		}
 	}
 	return s
 }
 
-func GetPrice(bs []byte) ([]byte, Price) {
+// GetPrice 将变长整数厘解码为元；无价格尺度的整数使用 CutInt64。
+func GetPrice(bs []byte) ([]byte, float64) {
 	bs, v := CutInt64(bs)
-	return bs, Price(v)
+	return bs, float64(v) / 1000
 }
 
 func CutInt(bs []byte) ([]byte, int) {

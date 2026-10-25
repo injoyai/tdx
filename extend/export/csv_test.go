@@ -20,13 +20,13 @@ func TestCSVContracts(t *testing.T) {
 		want  [][]string
 	}{
 		{"kline", func(path string) error {
-			return KlinesToCSV(path, "sz000001", "名称,含\"引号\"", protocol.Klines{{Time: at, Open: 10000, High: 11000, Low: 9000, Close: 10500, Volume: 2, Amount: 2100000}})
+			return KlinesToCSV(path, "sz000001", "名称,含\"引号\"", protocol.Klines{{Time: at, Open: 10, High: 11, Low: 9, Close: 10.5, Volume: 2, Amount: 2100}})
 		}, [][]string{
 			{"日期", "时间", "代码", "名称", "开盘(元)", "最高(元)", "最低(元)", "收盘(元)", "成交量(股)", "成交额(元)"},
 			{"2026-01-05", "09:31", "sz000001", "名称,含\"引号\"", "10", "11", "9", "10.5", "200", "2100"},
 		}},
 		{"trade", func(path string) error {
-			return TradesToCSV(path, protocol.Trades{{Time: at, Price: 10500, Volume: 2, Status: 1}})
+			return TradesToCSV(path, protocol.Trades{{Time: at, Price: 10.5, Volume: 2, Status: 1}})
 		}, [][]string{
 			{"日期", "时间", "价格(元)", "成交量(股)", "成交额(元)", "方向(0买,1卖,2中性)"},
 			{"2026-01-05", "09:31", "10.5", "200", "2100", "1"},

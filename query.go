@@ -143,7 +143,7 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 			return nil, err
 		}
 		if out == nil {
-			out = &KlineResp{Instrument: r.Instrument, Category: r.Category, TimeZone: r.TimeZone}
+			out = &KlineResp{Instrument: r.Instrument, Category: r.Category}
 		}
 		if len(r.List) > 0 && r.List[0].Standard != nil {
 			if last != nil {
@@ -199,7 +199,7 @@ func (q *queries) GetHistoryTrade(date, code string, start, count uint16) (*Trad
 }
 
 func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool) (*TradeResp, error) {
-	i, info, err := instrumentInfo(code)
+	i, _, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +211,6 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 		return nil, fmt.Errorf("分笔单次数量必须为1..%d", limit)
 	}
 	out := &TradeResp{Instrument: i, Date: date}
-	if info.Protocol == protocol.ProtocolStandard {
-		out.TimeZone = protocol.Location().String()
-	}
 	if date != "" && checkDay {
 		day, _ := time.Parse("20060102", date)
 		target := day.Format(time.DateOnly)
@@ -266,7 +263,7 @@ func (q *queries) tradeAll(date, code string, checkDay bool) (*TradeResp, error)
 			return nil, errors.New("分笔响应数量超过请求数量")
 		}
 		if out == nil {
-			out = &TradeResp{Instrument: r.Instrument, Date: r.Date, TimeZone: r.TimeZone}
+			out = &TradeResp{Instrument: r.Instrument, Date: r.Date}
 		}
 		out.List = append(r.List, out.List...)
 		out.Count = len(out.List)
@@ -296,7 +293,7 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 	if err != nil {
 		return nil, err
 	}
-	out := &TradeResp{Instrument: r.Instrument, TimeZone: r.TimeZone, List: []Trade{}}
+	out := &TradeResp{Instrument: r.Instrument, List: []Trade{}}
 	if r.Count == 0 {
 		return out, nil
 	}

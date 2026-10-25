@@ -55,7 +55,7 @@ func TestGbbqQueryEffectiveDate(t *testing.T) {
 			}
 		}
 	}
-	ks := protocol.Klines{{Time: day.AddDate(0, 0, -1), Open: 10000, High: 10000, Low: 10000, Close: 10000}, {Time: day, Open: 9000, High: 9000, Low: 9000, Close: 9000}}
+	ks := protocol.Klines{{Time: day.AddDate(0, 0, -1), Open: 10, High: 10, Low: 10, Close: 10}, {Time: day, Open: 9, High: 9, Low: 9, Close: 9}}
 	if !reflect.DeepEqual(local.GetXRXDs("000001"), remote.GetXRXDs("sz000001")) || len(local.GetXRXDs("000001")) != 1 {
 		t.Fatal("XRXD queries differ")
 	}

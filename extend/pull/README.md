@@ -161,7 +161,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 行情按源日期时分保存：日线 `Time="YYYY-MM-DD"`，分钟线 `Time="YYYY-MM-DD HH:MM"`，均为主键。查询、增量边界和年度分库使用源时间，不依赖主机 `TZ`。`TradingDate` 仅在交易日已确认时填写；扩展行情不推断美股时区或期货夜盘自然日。
 
-标准分钟线额外保存已确认的 `Unix *int64` 和 `TimeZone="UTC+08:00"`；扩展分钟线默认 `Unix=NULL, TimeZone=""`。调用方确认来源时区后可用 `Timestamp(loc)` 显式转换，缺少时区、夏令时跳时或重复时刻会返回错误。日线不生成真实时间戳。
+日线和分钟线均只保存源时间字符串与已确认的交易日；分钟线的 `Unix`、`TimeZone` 字段和 `Timestamp()` 已移除。存储只校验源日期时分格式、年份和范围，不应用夏令时或来源时区规则。已有 `source-time-v1` 库可以继续读写；历史额外列不再映射或使用，也不会自动删列。
 
 数据根目录自动创建 `.time-format`（`source-time-v1`）。不兼容旧 Unix 主键格式；含 `.storage-timezone` 或未标记旧数据库的目录会被拒绝，请配置新的 `Dir` 并重新拉取。不会自动删除、覆盖或迁移旧数据。
 
@@ -292,8 +292,8 @@ ms, err := s.QueryMinute(code, "2026-01-05 09:30", "2026-01-05 15:00")
 lastDay, err := s.LastDayTime(code)
 lastMinute, err := s.LastMinuteTime(code, 2026)
 
-// 仅在已确认源时区时转换，源 Time 保持不变。
-stamp, err := ms[0].Timestamp(protocol.Location())
+// 直接使用源日期时分，不转换为时间戳。
+sourceTime := ms[0].Time
 
 ```
 

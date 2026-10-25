@@ -186,7 +186,7 @@ func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, err := s.QueryMinute(code, "", "")
-	if err != nil || len(rows) != 1 || rows[0].Time != row.Time || !s.MinuteExists(code, 2027) || rows[0].Unix != nil {
+	if err != nil || len(rows) != 1 || rows[0].Time != row.Time || !s.MinuteExists(code, 2027) {
 		t.Fatal("host date displaced source year", rows, err)
 	}
 }

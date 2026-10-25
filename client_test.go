@@ -92,12 +92,9 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		if len(k.Time) != 10 {
 			t.Fatal("daily source date must not include a fabricated close time", k.Time)
 		}
-		if _, err := k.Timestamp(protocol.Location()); err == nil {
-			t.Fatal("daily label converted to actual instant")
-		}
 		if k.Standard != nil {
-			if r.TimeZone != "UTC+08:00" || k.TradingDate != k.Time {
-				t.Fatal("lost standard source timezone/trading date", r.TimeZone, k)
+			if k.TradingDate != k.Time {
+				t.Fatal("lost standard trading date", k)
 			}
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
@@ -105,8 +102,8 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		} else if k.Close != 10.5 || k.Extended.Position != 123 || k.Extended.Price != 10.75 || k.Amount != nil {
 			t.Fatal("lost futures fields or mislabeled position as amount", k)
 		}
-		if k.Extended != nil && (r.TimeZone != "" || k.TradingDate != "") {
-			t.Fatal("guessed extended timezone or trading date", r.TimeZone, k)
+		if k.Extended != nil && k.TradingDate != "" {
+			t.Fatal("guessed extended trading date", k)
 		}
 	}
 }
@@ -917,7 +914,7 @@ func TestMarketClientCloseCancelsInitialRetry(t *testing.T) {
 }
 
 func TestMinuteStandardResponse(t *testing.T) {
-	p := &protocol.PriceNumber{Time: "09:31", Price: 12345, Number: 7}
+	p := &protocol.PriceNumber{Time: "09:31", Price: 12.345, Number: 7}
 	r := &MinuteResp{Count: 99, List: []Minute{{Standard: p}}}
 	out, err := r.StandardResponse()
 	if err != nil || out.Count != 1 || len(out.List) != 1 || out.List[0] != *p {

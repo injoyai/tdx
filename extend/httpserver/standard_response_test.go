@@ -20,7 +20,7 @@ func (*responseClient) GetCount(protocol.Exchange) (int, error) { return 70000, 
 func (c *responseClient) GetTrade(string, uint16, uint16) (*tdx.TradeResp, error) {
 	r := &tdx.TradeResp{Count: 1, List: []tdx.Trade{{}}}
 	if !c.missing {
-		r.List[0].Standard = &protocol.Trade{Price: 10000, Volume: 2}
+		r.List[0].Standard = &protocol.Trade{Price: 10, Volume: 2}
 	}
 	return r, nil
 }
@@ -36,7 +36,7 @@ func (c *responseClient) GetHistoryTradeDay(string, string) (*tdx.TradeResp, err
 func (c *responseClient) GetMinute(string) (*tdx.MinuteResp, error) {
 	r := &tdx.MinuteResp{Count: 1, List: []tdx.Minute{{}}}
 	if !c.missing {
-		r.List[0].Standard = &protocol.PriceNumber{Time: "09:31", Price: 10000, Number: 2}
+		r.List[0].Standard = &protocol.PriceNumber{Time: "09:31", Price: 10, Number: 2}
 	}
 	return r, nil
 }

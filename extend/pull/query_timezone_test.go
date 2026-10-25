@@ -28,7 +28,7 @@ func TestQueryMinuteUsesSourceCalendar(t *testing.T) {
 				t.Fatalf("host=%s rows=%v err=%v", loc, rows, err)
 			}
 			for _, row := range rows {
-				if row.Unix != nil || row.TimeZone != "" || row.TradingDate != "" {
+				if row.TradingDate != "" {
 					t.Fatalf("invented source semantics: %+v", row)
 				}
 			}

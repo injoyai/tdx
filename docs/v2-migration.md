@@ -98,7 +98,7 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 原标准 `Client.GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 的返回类型也分别改为 `[]Quote`、`*KlineResp`、`*MinuteResp`、`*TradeResp`，与 `MarketClient` 相同。日期统一使用有效 `YYYYMMDD` 字符串；代码包含市场前缀，可用 `protocol.Instrument{Exchange: ex, Code: code}.String()` 构造。
 
-统一价格为原币种/报价单位浮点值；未知量单位、扩展分笔价格和金额语义保持显式未确认。需要旧字段或旧数值单位时，从记录的 `Standard/Extended` 获取原始解码结构。例如旧 `quote.Kline.Close.Float64()` 改为统一 `quote.Price`，期货持仓从 `quote.Extended.ChiCang` 读取。标准成交转指标时，将每条 `Trade.Standard` 收集为 `protocol.Trades`；不要把未知扩展量按百股直接换算。
+统一价格为原币种/报价单位浮点值；未知量单位、扩展分笔价格和金额语义保持显式未确认。需要协议特有字段或原始成交量口径时，从记录的 `Standard/Extended` 获取解码结构；标准价格和成交额现在也已改为浮点元值，不再提供整数厘。例如旧 `quote.Kline.Close.Float64()` 改为统一 `quote.Price`，期货持仓从 `quote.Extended.ChiCang` 读取。标准成交转指标时，将每条 `Trade.Standard` 收集为 `protocol.Trades`；不要把未知扩展量按百股直接换算。
 
 `DialDefault/DialExDefault` 仍只连接对应服务，通用 `Get*` 查询其他协议品种会报错；跨市场使用 `NewClient()`。`Client` 与 `MarketClient` 的全部 K线周期、`All/Until` 便捷方法均返回 `KlineResp`；`Until` 的回调参数改为 `Kline`。独立指数 K线查询和 `ExBarsRange` 均已移除，无兼容别名。统一代码路由仍只覆盖已接入的市场；此前直接用任意市场编号调用六组 `Ex*` 的代码，在未接入市场上需使用已有 `SendFrame` 与 `protocol.MEx.Frame*`，不能仅把市场编号替换成未知前缀。
 
@@ -108,7 +108,7 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 `GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。日历实现使用 `*workday.Workday`（`extend/workday`），它是中国市场历史日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
 
-复权和协议数据处理可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取原始字段，不从浮点价格重建整数，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的股数，不能直接作为整数手输入交给 VWAP 或本地文件写入器；这些场景使用新增的 `KlineResp.Klines()`：
+复权和协议数据处理可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取保留的标准解码结构，价格和成交额已为浮点元值，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的股数，不能直接作为整数手输入交给 VWAP 或本地文件写入器；这些场景使用新增的 `KlineResp.Klines()`：
 
 ```go
 r, err := c.GetKlineDayAll("sz000001")
@@ -149,14 +149,14 @@ HTTP 查询直接返回统一函数的结果，包含证券标识和单位；不
 | 已移除的入口 | v2 用法 |
 |---|---|
 | `protocol.TypeMinuteTrade` / `TypeHistoryMinuteTrade` | `TypeTrade` / `TypeHistoryTrade`，消息数值不变 |
-| `protocol.Factor.QFQ` / `HFQ` | `QFQPrice(raw)` / `HFQPrice(raw)`，或使用 `Mul * raw.Float64() + Add` |
+| `protocol.Factor.QFQ` / `HFQ` | `QFQPrice(raw)` / `HFQPrice(raw)`，或使用 `Mul * raw + Add` |
 | `PreKline.PreLast` / `Factor.PreLast` / `QFQFactor()` / `HFQFactor()` | `XRXDs.Pre(ks).Factors()` 获取仿射系数；单事件参考价用 `XRXD.Pre(raw)` |
 | `extend.Kline` / `extend.Klines` | 指标使用 `protocol.Kline/Klines`；落库模型使用 `pull.KlineDay/KlineMinute`，注意单位转换 |
 | `extend.Klines.REF/HHV/LLV` | 调用方检查长度后按切片取值或遍历计算高低值 |
 | `extend.Info` | 调用方按需要组合行情、股本和换手率数据 |
 | `extend.DefaultDayKlineExportTitle` / `DefaultMinuteKlineExportTitle` | CSV 导出使用 `KlinesToCSV`；自定义列由调用方定义 |
 
-`protocol.Klines` 成为唯一指标实现。VWAP 的输入成交量须为手，成交额须为厘；`pull` 查询结果使用股和元，需要先转换。标准行情指数日线的解码成交量为股，调用 VWAP 前也需转为手。VWAP 修正手股换算，ATR 使用最近 n 个真实波幅，RSI 在纯上涨窗口返回 100、平盘窗口返回 0。RSI/ATR 为已有的简单滚动窗口口径，不改为其他平滑算法。
+`protocol.Klines` 成为唯一指标实现。VWAP 的输入成交量须为手，成交额为元；`pull` 查询结果使用股和元，只需转换成交量。标准行情指数日线的解码成交量为股，调用 VWAP 前也需转为手。VWAP 修正手股换算，ATR 使用最近 n 个真实波幅，RSI 在纯上涨窗口返回 100、平盘窗口返回 0。RSI/ATR 为已有的简单滚动窗口口径，不改为其他平滑算法。
 
 第三方爬虫使用 `spider.Factor/Factors`，它们是数据源返回的比例模型，不等同于通达信仿射复权模型。
 
@@ -340,7 +340,7 @@ import (
 
 `Dir` 必须显式设置；`StartAt` 改用 `YYYYMMDD` 字符串，未设置时默认最近两年，非法格式或不存在的日期在创建服务时直接报错，且不会创建数据库。`Day` 与 `Minute` 都为 `false` 时默认同时拉取两种数据。服务使用完成后调用 `s.Close()`，外部连接池仍由调用方关闭。
 
-日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。将标准价格交给使用厘单位的 `protocol` API 时需转换单位。示例见 [PullV2](../examples/PullV2/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
+日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`；价格与已确认金额使用证券原币种或报价单位，已确认单位的股票/ETF/指数/板块及港股日线成交量为股。新增 `AmountUnknown` 列区分未知金额和真实零值；内置扩展适配器写入 `Amount=0, AmountUnknown=true`。旧库通过原有 Sync2 流程加列，查询内置扩展市场的历史金额也标为未知并返回 0，不批量覆盖旧金额；直接 SQL 访问旧列仍须自行识别这些旧值。聚合包含未知金额时，金额也返回未知。`protocol` 的价格和成交额也为浮点元值，不再乘 1000。示例见 [PullV2](../examples/PullV2/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
 内置市场的参数和倍率集中于 `Market.Info()`。K 线倍率：股票/ETF、可转债、其他国内品种、港股主板为 100，标准指数/板块、美股及期货为 1。报价/分时/分笔使用 `TickVolumeScale`。港股指数保留正倍率 1，但缺少股数口径，统一成交数量接口拒绝。所有转换拒绝零/负倍率，不再使用隐藏兜底。
 
@@ -376,7 +376,7 @@ Go 最低版本为 1.25.0。默认数据目录从 `./data` 调整为 `./output/d
 
 ## 源时间、交易日与真实时刻
 
-统一 API 的日／周／月／季／年 K 线 `Time` 只返回源日期 `YYYY-MM-DD`；日内 K 线保留 `YYYY-MM-DD HH:MM`。不再为日期标签添加 `15:00`。`Kline.TradingDate` 仅在确认时返回；扩展行情为空。`KlineResp` / `MinuteResp` / `TradeResp` 的 `TimeZone` 为来源时区：标准行情固定 `UTC+08:00`，扩展未知为空。显示时区由调用方处理，不改变源值。
+统一 API 的日／周／月／季／年 K 线 `Time` 只返回源日期 `YYYY-MM-DD`；日内 K 线保留 `YYYY-MM-DD HH:MM`。不再为日期标签添加 `15:00`。`Kline.TradingDate` 仅在确认时返回；扩展行情为空。`KlineResp` / `MinuteResp` / `TradeResp` 已移除 `TimeZone`，不再附加来源时区或生成时间戳；源时间字符串保持原值。
 
 标准原始协议和本地文件的 `time.Time` 保留固定东八区约定，协议日线 15:00、本地日线 00:00 为内部日期标签，不代表所有市场的成交或收盘时刻。交易日判断和内置中国市场定时任务仍使用东八区，不依赖主机 `TZ`。
 
@@ -385,14 +385,16 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 | 旧接口／字段 | 新接口／字段 |
 | --- | --- |
 | 日线 `Unix int64` 主键 | `Time string` 源日期主键 |
-| 分钟线 `Unix int64` 主键 | `Time string` 源日期时分主键；`Unix *int64` 仅存已确认的真实时刻，配套 `TimeZone` |
+| 分钟线 `Unix int64` 主键 | `Time string` 源日期时分主键；不再保留 `Unix` / `TimeZone` 附加字段 |
 | `LastDayUnix` / `LastMinuteUnix` / `LastUnix` | `LastDayTime` / `LastMinuteTime` / `LastTime`，空库返回空字符串 |
 | `QueryDay` / `QueryMinute` 的 `time.Time` 边界 | 源日期／日期时分字符串闭区间，空字符串不限端点 |
 | Save／coverage／empty-scan 的 Unix 边界 | 同一源时间格式的字符串边界 |
 | `DayToCalendar(ks, period, loc)` | `DayToCalendar(ks, period)`，优先已知交易日，否则源日期 |
 | `MinuteToSessions(ks, n, loc, sessions)` | `MinuteToSessions(ks, n, sessions)`，按源钟面时段，不推断夜盘交易日 |
 
-`KlineDay` / `KlineMinute` 的 `TradingDate` 未知为空。标准分钟数据及标准分笔合成值带真实 `Unix` 和固定东八区标签，扩展分钟数据默认二者为空。年度文件、增量和聚合都按源时间，不再借助 Unix 恢复日期。调用 `Kline.Timestamp(loc)`、`KlineMinute.Timestamp(loc)` 或 `protocol.ParseSourceTime` 时必须显式提供已确认的来源时区；仅有日期、未知时区、夏令时跳时或重复时刻均返回错误。显式存储 Unix 必须与同一转换规则的结果完全相等，不接受源分钟标签未包含的秒值或夏令时歧义；拒绝写入时不改动已有数据和覆盖标记。
+`KlineDay` / `KlineMinute` 的 `TradingDate` 未知为空。标准、扩展和分笔合成分钟线统一只保存源日期时分，年度文件、增量和聚合均按源时间处理。`Kline.Timestamp(loc)`、`KlineMinute.Timestamp(loc)` 和 `protocol.ParseSourceTime` 已移除；存储仅校验合法的源日期时分、年份和范围，不根据来源时区或夏令时解释钟面值。
+
+已有 `source-time-v1` 库可以继续读写，不更改时间格式标记。旧分钟表里的额外 `Unix` / `TimeZone` 列不再映射或使用，新表不再创建这两列；不会自动删列或清理旧数据。旧代码须删除这些字段的赋值和转换方法调用；行情 JSON 不再包含 `TimeZone` / `Unix`。这不改变内部标准协议 `time.Time`、交易日历及缓存过期检查的既有时间处理。
 
 
 ### 重复逻辑收敛后的兼容边界
@@ -443,7 +445,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 | `protocol.UTF8ToGBK` | `protocol.GBKToUTF8` |
 | `(*protocol.Trade).AvgPrice()` | `(*protocol.Trade).AvgAmount()` |
 
-旧入口已移除，调用方需同步更新名称。`GBKToUTF8` 保持原来的 GBK 解码为 UTF-8、去除 NUL 字节的行为；没有反转转换方向。`AvgAmount()` 保持平均每单成交量乘成交价格、再换算百股单位的公式，返回成交额，单位仍为厘，`.Float64()` 得元。扩展分时记录 `ExMinuteTick.AvgPrice` 的均价字段及其 JSON 键 `avgPrice` 保持不变。
+旧入口已移除，调用方需同步更新名称。`GBKToUTF8` 保持原来的 GBK 解码为 UTF-8、去除 NUL 字节的行为；没有反转转换方向。`AvgAmount()` 保持平均每单成交量乘成交价格、再换算百股单位的公式，返回成交额，现统一为浮点元值。扩展分时记录 `ExMinuteTick.AvgPrice` 的均价字段及其 JSON 键 `avgPrice` 保持不变。
 
 
 ## 命名一致性整理
@@ -504,3 +506,23 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 - 数据库保留正常建表、原生/合成分钟覆盖语义、时区隔离与事务保护，不承诺旧库字段或数据口径自动迁移。
 
 详见 [HTTP 服务](../extend/httpserver/README.md)。
+
+
+## 价格统一为 float64
+
+`protocol.Price`、`protocol.Yuan` 和价格的 `.Float64()` / `.Int64()` / `.Abs()` 方法已移除，无兼容别名。标准 `Kline` 的昨收/OHLC/成交额、`Trade.Price`、`PriceNumber.Price`、五档和集合竞价价格，以及 `Factor.Last` 均改为 `float64`，单位由整数厘改为元。价格差、成交额、均价及 MA/EMA/MACD/BOLL/ATR/VWAP 也返回浮点元值；RSI 保持整数百分比返回值，内部计算使用浮点涨跌额。
+
+```go
+// 旧：Close: protocol.Price(12340)，或 protocol.Yuan(12.34)
+k := &protocol.Kline{Close: 12.34, Amount: 123400.50}
+price := k.Close                // 直接使用元值
+adjusted := factor.QFQPrice(price)
+difference := math.Abs(k.High - k.Low)
+```
+
+- 标准报价的整数分、K 线/实时分时的整数厘和历史分时/分笔的差值仍按协议尺度解码；累计差值先用整数求和，再转换为浮点，避免累计误差。`GetPrice` 现在返回整数厘除以 1000 的浮点元值；只需要原始整数时使用 `CutInt64`。
+- 统一业务接口及 `pull` 数据库已有的价格/金额单位保持不变。`Standard`、`StandardResponse()`、集合竞价及直接返回协议模型的 JSON 价格/金额由整数厘变为浮点元值；已有手写整数厘字面量及序列化快照须主动除以 1000 后迁移，不能按新单位直接读取旧 JSON。
+- 扩展分笔 `ExTradeTick.Price` 仍为未确认尺度的原始 `uint32`，业务 `Trade.Price` 仍为 `nil`；这不是已归一化的价格，不猜测换算。
+- 指标不再截断为整数厘，可能与旧版结果有小幅差异。复权 `QFQPrice/HFQPrice` 仍按现有约定四舍五入到分；`XRXD.Pre` 返回未截断的浮点参考价。
+- `.day/.lc1/.lc5` 的磁盘格式不变：日线价格在写入时四舍五入到整数分，分钟价格/金额保留文件原有的 `float32` 精度，读取时不再截断为厘。写入器拒绝 NaN、Inf 和超出格式范围的值；日线价格还必须处于无符号整数分范围。成交量单位和尾盘占位规则保持不变。
+- `float64` 仍有二进制表示误差；计算结果比较应按来源精度和业务容差处理，不提供精确十进制结算保证。

@@ -12,6 +12,42 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+func TestWriteDayFloatPrices(t *testing.T) {
+	k := &protocol.Kline{
+		Time: time.Date(2026, 7, 8, 0, 0, 0, 0, protocol.Location()),
+		Open: 0.29, High: 10.056, Low: 0.01, Close: 10.05, Amount: 123.125, Volume: 2,
+	}
+	b, err := WriteDay("sz000001", protocol.Klines{k})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []uint32{29, 1006, 1, 1005} {
+		if got := binary.LittleEndian.Uint32(b[4+i*4:]); got != want {
+			t.Errorf("price %d: %d, want %d", i, got, want)
+		}
+	}
+	if got := math.Float32frombits(binary.LittleEndian.Uint32(b[20:])); got != 123.125 {
+		t.Fatal("amount unit", got)
+	}
+}
+
+func TestWritersRejectUnrepresentablePrices(t *testing.T) {
+	for _, write := range []func(string, protocol.Klines) ([]byte, error){WriteDay, WriteMinute1, WriteMinute5} {
+		for _, bad := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), math.MaxFloat64} {
+			for _, k := range (protocol.Klines{{Close: bad}, {Amount: bad}}) {
+				if b, err := write("sz000001", protocol.Klines{k}); err == nil || b != nil {
+					t.Fatal("accepted invalid float", bad, err)
+				}
+			}
+		}
+	}
+	for _, bad := range []float64{-1, float64(math.MaxUint32)/100 + 0.01} {
+		if _, err := WriteDay("sz000001", protocol.Klines{{Close: bad}}); err == nil {
+			t.Fatal("accepted out-of-range integer price", bad)
+		}
+	}
+}
+
 func writeLocalFixture(t *testing.T, dir, code, sub, ext string, data []byte) {
 	t.Helper()
 	filename := filepath.Join(dir, "vipdoc", code[:2], sub, code+ext)
@@ -47,9 +83,9 @@ func TestReadDay(t *testing.T) {
 				t.Fatalf("records=%d, want 1", len(ks))
 			}
 			k := ks[0]
-			if k.Time.Format("20060102") != "20260708" || k.Open != protocol.Yuan(10.5) ||
-				k.High != protocol.Yuan(11) || k.Low != protocol.Yuan(10) || k.Close != protocol.Yuan(10.8) ||
-				k.Volume != 200 || k.Amount != protocol.Yuan(216000) {
+			if k.Time.Format("20060102") != "20260708" || k.Open != 10.5 ||
+				k.High != 11 || k.Low != 10 || k.Close != 10.8 ||
+				k.Volume != 200 || k.Amount != 216000 {
 				t.Fatalf("unexpected daily record: %+v", k)
 			}
 		})
@@ -99,7 +135,7 @@ func TestReadMinute(t *testing.T) {
 				}
 				k := ks[0]
 				if k.Time.Format("2006010215:04") != "2026070809:31" ||
-					(k.Close-protocol.Yuan(10.8)).Abs() > 1 || k.Volume != 200 || k.Amount != protocol.Yuan(216000) {
+					k.Close != float64(float32(10.8)) || k.Volume != 200 || k.Amount != 216000 {
 					t.Fatalf("unexpected minute record: %+v", k)
 				}
 			})
@@ -112,8 +148,8 @@ func TestWriteMinutePlaceholder(t *testing.T) {
 	// 跨两个交易日,每个交易日含 9:31 与 15:00 两分钟数据
 	mk := func(day int, h, m int, vol int64) *protocol.Kline {
 		return &protocol.Kline{
-			Open: protocol.Yuan(10.5), High: protocol.Yuan(11.0), Low: protocol.Yuan(10.0), Close: protocol.Yuan(10.8),
-			Amount: 15534000, Volume: vol, Time: time.Date(2026, 7, day, h, m, 0, 0, time.Local),
+			Open: 10.5, High: 11.0, Low: 10.0, Close: 10.8,
+			Amount: 15534, Volume: vol, Time: time.Date(2026, 7, day, h, m, 0, 0, time.Local),
 		}
 	}
 	ks := protocol.Klines{
@@ -160,8 +196,8 @@ func TestWriteMinutePlaceholderDedup(t *testing.T) {
 	// 模拟实时拉取数据: 14:58真实, 14:59占位(量=0额=0), 15:00收盘 —— 已含尾盘占位
 	mk := func(h, m int, vol int64, amt int64) *protocol.Kline {
 		return &protocol.Kline{
-			Open: protocol.Yuan(10.5), High: protocol.Yuan(11.0), Low: protocol.Yuan(10.0), Close: protocol.Yuan(10.8),
-			Amount: protocol.Price(amt), Volume: vol, Time: time.Date(2026, 7, 8, h, m, 0, 0, time.Local),
+			Open: 10.5, High: 11.0, Low: 10.0, Close: 10.8,
+			Amount: float64(amt) / 1000, Volume: vol, Time: time.Date(2026, 7, 8, h, m, 0, 0, time.Local),
 		}
 	}
 	ks := protocol.Klines{
@@ -183,8 +219,8 @@ func TestWriteMinutePlaceholderDedup(t *testing.T) {
 func TestWriteMinutePartialDay(t *testing.T) {
 	day := time.Date(2026, 10, 12, 0, 0, 0, 0, time.Local)
 	ks := protocol.Klines{
-		&protocol.Kline{Time: day.Add(9*time.Hour + 31*time.Minute), Close: 10000, Volume: 1, Amount: 10000},
-		&protocol.Kline{Time: day.Add(9*time.Hour + 32*time.Minute), Close: 10000, Volume: 1, Amount: 10000},
+		&protocol.Kline{Time: day.Add(9*time.Hour + 31*time.Minute), Close: 10, Volume: 1, Amount: 10},
+		&protocol.Kline{Time: day.Add(9*time.Hour + 32*time.Minute), Close: 10, Volume: 1, Amount: 10},
 	}
 	bs, err := WriteMinute1("sz000001", ks)
 	if err != nil || len(bs) != 64 {
@@ -200,8 +236,8 @@ func TestWriteMinutePartialDay(t *testing.T) {
 // TestWriteDayVolume 验证日线成交量单位: 股票写 手×100=股,指数原样写手
 func TestWriteDayVolume(t *testing.T) {
 	k := &protocol.Kline{
-		Open: protocol.Yuan(10.5), High: protocol.Yuan(11.0), Low: protocol.Yuan(10.0), Close: protocol.Yuan(10.8),
-		Amount: 15534000, Volume: 13808, Time: time.Date(2026, 7, 8, 0, 0, 0, 0, time.Local),
+		Open: 10.5, High: 11.0, Low: 10.0, Close: 10.8,
+		Amount: 15534, Volume: 13808, Time: time.Date(2026, 7, 8, 0, 0, 0, 0, time.Local),
 	}
 	ks := protocol.Klines{k}
 	// 股票

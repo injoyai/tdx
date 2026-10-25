@@ -19,10 +19,13 @@ func TestIntegerReaderConsistency(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			original := append([]byte(nil), tc.input...)
+			rest, price := GetPrice(tc.input)
+			if price != float64(tc.want)/1000 || !bytes.Equal(rest, tc.tail) || (rest == nil) != (tc.tail == nil) {
+				t.Fatal(rest, price)
+			}
 			for _, read := range []func([]byte) ([]byte, int64){
 				CutInt64,
 				func(b []byte) ([]byte, int64) { rest, v := CutInt(b); return rest, int64(v) },
-				func(b []byte) ([]byte, int64) { rest, v := GetPrice(b); return rest, int64(v) },
 			} {
 				rest, v := read(tc.input)
 				if v != tc.want || !bytes.Equal(rest, tc.tail) || (rest == nil) != (tc.tail == nil) {

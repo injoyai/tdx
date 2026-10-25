@@ -82,7 +82,7 @@ func (callAuction) Decode(bs []byte) (*CallAuctionResp, error) {
 		minute := int(n % 60)
 
 		a := &CallAuction{
-			Price:     Price(Float32(bs[2:6]) * 1000),
+			Price:     float64(Float32(bs[2:6])),
 			Match:     int64(Uint32(bs[6:10])),
 			Unmatched: int64(int32(Uint32(bs[10:14]))),
 			Flag:      1,
@@ -116,7 +116,7 @@ type CallAuctionResp struct {
 
 type CallAuction struct {
 	Time      time.Time //时间
-	Price     Price     //价格
+	Price     float64   // 集合竞价价格，元；保留源 float32 精度，不截断到厘
 	Match     int64     //匹配量
 	Unmatched int64     //未匹配量（已取绝对值，方向见 Flag）
 	Flag      int8      //标志,1表示未匹配量是买单（买盘排队），-1表示未匹配量是卖单（卖盘排队）
