@@ -220,7 +220,7 @@ if err != nil {
 defer m.Close()
 ```
 
-`pull.Config.Manage`、`Service.Manage()` 和 `pulltrade.PullTrade` 的管理器参数同步改为 `*manage.Manage`。代码接口、模型和缓存工厂位于 `extend/codes`；股本缓存位于 `extend/gbbq`；连接池和 `tdx.DialClientFunc` 仍在根包，数据库工厂为 `xorms.DialFunc`。代码缓存配置使用 `codes.WithClient` 等入口；交易日历已迁至 `extend/workday`，更新标记及定时工具迁至 `lib/update`。缓存路径、自动更新及资源归属不因迁移改变。用法见 [manage 包说明](../extend/manage/README.md)。
+`pull.Config.Manage`、`Service.Manage()` 和 `pull.Trade` 的管理器参数同步改为 `*manage.Manage`。代码接口、模型和缓存工厂位于 `extend/codes`；股本缓存位于 `extend/gbbq`；连接池和 `tdx.DialClientFunc` 仍在根包，数据库工厂为 `xorms.DialFunc`。代码缓存配置使用 `codes.WithClient` 等入口；交易日历已迁至 `extend/workday`，更新标记及定时工具迁至 `lib/update`。缓存路径、自动更新及资源归属不因迁移改变。用法见 [manage 包说明](../extend/manage/README.md)。
 
 `manage.Manage.Close()` 先停止工作日任务调度，按创建顺序的逆序释放内部缓存和连接池，再等待正在执行的任务退出，避免任务等待空连接池时互相阻塞；初始化失败也执行相同清理。关闭没有强制截止时间，任务自身须有界退出；外部共享连接池的阻塞由调用方解除。`WithPool` / `WithCodes` / `WithWorkday` / `WithGbbq` 直接注入的资源仍由调用方关闭；相应 `WithDial*` 工厂返回的资源归管理器所有。pull 懒加载的股本缓存也由管理器释放。`httpserver.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化或监听失败会返回错误并关闭自建缓存；两者共用按 URL 路径匹配的路由，支持查询参数，保持原始 JSON 列表/映射返回。
 
@@ -404,7 +404,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 - `protocol.DecodeCode` 对已接入市场复用 `ParseInstrument`，港股指数前缀、点分隔前缀、交易所后缀和美股点代码使用同一规则。未接入统一 Client 的原始协议市场仍保留旧解析能力，不代表统一 Client 已支持该市场。
 - pull 的内置代码解析也复用这套规则，`000001.SZ` 归深市、`BRK.B` 归美股；完整市场键及已注册自定义市场继续保留。`ParseCode` 不再将任意 `unknown.code` 静默当成市场；需要自定义市场时先注册 Unit。`SplitKey` 已移除，统一使用有错误返回的 `ParseCode`。
 - 标准分笔解码的钟面值现带固定东八区标签，修正原有 UTC 标签；日期与时分保持不变，Unix 值会相差八小时。`Trades.Klines` 保留输入交易日的时区，不再借用主机时区恢复日期。本地日线保持 00:00，协议日线/同花顺日线保持 15:00；同花顺金额按交易日期关联。
-- `PullTrade` 的 5/15/30/60 分钟 CSV 使用 `Merge241`：09:30 竞价单独保留，后续按连续交易分钟聚合，保留 11:30/13:01 午休边界。记录数和总量额不变，首根及各周期终点修正。已有 CSV 如需统一口径，应另行重新导出。
+- `pull.Trade` 的 5/15/30/60 分钟 CSV 使用 `Merge241`：09:30 竞价单独保留，后续按连续交易分钟聚合，保留 11:30/13:01 午休边界。记录数和总量额不变，首根及各周期终点修正。已有 CSV 如需统一口径，应另行重新导出。
 - HTTP 基础行情直接返回统一结果；`StandardResponse()` 仅用于确实需要原始协议记录的复权、指标和存储适配。交易所参数支持混合大小写。
 - `GetReportFile` 与 `GetBlockFileRaw` 共享单块校验，超长响应现在返回错误；前者仍按短块/空块结束，后者仍要求达到元数据声明的文件大小。
 - `protocol.DecodeKline` 及 `lib/gbbq` 的 `GetStocks/Equity/Equities/Turnover` 旧派生模型已移除。离线文件保留原始 `GBBQ/GBBQs` 解密结果，文件单位未独立核实，不自动转换为网络股本模型。
@@ -487,7 +487,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 |---|---|
 | `extend.ReadDay/ReadMinute1/ReadMinute5`、`WriteDay/WriteMinute1/WriteMinute5` | `extend/local` |
 | `extend.KlinesToCSV/TradesToCSV` | `extend/export` |
-| `extend.NewPullTrade/PullTrade` | `extend/pulltrade` |
+| `extend.NewPullTrade/PullTrade` | `extend/pull.NewTrade/Trade` |
 | `extend.GetSinaFactor*`、`GetTHSDayKline*`、`Factor/Factors` 及新浪/同花顺常量 | `extend/spider` |
 | `extend.ListenCodesHTTP/ListenCodesAndGbbqHTTP` | `extend/httpserver` |
 | `extend.DialCodesHTTP/DialGbbqHTTP`、`CodesHTTP/GbbqHTTP` | `extend/metadatahttp` |
@@ -539,3 +539,16 @@ difference := math.Abs(k.High - k.Low)
 `spider.GetTHSDayKline` 不再舍入成交量：源股数不是非负整数、溢出或不能整除 100 时返回错误；Full 系列的不复权数据也统一为整数手。
 
 `workday` 刷新直接使用 Client 的 `Time` 源日期，不再要求 `Standard` 原始记录。非法日期导致本轮插入失败；既有固定东八区 15:00 的 Unix 缓存键、数据库结构和交易日查询方式不变。
+
+
+### 历史分笔下载并入 pull
+
+`extend/pulltrade` 包已删除，功能直接移入 `extend/pull`，不保留兼容转发或类型别名。
+
+| 旧入口 | 当前入口 |
+| --- | --- |
+| `pulltrade.NewPullTrade(dir)` | `pull.NewTrade(dir)` |
+| `pulltrade.PullTrade` | `pull.Trade` |
+| `downloader.Pull(ctx, m, code)` / `PullYear(ctx, m, year, code)` | 方法及参数保持不变 |
+
+调用方将 import 改为 `github.com/injoyai/tdx/v2/extend/pull`，并更新构造函数和类型名。分笔请求、交易日遍历、错误传播、取消检查、CSV 路径、各周期合成及量额口径保持不变；CSV 编码仍由 `extend/export` 负责。该下载器使用调用方提供的管理器，不引入 K 线 Service 的数据库和更新标记初始化。

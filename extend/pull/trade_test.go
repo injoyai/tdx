@@ -1,4 +1,4 @@
-package pulltrade
+package pull
 
 import (
 	"context"
@@ -33,7 +33,7 @@ type tradeTestCodes struct{ codes.Interface }
 
 func (tradeTestCodes) GetName(string) string { return "测试股票" }
 
-func TestPullTradePeriods(t *testing.T) {
+func TestTradePeriods(t *testing.T) {
 	var c tdx.Client
 	reader, server := net.Pipe()
 	t.Cleanup(func() { server.Close() })
@@ -113,7 +113,7 @@ func TestPullTradePeriods(t *testing.T) {
 	t.Cleanup(func() { w.Close() })
 	dir := t.TempDir()
 	m := &manage.Manage{ClientPool: tradeTestPool{c: c}, Workday: w, Codes: tradeTestCodes{}}
-	if err := NewPullTrade(dir).PullYear(context.Background(), m, 2025, "sz000001"); err != nil {
+	if err := NewTrade(dir).PullYear(context.Background(), m, 2025, "sz000001"); err != nil {
 		t.Fatal(err)
 	}
 	for _, period := range []int{1, 5, 15, 30, 60} {

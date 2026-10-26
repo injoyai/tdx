@@ -6,15 +6,14 @@
 |---|---|---|
 | `extend/local` | 通达信 `.day/.lc1/.lc5` 本地文件编解码 | `ReadDay`、`ReadMinute1/5`、`WriteDay`、`WriteMinute1/5` |
 | `extend/export` | 标准行情 K 线与分笔 CSV 导出 | `KlinesToCSV`、`TradesToCSV` |
-| `extend/pulltrade` | 按交易日下载历史分笔并导出各周期 CSV | `NewPullTrade`、`PullTrade.Pull/PullYear` |
 | `extend/spider` | 新浪、同花顺数据源及其比例复权因子 | `GetSinaFactor*`、`GetTHSDayKline*`、`Factor/Factors` |
 | `extend/httpserver` | 行情 HTTP 服务，以及独立代码/股本 HTTP 服务 | `New`、`ListenCodesHTTP`、`ListenCodesAndGbbqHTTP` |
 | `extend/metadatahttp` | 从 HTTP 服务定时刷新代码表和股本缓存 | `DialCodesHTTP`、`DialGbbqHTTP` |
 | `extend/codes`、`extend/gbbq`、`extend/workday` | 代码、股本与交易日历缓存 | 各包 `New` |
 | `extend/manage` | 组合缓存、连接池与工作日任务 | `New` |
-| `extend/pull`、`extend/pull/market` | 多市场 K 线拉取、存储与市场适配 | `pull.New`；空导入 `market` 注册内置市场 |
+| `extend/pull`、`extend/pull/market` | 多市场 K 线拉取、存储、历史分笔下载导出与市场适配 | `pull.New`、`pull.NewTrade`；空导入 `market` 注册内置市场 |
 
-`pull` 管理日线/分钟线 SQLite 数据；`pulltrade` 是独立的分笔 CSV 导出工具。后者复用协议分笔合成与 CSV 编码，仅保留年度分笔和 1 分钟数据，其他周期逐个派生导出，不维护另一套行情数据库。
+`pull.Service` 管理日线/分钟线 SQLite 数据；同包的 `pull.Trade` 负责历史分笔及合成分钟线 CSV 下载导出。CSV 编码继续复用 `extend/export`，仅保留年度分笔和 1 分钟数据，其他周期逐个派生导出。
 
 根包 `extend` 只提供 `DoIncomes` 收益计算。其余功能直接导入职责子包，不提供旧入口、转发函数或类型别名。
 

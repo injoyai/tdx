@@ -4,9 +4,21 @@
 
 只存**日线 + 1分钟线**原始数据，其余周期（5/15/30/60 分钟、N 日等）由查询侧纯内存派生，不落盘。周期合并保留原始浮点精度，不转换成整数厘。
 
-v2 的 K 线拉取统一使用本服务。`extend/pulltrade` 只负责历史分笔及合成分钟线 CSV 导出，不参与本服务的存储、增量或兜底调度。原 `extend.PullKline` 已移除，调用方式与旧数据库处理见 [v2 迁移指南](../../docs/v2-migration.md)。
+v2 的 K 线及历史分笔拉取统一放在本包。`Service` 负责 K 线 SQLite 存储，`Trade` 负责历史分笔及合成分钟线 CSV 下载导出。原 `extend.PullKline` 已移除，调用方式与旧数据库处理见 [v2 迁移指南](../../docs/v2-migration.md)。
 
 ---
+
+## 历史分笔下载与 CSV 导出
+
+```go
+downloader := pull.NewTrade("./output/trade")
+err := downloader.PullYear(ctx, m, 2025, "sz000001")
+```
+
+`ctx` 为 `context.Context`，`m` 为已初始化连接池、交易日历和代码缓存的 `*manage.Manage`，由调用方关闭。`PullYear` 按指定年份下载，`Pull` 从 2000 年到当前年份逐年执行；使用标准行情分笔及沪深 241 分钟合成规则。
+
+输出仍按 `分时成交/1分钟/5分钟/15分钟/30分钟/60分钟/{代码}-{年份}.csv` 保存，保留原表头、UTF-8 BOM、竞价和午休边界。该入口复用 `extend/export` 编码，不创建 `Service` 或 SQLite 行情库；无需导入 `market` 注册市场。旧分笔下载包已移除，调用迁移见 [v2 迁移指南](../../docs/v2-migration.md#历史分笔下载并入-pull)。
+
 
 ## 🧩 架构
 

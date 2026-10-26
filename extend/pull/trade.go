@@ -1,5 +1,4 @@
-// Package pulltrade 按交易日下载历史分笔，并导出分笔及各分钟周期 CSV。
-package pulltrade
+package pull
 
 import (
 	"context"
@@ -14,17 +13,19 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func NewPullTrade(dir string) *PullTrade {
-	return &PullTrade{
+// NewTrade 创建历史分笔下载器，分笔及合成分钟线 CSV 写入 dir。
+func NewTrade(dir string) *Trade {
+	return &Trade{
 		Dir: dir,
 	}
 }
 
-type PullTrade struct {
+// Trade 按交易日下载历史分笔并导出 CSV；管理器资源由调用方持有。
+type Trade struct {
 	Dir string
 }
 
-func (p *PullTrade) Pull(ctx context.Context, m *manage.Manage, code string) error {
+func (p *Trade) Pull(ctx context.Context, m *manage.Manage, code string) error {
 	for i := 2000; i <= time.Now().Year(); i++ {
 		select {
 		case <-ctx.Done():
@@ -38,7 +39,7 @@ func (p *PullTrade) Pull(ctx context.Context, m *manage.Manage, code string) err
 	return nil
 }
 
-func (p *PullTrade) PullYear(ctx context.Context, m *manage.Manage, year int, code string) (err error) {
+func (p *Trade) PullYear(ctx context.Context, m *manage.Manage, year int, code string) (err error) {
 
 	tss := protocol.Trades{}
 	kss1 := protocol.Klines(nil)
