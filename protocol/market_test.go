@@ -1,6 +1,9 @@
 package protocol
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestUnknownMarketDefaults(t *testing.T) {
 	for _, market := range []Market{"", "custom"} {
@@ -15,5 +18,45 @@ func TestUnknownMarketDefaults(t *testing.T) {
 		if info.Day.VolumeScale != 100 || info.Minute.VolumeScale != 100 {
 			t.Fatalf("%q should default all volume scales to 100: %+v", market, info)
 		}
+	}
+}
+
+func TestMarketTimeZones(t *testing.T) {
+	for _, tc := range []struct {
+		market       Market
+		zone         string
+		winterOffset int
+		summerOffset int
+	}{
+		{MarketAStock, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketIndex, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketEtfLof, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketBond, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketOther, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketBlock, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketFuture, "Asia/Shanghai", 8 * 3600, 8 * 3600},
+		{MarketHK, "Asia/Hong_Kong", 8 * 3600, 8 * 3600},
+		{MarketHKIndex, "Asia/Hong_Kong", 8 * 3600, 8 * 3600},
+		{MarketUS, "America/New_York", -5 * 3600, -4 * 3600},
+	} {
+		t.Run(tc.market.String(), func(t *testing.T) {
+			info, known := tc.market.Info()
+			if !known || info.TimeZone != tc.zone {
+				t.Fatalf("unexpected market time zone: %+v, known=%v", info, known)
+			}
+			loc, err := time.LoadLocation(info.TimeZone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, date := range []struct {
+				month  time.Month
+				offset int
+			}{{time.January, tc.winterOffset}, {time.July, tc.summerOffset}} {
+				at := time.Date(2026, date.month, 15, 12, 0, 0, 0, loc)
+				if _, offset := at.Zone(); offset != date.offset {
+					t.Fatalf("%s: UTC offset=%d, want %d", at, offset, date.offset)
+				}
+			}
+		})
 	}
 }

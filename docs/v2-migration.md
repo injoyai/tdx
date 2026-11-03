@@ -2,6 +2,14 @@
 
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
+## 市场默认时区
+
+`protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回按市场硬编码的 IANA 时区，供调用方调度使用：国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
+
+`Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。全部内置枚举项均硬编码对应时区，新增枚举项时须先查证并填写时区，不新增缺少时区的运行时校验或错误返回。
+
+此字段不恢复行情结果中已删除的 `TimeZone`、`Unix` 或 `Timestamp()`，不改变源时间字符串、SQLite 格式和 pull 调度行为。无需迁移已有行情数据库。`MarketInfo` 结构体字面量应使用字段名初始化，避免新增字段影响按位置初始化的代码。使用示例见 [统一接口文档](unified-client.md)。
+
 ## 成交量统一为最小单位
 
 `Quote`、`KlineResp`、`MinuteResp`、`TradeResp` 移除 `VolumeUnit`，`VolumeUnknown` 和 `protocol.VolumeUnit` 枚举也移除。统一成交量及五档买卖量使用股票股数、期货合约张数；HTTP、分页结果和停止回调使用相同口径。调用方删除原先依据单位再乘 100 的代码，避免重复转换。原始 `Standard/Extended/RangeExtended` 与 `StandardResponse()` 保留各自的协议单位；指标或本地文件编码使用 `KlineResp.Klines()`，由它将统一股数转为整数手。

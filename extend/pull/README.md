@@ -117,6 +117,8 @@ func main() {
 
 `Market.Info()` 返回行情协议、解码分类、日线/1 分钟线的请求类型和 `VolumeScale`，并用 `TickVolumeScale` 声明报价/分时/分笔倍率。内置有效倍率全部为正，集中在 [`protocol/market.go`](../../protocol/market.go)。
 
+`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。这不会改变行情源时间字符串、交易日判断或现有每日去重窗口。
+
 ```go
 code, err := pull.ParseCode("hk00700")
 if err != nil {
