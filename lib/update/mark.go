@@ -33,6 +33,11 @@ func (u *Tracker) Mark(key string) error {
 	})
 }
 
+// IsUpdatedSince 判断指定边界（含）之后是否已成功更新，不使用 Tracker 的默认每日边界。
+func (u *Tracker) IsUpdatedSince(key string, since time.Time) (bool, error) {
+	return u.db.Where("`Key`=? AND `Time`>=?", key, since.Unix()).Exist(new(Record))
+}
+
 func (u *Tracker) IsUpdated(key string) (bool, error) {
 	mark := new(Record)
 	{ // 查询不创建占位记录，标记由 Mark 原子保存。

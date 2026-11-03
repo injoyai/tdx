@@ -98,11 +98,11 @@ _ = quotes; _ = err
 
 `Market.Info()` 保持返回 `(MarketInfo, bool)`，其中 `TimeZone` 是按市场枚举硬编码的 IANA 时区，供调用方调度使用。全部内置枚举项都已填写对应时区：
 
-| 市场 | `TimeZone` |
-|---|---|
-| 国内股票、指数、ETF/LOF、可转债、其他国内品种、板块及当前接入的国内期货 | `Asia/Shanghai` |
-| 港股、港股指数 | `Asia/Hong_Kong` |
-| 美股 | `America/New_York` |
+| 市场 | `TimeZone` | `CloseTime` |
+|---|---|---|
+| 国内股票、指数、ETF/LOF、可转债、其他国内品种、板块及当前接入的国内期货 | `Asia/Shanghai` | `15:30` |
+| 港股、港股指数 | `Asia/Hong_Kong` | `16:10` |
+| 美股 | `America/New_York` | `20:00` |
 
 对应关系依据 [IANA 地区时区表](https://data.iana.org/time-zones/tzdb/zone1970.tab)：北京时间为 `Asia/Shanghai`，香港为 `Asia/Hong_Kong`，美国东部为 `America/New_York`；[NYSE 交易时间说明](https://www.nyse.com/trade/hours-calendars) 明确采用美国东部时间。调用方可用 [`time.LoadLocation`](https://pkg.go.dev/time#LoadLocation) 加载时区，美股由纽约时区规则处理夏令时，不使用固定 UTC 偏移。新增枚举项时应先查证并填写其对应时区，不增加缺少时区的运行时报错逻辑。
 
@@ -115,7 +115,7 @@ if err != nil {
 fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 ```
 
-此字段是市场默认调度资料，不代表已确认行情响应的来源时区，不用于解析、转换或校验行情 `Time`，也不推断期货夜盘交易日。它不包含开收盘时间或节假日日历，不会自动改变 pull 的执行或去重规则。
+此字段是市场默认调度资料，不代表已确认行情响应的来源时区，不用于解析、转换或校验行情 `Time`，也不推断期货夜盘交易日。`CloseTime` 保存项目约定的当地收盘边界（`HH:MM`），美股包含盘后时段，不含更新延迟。pull 在该边界之后延迟 5 分钟更新，按市场每日去重，详见 [pull 收盘后更新](../extend/pull/README.md#收盘后更新)。这些元数据不包含节假日日历，也不保证行情源已覆盖全部盘后记录。
 
 报价先解析全部输入再发送，标准品种合并请求，扩展品种顺序请求；结果保留原输入顺序与重复项。任何连接、请求或响应品种校验失败返回错误，不返回部分报价；标准请求超过 `uint16` 帧长上限会提前报错。混合结果不保证来自同一瞬间。
 

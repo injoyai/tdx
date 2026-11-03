@@ -27,6 +27,8 @@ if !done {
 
 `IsUpdated(key)` 只查询，不创建占位行；`Mark(key)` 可以直接写入首次标记。标记表示任务已完成，不是执行锁，调用方仍需按业务要求安排并发。`pull.Config.Tracker` 接受 `*update.Tracker`。
 
+`IsUpdatedSince(key, since)` 查询在指定时刻（含）之后是否已完成，忽略 `New` 的固定东八区每日边界。pull 用此方法判断各市场当地收盘后延迟 5 分钟的完成情况；`IsUpdated` 的既有行为不变。
+
 ## 可停止的定时执行
 
 ```go

@@ -3,6 +3,7 @@ package pull
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 type scopeTestUnit struct {
@@ -40,7 +41,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 					t.Fatal(err)
 				}
 				s.units = []Unit{u}
-				if err := s.Update(); err != nil {
+				if err := s.update(time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC), false); err != nil {
 					t.Fatal(err)
 				}
 				if err := s.Close(); err != nil {
@@ -53,7 +54,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 				}
 				defer s.Close()
 				s.units = []Unit{u}
-				if err := s.Update(must); err != nil {
+				if err := s.update(time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC), must); err != nil {
 					t.Fatal(err)
 				}
 				if cfg.Minute {
@@ -64,7 +65,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 					t.Fatalf("changed task skipped: days=%v", u.days)
 				}
 				dayCalls, minCalls := len(u.days), len(u.minutes)
-				if err := s.Update(must); err != nil {
+				if err := s.update(time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC), must); err != nil {
 					t.Fatal(err)
 				}
 				if len(u.days) != dayCalls || len(u.minutes) != minCalls {
@@ -107,7 +108,7 @@ func TestUpdateIgnoresLegacyUnscopedMarkers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.Update(); err != nil {
+	if err := s.update(time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC), false); err != nil {
 		t.Fatal(err)
 	}
 	if len(u.days) != 1 || len(u.minutes) != 1 {

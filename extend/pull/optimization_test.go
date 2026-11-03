@@ -171,10 +171,9 @@ func TestUpdateFailureAndMustSemantics(t *testing.T) {
 	if u.dayCalls != 2 || u.minCalls != 0 {
 		t.Fatal("重试次数或执行顺序错误", u.dayCalls, u.minCalls)
 	}
-	for _, key := range []string{s.updateKey("pull:update-test"), s.updateKey("pull")} {
-		if done, err := s.updated.IsUpdated(key); done || err != nil {
-			t.Fatal("失败后标记完成", key, done, err)
-		}
+	key := s.updateKey("pull:update-test")
+	if done, err := s.updated.IsUpdated(key); done || err != nil {
+		t.Fatal("失败后标记完成", key, done, err)
 	}
 	u.failDay = false
 	if err := s.Update(true); err != nil {
@@ -183,10 +182,8 @@ func TestUpdateFailureAndMustSemantics(t *testing.T) {
 	if u.dayCalls != 3 || u.minCalls != 1 {
 		t.Fatal("失败市场未恢复", u.dayCalls, u.minCalls)
 	}
-	for _, key := range []string{s.updateKey("pull:update-test"), s.updateKey("pull")} {
-		if done, err := s.updated.IsUpdated(key); !done || err != nil {
-			t.Fatal("成功后未标记", key, done, err)
-		}
+	if done, err := s.updated.IsUpdated(key); !done || err != nil {
+		t.Fatal("成功后未标记", key, done, err)
 	}
 	// must=true 仍保留市场级去重。
 	if err := s.Update(true); err != nil {

@@ -14,7 +14,6 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/manage"
-	"github.com/injoyai/tdx/v2/extend/workday"
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -128,7 +127,7 @@ func New(cfg *Config) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		updated, err = update.New(db, 15, 1)
+		updated, err = update.New(db, 0, 0)
 		if err != nil {
 			db.Close()
 			return nil, err
@@ -238,11 +237,15 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 	return append([]protocol.ExInstrument(nil), out...), nil
 }
 
-// Update 执行一次拉取。must=true 时跳过工作日与整体标记检查，仍保留市场级去重。
-// 按 Unit 粒度去重：某市场完成后单独标记，中途失败的市场下次重拉，已完成的跳过。
+// Update 执行一次拉取：市场当地收盘后延迟 5 分钟，每个市场每天成功一次。
+// must=true 可提前拉取，仍保留市场级去重；提前拉取不会阻止收盘后的更新。
 func (s *Service) Update(must ...bool) error {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	return s.update(time.Now(), len(must) > 0 && must[0])
+}
+
+func (s *Service) update(now time.Time, must bool) error {
 	s.discoveryMu.Lock()
 	s.discovering = true
 	s.instruments = nil
@@ -254,28 +257,23 @@ func (s *Service) Update(must ...bool) error {
 		s.discoveryMu.Unlock()
 	}()
 
-	key := s.updateKey("pull")
-	if len(must) == 0 || !must[0] {
-		// 非交易日直接跳过（由调用方传入 Workday 判断）
-		if wd, ok := s.workday(); ok {
-			if !wd.TodayIs() {
-				return nil
-			}
-		}
-		// 当日已拉过则跳过（整体增量去重）
-		done, err := s.updated.IsUpdated(key)
-		if err != nil {
-			return err
-		}
-		if done {
-			return nil
-		}
-	}
-
 	var firstErr error
 	for _, u := range s.units {
+		cutoff, err := marketUpdateTime(protocol.Market(u.Name()), now)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if now.Before(cutoff) {
+			if !must {
+				continue
+			}
+			cutoff = cutoff.AddDate(0, 0, -1)
+		}
 		key := s.updateKey("pull:" + u.Name())
-		done, err := s.updated.IsUpdated(key)
+		done, err := s.updated.IsUpdatedSince(key, cutoff)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -297,12 +295,21 @@ func (s *Service) Update(must ...bool) error {
 			}
 		}
 	}
-	if firstErr != nil {
-		return firstErr
-	}
+	return firstErr
+}
 
-	// 全部完成，标记当日已拉取
-	return s.updated.Mark(key)
+// marketUpdateTime 仅计算调度边界，不转换行情源时间。
+func marketUpdateTime(market protocol.Market, now time.Time) (time.Time, error) {
+	info, _ := market.Info()
+	loc, err := time.LoadLocation(info.TimeZone)
+	if err != nil {
+		return time.Time{}, err
+	}
+	closeAt, err := time.ParseInLocation("2006-01-02 15:04", now.In(loc).Format("2006-01-02")+" "+info.CloseTime, loc)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return closeAt.Add(5 * time.Minute), nil
 }
 
 // updateKey 将去重标记限定到实际配置；代码和市场顺序不影响任务身份。
@@ -325,14 +332,6 @@ func (s *Service) updateKey(prefix string) string {
 		Codes, Units               []string
 	}{filepath.Clean(s.cfg.Dir), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units})
 	return fmt.Sprintf("%s:%x", prefix, sha256.Sum256(data))
-}
-
-// workday 若调用方配置了交易日对象则返回，否则 ok=false。
-func (s *Service) workday() (*workday.Workday, bool) {
-	if s.cfg.Workday != nil {
-		return s.cfg.Workday, true
-	}
-	return nil, false
 }
 
 // updateUnit 拉取单个市场；失败重试耗尽后返回错误，不标记该市场完成。

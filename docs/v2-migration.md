@@ -2,13 +2,15 @@
 
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
-## 市场默认时区
+## 市场默认时区与收盘后更新
 
 `protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回按市场硬编码的 IANA 时区，供调用方调度使用：国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
 
 `Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。全部内置枚举项均硬编码对应时区，新增枚举项时须先查证并填写时区，不新增缺少时区的运行时校验或错误返回。
 
-此字段不恢复行情结果中已删除的 `TimeZone`、`Unix` 或 `Timestamp()`，不改变源时间字符串、SQLite 格式和 pull 调度行为。无需迁移已有行情数据库。`MarketInfo` 结构体字面量应使用字段名初始化，避免新增字段影响按位置初始化的代码。使用示例见 [统一接口文档](unified-client.md)。
+`MarketInfo` 同时新增 `CloseTime string`（当地 `HH:MM`，不含延迟）：国内为 `15:30`，港股及港股指数为 `16:10`，美股为 `20:00`（包含盘后）。pull 统一延迟 5 分钟，收盘延迟边界之前跳过请求，之后按市场每天成功一次；不再使用整体完成标记或固定东八区 15:01 边界。`Update(true)` 仍保留市场级去重，允许提前拉取；提前标记不阻止当天收盘后的更新。`pull.Config.Workday` 已移除，调用方删除该字段，不再按中国日历过滤跨市场更新；`pull.Trade` 的历史交易日历使用不变。详情见 [pull 收盘后更新](../extend/pull/README.md#收盘后更新)。
+
+这些字段不恢复行情结果中已删除的 `TimeZone`、`Unix` 或 `Timestamp()`，不改变源时间字符串和 SQLite 行情格式。无需迁移已有行情数据库。`MarketInfo` 结构体字面量应使用字段名初始化，避免新增字段影响按位置初始化的代码。使用示例见 [统一接口文档](unified-client.md)。
 
 ## 成交量统一为最小单位
 
@@ -285,7 +287,7 @@ return m.Close()
 | `tdx.WithWorkdayDB` / `tdx.WithWorkdayDialDB` | `workday.WithDB` / `workday.WithDialDB` |
 | `tdx.WithWorkdaySpec` / `tdx.WithWorkdayRetry` / `tdx.WithWorkdayOption` | `workday.WithSpec` / `workday.WithRetry` / `workday.WithOptions` |
 
-`manage.Workday` 与 `pull.Config.Workday` 同步使用 `*workday.Workday`；`manage.WithDialWorkday` 的工厂类型为 `workday.DialFunc`。数据库 `workday` 表、默认路径 `./output/data/database/workday.db`、固定东八区和历史交易日判断方式保持原样。此实现依赖上证指数已经返回的日线，不提供未来节假日预测，也不自动成为港美股或期货的交易日历。
+`manage.Workday` 使用 `*workday.Workday`（`pull.Config.Workday` 已移除，见上文收盘后更新）；`manage.WithDialWorkday` 的工厂类型为 `workday.DialFunc`。数据库 `workday` 表、默认路径 `./output/data/database/workday.db`、固定东八区和历史交易日判断方式保持原样。此实现依赖上证指数已经返回的日线，不提供未来节假日预测，也不自动成为港美股或期货的交易日历。
 
 持久化更新标记与定时执行移至 `github.com/injoyai/tdx/v2/lib/update`，分别位于 `mark.go` 和 `timer.go`。该公共工具包不依赖根包，供行情元数据、扩展缓存及 pull 共同使用。
 
@@ -295,7 +297,7 @@ return m.Close()
 | `tdx.NewUpdated(db, hour, minute)` | `update.New(db, hour, minute)` |
 | `tdx.Updater` / `tdx.StartTimer` / `tdx.NewTimer` | `update.Updater` / `update.StartTimer`；保存返回的停止函数 |
 
-`pull.Config.Tracker` 改为 `*update.Tracker`。更新标记沿用 `update` 表名、字段和每日边界判断方式；`update.New` 使用调用方传入的数据库，不接管其关闭。新包用法见 [workday](../extend/workday/README.md) 和 [update](../lib/update/README.md)。
+`pull.Config.Tracker` 改为 `*update.Tracker`。更新标记沿用 `update` 表名和字段；`IsUpdated` 保留原每日边界，pull 改用 `IsUpdatedSince` 按市场边界判断；`update.New` 使用调用方传入的数据库，不接管其关闭。新包用法见 [workday](../extend/workday/README.md) 和 [update](../lib/update/README.md)。
 
 独立调度使用 `stop, err := update.StartTimer(spec, retry, updater)`，成功后 `defer stop()`。它先验证 cron 表达式并立即更新一次，然后启动定时任务；同一任务不会重叠，停止会取消重试等待并等待正在执行的更新返回。更新函数本身须有有限超时。不保留丢弃停止函数的 `NewTimer`。
 

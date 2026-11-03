@@ -19,7 +19,7 @@ func main() {
 	day := flag.Bool("day", true, "拉取日线")
 	minute := flag.Bool("minute", true, "拉取 1 分钟线")
 	all := flag.Bool("all", false, "全市场拉取；不能同时指定证券")
-	force := flag.Bool("force", false, "忽略当日完成标记")
+	force := flag.Bool("force", false, "允许收盘前拉取，仍保留市场级去重")
 	flag.Parse()
 	if !*day && !*minute {
 		logs.Panic("日线和分钟线至少启用一种")
@@ -47,7 +47,7 @@ func main() {
 	defer m.Close()
 	cfg := &pull.Config{
 		Dir: *dir, Codes: codes, Day: *day, Minute: *minute, StartAt: *since,
-		Goroutines: 1, Manage: m, Workday: m.Workday,
+		Goroutines: 1, Manage: m,
 	}
 	if needsEx {
 		ex, err := tdx.NewPool(func() (tdx.Client, error) {

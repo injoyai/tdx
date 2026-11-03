@@ -71,14 +71,13 @@ func main() {
 		StartAt: "20260101",        // 首次全量的最早日期；空 = 只拉最近两年
 		Manage:  m,
 		ExPool:  ex,
-		Workday: m.Workday, // 交易日历（可选，非交易日自动跳过）
 	})
 	if err != nil {
 		panic(err)
 	}
 	defer s.Close()
 
-	// 拉取（已完成市场自动跳过；must=true 可在非交易日调用，仍保留市场级去重）
+	// 拉取（收盘后延迟 5 分钟更新，已完成市场自动跳过）
 	if err := s.Update(); err != nil {
 		panic(err)
 	}
@@ -117,7 +116,7 @@ func main() {
 
 `Market.Info()` 返回行情协议、解码分类、日线/1 分钟线的请求类型和 `VolumeScale`，并用 `TickVolumeScale` 声明报价/分时/分笔倍率。内置有效倍率全部为正，集中在 [`protocol/market.go`](../../protocol/market.go)。
 
-`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。这不会改变行情源时间字符串、交易日判断或现有每日去重窗口。
+`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
 
 ```go
 code, err := pull.ParseCode("hk00700")
@@ -171,7 +170,6 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 自动创建于 `Dir/updated.db` |
 | `Manage` | 标准行情(7709)连接源 | 无（std 市场需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
-| `Workday` | `*workday.Workday` 历史交易日历（`extend/workday`） | 无（不判断交易日） |
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
@@ -275,7 +273,21 @@ Codes: []string{
 
 `MinuteCoverage` 新增 `TradeFallback` 与 `Through`（右开端点）；原生扫描不能跳过分笔兜底检查。可用 `QueryMinuteCoverage` 查询、`SaveMinuteFallbackComplete` 原子提交成功范围。跨年时，当年留下的标记若未覆盖至下一年零点，会重新检查年末。表结构由统一建表流程初始化；若当天市场已标记完成，仍遵守原去重规则，在下一更新窗口执行。
 
-`must=true` 的原有行为保留：跳过交易日与整体检查，但仍检查市场级标记。默认更新窗口以固定东八区 15:01 分界。
+### 收盘后更新
+
+市场枚举保存当地收盘边界，pull 统一延迟 5 分钟后更新：
+
+| 市场 | `CloseTime` | 允许更新的当地时间 |
+|---|---|---|
+| 国内市场（含当前国内期货） | `15:30` | `15:35` 起 |
+| 港股、港股指数 | `16:10` | `16:15` 起 |
+| 美股（包含盘后时段） | `20:00` | `20:05` 起，按纽约时区处理夏令时 |
+
+上述时间是本项目约定的市场分组边界，不是逐品种交易时段表。普通 `Update()` 在市场当地当天的允许时间之前跳过该市场，之后首次调用才发起拉取；调用方应在相应时间之后、当地午夜之前安排调用。服务不会自行等待、休眠或启动定时任务。非交易日仍允许请求一次，不用中国交易日历过滤其他市场。
+
+完成标记仍按任务配置和市场隔离：只有该市场全部任务成功才记录，失败可在下次调用重试。取消整体完成标记的提前返回，避免早收盘市场挡住晚收盘市场。旧整体标记保留在库中但不再使用；已有市场标记仅在新的收盘延迟边界之后才算完成。外部 `Tracker` 的固定东八区边界不再控制 pull，其他使用 `IsUpdated` 的服务不受影响。
+
+`Update(true)` 允许提前拉取，但仍按最近一次已到达的更新边界去重；提前拉取的标记早于当天边界，因此不会阻止当天收盘后的更新。收盘后只拉一次，并不保证行情服务器已提供所有盘后记录；这些时间不会扩展数据源本身的覆盖范围。
 
 ### 执行与资源释放
 

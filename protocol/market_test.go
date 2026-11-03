@@ -25,23 +25,24 @@ func TestMarketTimeZones(t *testing.T) {
 	for _, tc := range []struct {
 		market       Market
 		zone         string
+		closeTime    string
 		winterOffset int
 		summerOffset int
 	}{
-		{MarketAStock, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketIndex, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketEtfLof, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketBond, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketOther, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketBlock, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketFuture, "Asia/Shanghai", 8 * 3600, 8 * 3600},
-		{MarketHK, "Asia/Hong_Kong", 8 * 3600, 8 * 3600},
-		{MarketHKIndex, "Asia/Hong_Kong", 8 * 3600, 8 * 3600},
-		{MarketUS, "America/New_York", -5 * 3600, -4 * 3600},
+		{MarketAStock, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketIndex, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketEtfLof, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketBond, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketOther, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketBlock, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketFuture, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketHK, "Asia/Hong_Kong", "16:10", 8 * 3600, 8 * 3600},
+		{MarketHKIndex, "Asia/Hong_Kong", "16:10", 8 * 3600, 8 * 3600},
+		{MarketUS, "America/New_York", "20:00", -5 * 3600, -4 * 3600},
 	} {
 		t.Run(tc.market.String(), func(t *testing.T) {
 			info, known := tc.market.Info()
-			if !known || info.TimeZone != tc.zone {
+			if !known || info.TimeZone != tc.zone || info.CloseTime != tc.closeTime {
 				t.Fatalf("unexpected market time zone: %+v, known=%v", info, known)
 			}
 			loc, err := time.LoadLocation(info.TimeZone)

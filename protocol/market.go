@@ -53,10 +53,11 @@ func (k KlineInfo) ToStorageVolume(volume int64) (int64, error) {
 	return volume * k.VolumeScale, nil
 }
 
-// MarketInfo 是内置市场的时区、行情类型与单位配置。
+// MarketInfo 是内置市场的时区、收盘时间、行情类型与单位配置。
 type MarketInfo struct {
 	Protocol        MarketProtocol
 	TimeZone        string // 已确定的市场 IANA 时区，供调度使用；不用于解释行情源时间
+	CloseTime       string // 当地收盘边界 HH:MM；不含拉取延迟，美股包含盘后时段
 	Kind            string // 标准行情的解码分类（KindStock / KindIndex）；扩展行情不用此字段
 	TickVolumeScale int64  // 报价（含五档）、分时和分笔的最小单位倍率，必须为正
 	Day             KlineInfo
@@ -71,6 +72,7 @@ func (m Market) Info() (MarketInfo, bool) {
 		return MarketInfo{
 			Protocol:        ProtocolStandard,
 			TimeZone:        "Asia/Shanghai",
+			CloseTime:       "15:30",
 			Kind:            KindStock,
 			TickVolumeScale: SharesPerLot,
 			Day:             KlineInfo{TypeKlineDay, SharesPerLot},
@@ -81,6 +83,7 @@ func (m Market) Info() (MarketInfo, bool) {
 		return MarketInfo{
 			Protocol:        ProtocolStandard,
 			TimeZone:        "Asia/Shanghai",
+			CloseTime:       "15:30",
 			Kind:            KindIndex,
 			TickVolumeScale: SharesPerLot,
 			Day:             KlineInfo{TypeKlineDay, 1},
@@ -90,6 +93,7 @@ func (m Market) Info() (MarketInfo, bool) {
 		return MarketInfo{
 			Protocol:        ProtocolExtended,
 			TimeZone:        "Asia/Hong_Kong",
+			CloseTime:       "16:10",
 			TickVolumeScale: 1,
 			Day:             KlineInfo{TypeKlineDay2, SharesPerLot},
 			Minute:          KlineInfo{TypeKlineMinute2, SharesPerLot},
@@ -98,16 +102,18 @@ func (m Market) Info() (MarketInfo, bool) {
 		return MarketInfo{
 			Protocol:        ProtocolExtended,
 			TimeZone:        "Asia/Shanghai",
+			CloseTime:       "15:30",
 			TickVolumeScale: 1,
 			Day:             KlineInfo{TypeKlineDay2, 1},
 			Minute:          KlineInfo{TypeKlineMinute2, 1},
 		}, true
 	case MarketUS:
-		return MarketInfo{Protocol: ProtocolExtended, TimeZone: "America/New_York", TickVolumeScale: 1, Day: KlineInfo{TypeKlineDay2, 1}, Minute: KlineInfo{TypeKlineMinute2, 1}}, true
+		return MarketInfo{Protocol: ProtocolExtended, TimeZone: "America/New_York", CloseTime: "20:00", TickVolumeScale: 1, Day: KlineInfo{TypeKlineDay2, 1}, Minute: KlineInfo{TypeKlineMinute2, 1}}, true
 	case MarketHKIndex:
 		return MarketInfo{
 			Protocol:        ProtocolExtended,
 			TimeZone:        "Asia/Hong_Kong",
+			CloseTime:       "16:10",
 			TickVolumeScale: 1,
 			// 此市场量字段含成交额口径，1仅表示原样保留，统一量接口仍拒绝。
 			Day:    KlineInfo{TypeKlineDay2, 1},
