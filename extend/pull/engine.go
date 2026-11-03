@@ -14,7 +14,7 @@ type cachedEngine struct {
 }
 
 // engine 借用引擎；调用者必须在查询/事务结束后 release，使用中不会被淘汰。
-func (s *Service) engine(filename string, table any) (*xorms.Engine, func(), error) {
+func (s *SQLiteStore) engine(filename string, table any) (*xorms.Engine, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -51,7 +51,7 @@ func (s *Service) engine(filename string, table any) (*xorms.Engine, func(), err
 }
 
 // evictEngines 在持锁时淘汰最久未使用的空闲引擎。并发借用可以短暂超限。
-func (s *Service) evictEngines() {
+func (s *SQLiteStore) evictEngines() {
 	for len(s.engines) > s.engineLimit {
 		var oldest *cachedEngine
 		var path string

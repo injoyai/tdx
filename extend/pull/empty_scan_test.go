@@ -38,7 +38,7 @@ func TestEmptyMinuteScanExpiryScopeAndRange(t *testing.T) {
 			}
 		})
 	}
-	if s.MinuteExists(code, 2024) {
+	if s.store.(*SQLiteStore).MinuteExists(code, 2024) {
 		t.Fatal("空历史扫描创建了行情库")
 	}
 	if done, err := s.MinuteYearComplete(code, 2024, from); err != nil || done {

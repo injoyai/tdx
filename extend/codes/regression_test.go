@@ -66,7 +66,11 @@ func TestMetadataSnapshot(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			cs := &Codes{c: &snapshotClient{remote: remote}, db: db, updated: updated, updateKey: "codes", Base: NewBase()}
+			store, err := NewSQLStore(db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cs := &Codes{store: store, c: &snapshotClient{remote: remote}, db: db, updated: updated, updateKey: "codes", Base: NewBase()}
 
 			cs.Base.Update(old)
 			err = cs.Update()

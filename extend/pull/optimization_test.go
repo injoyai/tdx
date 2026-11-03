@@ -11,10 +11,10 @@ import (
 func TestMinuteCoverageRollback(t *testing.T) {
 	s := testService(t)
 	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	if last, err := s.LastMinuteTime(c, 2025); err != nil || last != "" || s.MinuteExists(c, 2025) {
+	if last, err := s.LastMinuteTime(c, 2025); err != nil || last != "" || s.store.(*SQLiteStore).MinuteExists(c, 2025) {
 		t.Fatalf("读取空库创建了文件或返回异常: %s %v", last, err)
 	}
-	if last, err := s.LastDayTime(c); err != nil || last != "" || exists(s.DayFile(c)) {
+	if last, err := s.LastDayTime(c); err != nil || last != "" || exists(s.store.(*SQLiteStore).DayFile(c)) {
 		t.Fatal("读取空日线库创建了文件", err)
 	}
 	ks := []*KlineMinute{{Time: "2025-01-05 09:31", Close: 2}}
@@ -32,7 +32,7 @@ func TestMinuteCoverageRollback(t *testing.T) {
 		t.Fatal("失败后标记完成", done, err)
 	}
 	// 直接检查源时间记录，验证删尾操作也被事务回滚。
-	db, release, err := s.openMinute(c, 2025)
+	db, release, err := s.store.(*SQLiteStore).openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if err := s.SaveMinuteComplete(c, 2025, "2024-12-31 00:00", []*KlineMinute{{Time: "2025-01-05 09:32", Close: 3}}); err != nil {
 		t.Fatal(err)
 	}
-	db, release, err = s.openMinute(c, 2025)
+	db, release, err = s.store.(*SQLiteStore).openMinute(c, 2025)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,16 +63,16 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[0].Time != "2025-01-05 09:31" {
 		t.Fatal("本地历史前缀丢失", rows, err)
 	}
-	if err := s.SaveMinuteComplete(c, 2024, "", nil); err != nil || s.MinuteExists(c, 2024) {
+	if err := s.SaveMinuteComplete(c, 2024, "", nil); err != nil || s.store.(*SQLiteStore).MinuteExists(c, 2024) {
 		t.Fatal("空年份不应建库", err)
 	}
 }
 
 func TestEngineLimitAndBorrow(t *testing.T) {
 	s := testService(t)
-	s.engineLimit = 2
+	s.store.(*SQLiteStore).engineLimit = 2
 	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	db, release, err := s.openDay(c)
+	db, release, err := s.store.(*SQLiteStore).openDay(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +82,8 @@ func TestEngineLimitAndBorrow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(s.engines) > 2 {
-		t.Fatal("缓存未限制", len(s.engines))
+	if len(s.store.(*SQLiteStore).engines) > 2 {
+		t.Fatal("缓存未限制", len(s.store.(*SQLiteStore).engines))
 	}
 	if _, err := LastTime(db, new(KlineDay)); err != nil {
 		t.Fatal("使用中的引擎被关闭", err)
@@ -95,7 +95,7 @@ func TestEngineLimitAndBorrow(t *testing.T) {
 		t.Fatal("Close 中断了借用", err)
 	}
 	release()
-	if len(s.engines) != 0 {
+	if len(s.store.(*SQLiteStore).engines) != 0 {
 		t.Fatal("释放后仍有引擎")
 	}
 	if err := s.SaveDay(c, "", []*KlineDay{{Time: "2026-01-05"}}); err == nil {
@@ -105,7 +105,7 @@ func TestEngineLimitAndBorrow(t *testing.T) {
 
 func TestEngineConcurrentEviction(t *testing.T) {
 	s := testService(t)
-	s.engineLimit = 2
+	s.store.(*SQLiteStore).engineLimit = 2
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -126,8 +126,8 @@ func TestEngineConcurrentEviction(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	if len(s.engines) > 2 {
-		t.Fatal("缓存未回落", len(s.engines))
+	if len(s.store.(*SQLiteStore).engines) > 2 {
+		t.Fatal("缓存未回落", len(s.store.(*SQLiteStore).engines))
 	}
 }
 

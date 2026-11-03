@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -15,30 +13,27 @@ import (
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/lib/update"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Service 拉取服务：编排市场 Unit、增量去重、并发、重试、落库。
 type Service struct {
-	cfg       *Config
-	units     []Unit
-	updated   *update.Tracker
-	updatedDB *xorms.Engine // 内部自建的去重库，Close 时释放
-	day       bool
-	minute    bool
-	retry     int
-	goro      int
-	start     time.Time
+	cfg        *Config
+	units      []Unit
+	updated    *update.Tracker
+	store      Store
+	closeStore func() error
+	closed     atomic.Bool
+	closeOnce  sync.Once
+	closeErr   error
+	day        bool
+	minute     bool
+	retry      int
+	goro       int
+	start      time.Time
 
 	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
 	overrides map[protocol.Market][]Code
-
-	mu          sync.Mutex               // 保护 engines 缓存
-	engines     map[string]*cachedEngine // 有引用计数的 sqlite 引擎缓存
-	engineLimit int
-	engineClock uint64
-	closed      bool
 
 	updateMu    sync.Mutex
 	discoveryMu sync.Mutex
@@ -51,7 +46,7 @@ func New(cfg *Config) (*Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
-	if cfg.Dir == "" {
+	if cfg.Store == nil && cfg.Dir == "" {
 		return nil, fmt.Errorf("pull: 数据根目录 Dir 不能为空")
 	}
 	start, err := cfg.parseStart()
@@ -76,10 +71,6 @@ func New(cfg *Config) (*Service, error) {
 	retry := cfg.Retry
 	if retry <= 0 {
 		retry = tdx.DefaultRetry
-	}
-	engineLimit := cfg.MaxCachedEngines
-	if engineLimit <= 0 {
-		engineLimit = 32
 	}
 
 	// 代码列表：一次性解析并按市场分组。
@@ -115,24 +106,32 @@ func New(cfg *Config) (*Service, error) {
 	if len(units) == 0 {
 		return nil, fmt.Errorf("pull: 未注册任何市场 Unit")
 	}
-	if err := checkTimeFormat(cfg.Dir); err != nil {
-		return nil, err
+	store := cfg.Store
+	var closeStore func() error
+	if store == nil {
+		sqlite, err := NewSQLiteStore(cfg.Dir, cfg.MaxCachedEngines)
+		if err != nil {
+			return nil, err
+		}
+		store = sqlite
+		closeStore = sqlite.Close
 	}
-
-	// 增量去重库：未指定则自动创建于 Dir/updated.db
+	if store.Identity() == "" {
+		if closeStore != nil {
+			_ = closeStore()
+		}
+		return nil, fmt.Errorf("pull: Store.Identity 不能为空")
+	}
+	cfg.Store = store
 	updated := cfg.Tracker
-	var updatedDB *xorms.Engine
 	if updated == nil {
-		db, err := xorms.NewSQLite(filepath.Join(cfg.Dir, "updated.db"))
+		updated, err = update.NewWithStore(store, 0, 0)
 		if err != nil {
+			if closeStore != nil {
+				_ = closeStore()
+			}
 			return nil, err
 		}
-		updated, err = update.New(db, 0, 0)
-		if err != nil {
-			db.Close()
-			return nil, err
-		}
-		updatedDB = db
 	}
 
 	// 起始日期：未设置时默认最近两年（首拉全量的最早日期）
@@ -142,39 +141,29 @@ func New(cfg *Config) (*Service, error) {
 	}
 
 	return &Service{
-		cfg:         cfg,
-		units:       units,
-		updated:     updated,
-		updatedDB:   updatedDB,
-		day:         day,
-		minute:      minute,
-		retry:       retry,
-		goro:        goro,
-		start:       start,
-		overrides:   overrides,
-		engines:     map[string]*cachedEngine{},
-		engineLimit: engineLimit,
+		cfg:        cfg,
+		units:      units,
+		updated:    updated,
+		store:      store,
+		closeStore: closeStore,
+		day:        day,
+		minute:     minute,
+		retry:      retry,
+		goro:       goro,
+		start:      start,
+		overrides:  overrides,
 	}, nil
 }
 
-// Close 关闭内部持有的增量去重库连接（外部传入的 Tracker/连接池由调用方自行管理）。
+// Close 停止后续存储操作并释放自动创建的 SQLite 存储；注入的 Store/Tracker 由调用方管理。
 func (s *Service) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	for path, entry := range s.engines {
-		if entry.refs == 0 {
-			_ = entry.db.Close()
-			delete(s.engines, path)
+	s.closeOnce.Do(func() {
+		s.closed.Store(true)
+		if s.closeStore != nil {
+			s.closeErr = s.closeStore()
 		}
-	}
-	if s.updatedDB == nil {
-		return nil
-	}
-	return s.updatedDB.Close()
+	})
+	return s.closeErr
 }
 
 // Config 返回配置副本（只读；Codes 切片拷贝，避免与 Service 共享底层）。
@@ -246,6 +235,9 @@ func (s *Service) Update(must ...bool) error {
 }
 
 func (s *Service) update(now time.Time, must bool) error {
+	if err := s.checkOpen(); err != nil {
+		return err
+	}
 	s.discoveryMu.Lock()
 	s.discovering = true
 	s.instruments = nil
@@ -330,7 +322,7 @@ func (s *Service) updateKey(prefix string) string {
 		Dir, StartAt               string
 		Day, Minute, TradeFallback bool
 		Codes, Units               []string
-	}{filepath.Clean(s.cfg.Dir), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units})
+	}{s.store.Identity(), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units})
 	return fmt.Sprintf("%s:%x", prefix, sha256.Sum256(data))
 }
 
@@ -417,154 +409,3 @@ func uniqueCodes(codes []Code) []Code {
 }
 
 // 存储相关快捷方法（供 Unit 实现使用）。
-
-// openDay 打开某代码日线库并建表（带引擎缓存）。
-func (s *Service) openDay(code Code) (*xorms.Engine, func(), error) {
-	return s.engine(code.DayFile(s.cfg.Dir), new(KlineDay))
-}
-
-// openMinute 打开某代码指定年份分钟线库并建表（带引擎缓存）。
-func (s *Service) openMinute(code Code, year int) (*xorms.Engine, func(), error) {
-	return s.engine(code.MinuteFile(s.cfg.Dir, year), new(KlineMinute))
-}
-
-// DayFile 返回某代码日线文件路径（供 Unit/查询用）。
-func (s *Service) DayFile(code Code) string { return code.DayFile(s.cfg.Dir) }
-
-// MinuteFile 返回某代码指定年份分钟线文件路径。
-func (s *Service) MinuteFile(code Code, year int) string { return code.MinuteFile(s.cfg.Dir, year) }
-
-// QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空。
-// start/end 为空字符串时表示不限制该端。
-func (s *Service) QueryDay(code Code, start, end string) ([]*KlineDay, error) {
-	if err := validateRange(start, end, time.DateOnly); err != nil {
-		return nil, err
-	}
-	if !exists(code.DayFile(s.cfg.Dir)) {
-		return nil, nil
-	}
-	db, release, err := s.openDay(code)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	rows, err := queryDay(db, start, end)
-	return rows, err
-}
-
-// LastDayTime 查询某代码日线库内最后一条记录的源时间；空库返回空字符串。
-func (s *Service) LastDayTime(code Code) (string, error) {
-	if !exists(s.DayFile(code)) {
-		return "", nil
-	}
-	db, release, err := s.openDay(code)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	return LastTime(db, new(KlineDay))
-}
-
-// LastMinuteTime 查询某代码指定年份分钟库内最后一条记录的源时间；空库返回空字符串。
-func (s *Service) LastMinuteTime(code Code, year int) (string, error) {
-	if !s.MinuteExists(code, year) {
-		return "", nil
-	}
-	db, release, err := s.openMinute(code, year)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	return LastTime(db, new(KlineMinute))
-}
-
-// SaveDay 打开某代码日线库并增量写入（删除 Time>=from 后插入，事务内幂等）。
-// 空数据直接跳过（不打开库文件，避免创建空库）。
-func (s *Service) SaveDay(code Code, from string, ks []*KlineDay) error {
-	if len(ks) == 0 {
-		return nil
-	}
-	if err := validateDays(from, ks); err != nil {
-		return err
-	}
-	db, release, err := s.openDay(code)
-	if err != nil {
-		return err
-	}
-	defer release()
-	return upsertDay(db, from, ks)
-}
-
-// SaveMinute 打开某代码指定年份分钟库并增量写入（删除 Time>=from 后插入，事务内幂等）。
-// 空数据直接跳过（不打开库文件，避免创建空库）。
-func (s *Service) SaveMinute(code Code, year int, from string, ks []*KlineMinute) error {
-	if len(ks) == 0 {
-		return nil
-	}
-	if err := validateMinutes(year, from, ks); err != nil {
-		return err
-	}
-	db, release, err := s.openMinute(code, year)
-	if err != nil {
-		return err
-	}
-	defer release()
-	return upsertMin(db, from, ks)
-}
-
-// MinuteExists 判断某代码指定年份的分钟线文件是否已存在。
-func (s *Service) MinuteExists(code Code, year int) bool {
-	return exists(code.MinuteFile(s.cfg.Dir, year))
-}
-
-// QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
-// start/end 为空字符串时表示不限制该端。
-func (s *Service) QueryMinute(code Code, start, end string) ([]*KlineMinute, error) {
-	out := []*KlineMinute{}
-	if err := validateRange(start, end, protocol.TimeLayout); err != nil {
-		return nil, err
-	}
-	startYear, endYear := minMaxYear(start, end)
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(code.MinuteFile(s.cfg.Dir, 2000)), "*.db"))
-	if err != nil {
-		return nil, err
-	}
-	for _, file := range files {
-		var y int
-		name := filepath.Base(file)
-		if len(name) < 7 {
-			continue
-		}
-		if _, err := fmt.Sscanf(name[len(name)-7:], "%d.db", &y); err != nil || y < startYear || y > endYear || file != code.MinuteFile(s.cfg.Dir, y) {
-			continue
-		}
-		db, release, err := s.engine(file, new(KlineMinute))
-		if err != nil {
-			return nil, err
-		}
-		ls, err := queryMin(db, start, end)
-		release()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, ls...)
-	}
-	return out, nil
-}
-
-// minMaxYear 返回查询区间覆盖的年份范围；空字符串端点不限制。
-func minMaxYear(start, end string) (int, int) {
-	startYear, endYear := 0, 9999
-	if start != "" {
-		fmt.Sscanf(start[:4], "%d", &startYear)
-	}
-	if end != "" {
-		fmt.Sscanf(end[:4], "%d", &endYear)
-	}
-	return startYear, endYear
-}
-
-func exists(filename string) bool {
-	_, err := os.Stat(filename)
-	return err == nil
-}

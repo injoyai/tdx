@@ -16,7 +16,6 @@ import (
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
-	"xorm.io/xorm"
 )
 
 // DefaultSpec 是股本缓存每日刷新的默认定时规则。
@@ -46,6 +45,11 @@ func WithSpec(spec string) Option {
 	return func(s *Gbbq) {
 		s.spec = spec
 	}
+}
+
+// WithStore 注入自定义持久化；存储由调用方关闭，不能与 WithDB/WithDialDB 同时使用。
+func WithStore(store Store) Option {
+	return func(s *Gbbq) { s.store = store }
 }
 
 func WithDB(db *xorms.Engine) Option {
@@ -94,6 +98,9 @@ func New(op ...Option) (result *Gbbq, err error) {
 
 	WithOptions(op...)(s)
 
+	if s.store != nil && (s.db != nil || s.dialDB != nil) {
+		return nil, errors.New("gbbq: WithStore 不能与 WithDB/WithDialDB 同时使用")
+	}
 	ownedClient, ownedDB := s.c == nil, s.db == nil
 	s.cleanup = func() error {
 		var err error
@@ -128,24 +135,27 @@ func New(op ...Option) (result *Gbbq, err error) {
 	}
 
 	// 初始化数据库
-	if s.db == nil {
-		if s.dialDB == nil {
-			s.dialDB = func() (*xorms.Engine, error) {
-				return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "gbbq.db"))
+	if s.store == nil {
+		if s.db == nil {
+			if s.dialDB == nil {
+				s.dialDB = func() (*xorms.Engine, error) {
+					return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "gbbq.db"))
+				}
+			}
+			s.db, err = s.dialDB()
+			if err != nil {
+				return nil, err
 			}
 		}
-		s.db, err = s.dialDB()
+		if s.db == nil || s.db.Engine == nil {
+			return nil, errors.New("数据库工厂返回空引擎")
+		}
+		s.store, err = NewSQLStore(s.db)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if s.db == nil || s.db.Engine == nil {
-		return nil, errors.New("数据库工厂返回空引擎")
-	}
-	if err = s.db.Sync2(new(protocol.Gbbq)); err != nil {
-		return nil, err
-	}
-	s.updated, err = update.New(s.db, 9, 0)
+	s.updated, err = update.NewWithStore(s.store, 9, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +180,7 @@ type Gbbq struct {
 	dialClient tdx.DialClientFunc
 
 	c       tdx.Client
+	store   Store
 	db      *xorms.Engine
 	updated *update.Tracker
 	m       map[string][]*protocol.Gbbq
@@ -182,7 +193,7 @@ func (g *Gbbq) IsEmpty() bool {
 	if g == nil {
 		return true
 	}
-	return g.db == nil && g.c == nil && g.m == nil
+	return g.store == nil && g.db == nil && g.c == nil && g.m == nil
 }
 
 func (g *Gbbq) All() map[string][]*protocol.Gbbq {
@@ -310,8 +321,8 @@ func (*Gbbq) sort(m map[string][]*protocol.Gbbq) {
 }
 
 func (g *Gbbq) load() (map[string][]*protocol.Gbbq, error) {
-	list := []*protocol.Gbbq(nil)
-	if err := g.db.Asc("Time").Find(&list); err != nil {
+	list, err := g.store.Load()
+	if err != nil {
 		return nil, err
 	}
 	m := map[string][]*protocol.Gbbq{}
@@ -326,22 +337,14 @@ func (g *Gbbq) update() (map[string][]*protocol.Gbbq, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = g.db.SessionFunc(func(session *xorm.Session) error {
-		if _, err = session.Where("1=1").Delete(new(protocol.Gbbq)); err != nil {
-			return err
-		}
-		for _, ls := range gbbqs {
-			for _, v := range ls {
-				if _, err = session.Insert(v); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
+	var rows []*protocol.Gbbq
+	for _, ls := range gbbqs {
+		rows = append(rows, ls...)
+	}
+	if err := g.store.Save(rows); err != nil {
 		return nil, err
 	}
+
 	err = g.updated.Mark(g.updateKey)
 	return gbbqs, err
 }

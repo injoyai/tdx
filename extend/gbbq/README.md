@@ -28,3 +28,7 @@ ks, err := cache.QFQKlineDay("sh600519")
 `manage.WithGbbq` 接收 `gbbq.Interface`，`manage.WithDialGbbq` 接收 `gbbq.DialFunc`。管理器仅懒初始化自己创建的占位对象，显式传入 `&gbbq.Gbbq{}` 可禁用股本回填。`metadatahttp.GbbqHTTP`（`extend/metadatahttp`）同样实现本接口，独立代码/股本 HTTP 服务入口为 `httpserver.ListenCodesAndGbbqHTTP`。
 
 `lib/gbbq` 负责离线文件下载和解密，与本包的网络记录缓存不同；文件单位未独立核实，不能按同名字段直接换算。旧根包入口对应关系见 [迁移指南](../../docs/v2-migration.md#股本缓存与默认配置归位)。
+
+## 自定义存储
+
+通过 `WithStore(store)` 注入本包 `Store` 接口，可自行选择 SQL 或其他存储，不再创建默认 SQLite 数据库。存储由调用方关闭，不能同时配置 `WithDB/WithDialDB`。原数据库注入入口保留，并使用本包 `SQLStore` 适配；`NewSQLStore(db)` 可显式包装已有 XORM 引擎。接口行为和资源归属详见 [存储接口说明](../../docs/storage.md)。

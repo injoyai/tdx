@@ -12,7 +12,6 @@ import (
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
-	"xorm.io/xorm"
 )
 
 // DefaultSpec 是缓存每日刷新的默认定时规则。
@@ -23,6 +22,11 @@ type (
 
 	DialFunc func(c tdx.Client) (Interface, error)
 )
+
+// WithStore 注入自定义持久化；存储由调用方关闭，不能与 WithDB/WithDialDB 同时使用。
+func WithStore(store Store) Option {
+	return func(s *Codes) { s.store = store }
+}
 
 func WithDB(db *xorms.Engine) Option {
 	return func(c *Codes) {
@@ -81,6 +85,9 @@ func New(op ...Option) (result *Codes, err error) {
 
 	WithOptions(op...)(cs)
 
+	if cs.store != nil && (cs.db != nil || cs.dialDB != nil) {
+		return nil, errors.New("codes: WithStore 不能与 WithDB/WithDialDB 同时使用")
+	}
 	ownedClient, ownedDB := cs.c == nil, cs.db == nil
 	cs.cleanup = func() error {
 		var err error
@@ -115,24 +122,27 @@ func New(op ...Option) (result *Codes, err error) {
 	}
 
 	// 初始化数据库
-	if cs.db == nil {
-		if cs.dialDB == nil {
-			cs.dialDB = func() (*xorms.Engine, error) {
-				return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "codes.db"))
+	if cs.store == nil {
+		if cs.db == nil {
+			if cs.dialDB == nil {
+				cs.dialDB = func() (*xorms.Engine, error) {
+					return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "codes.db"))
+				}
+			}
+			cs.db, err = cs.dialDB()
+			if err != nil {
+				return nil, err
 			}
 		}
-		cs.db, err = cs.dialDB()
+		if cs.db == nil || cs.db.Engine == nil {
+			return nil, errors.New("数据库工厂返回空引擎")
+		}
+		cs.store, err = NewSQLStore(cs.db)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if cs.db == nil || cs.db.Engine == nil {
-		return nil, errors.New("数据库工厂返回空引擎")
-	}
-	if err = cs.db.Sync2(new(CodeModel)); err != nil {
-		return nil, err
-	}
-	cs.updated, err = update.New(cs.db, 9, 0)
+	cs.updated, err = update.NewWithStore(cs.store, 9, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +158,7 @@ func New(op ...Option) (result *Codes, err error) {
 
 var _ Interface = &Codes{}
 
-// Codes 在内存中提供代码表查询，并通过 SQLite 缓存和定时任务刷新。
+// Codes 在内存中提供代码表查询，并通过 Store 持久化和定时任务刷新。
 type Codes struct {
 	state   lifecycle.Updates
 	stop    func()
@@ -160,6 +170,7 @@ type Codes struct {
 	dialClient tdx.DialClientFunc
 
 	c         tdx.Client
+	store     Store
 	db        *xorms.Engine
 	updateKey string
 	updated   *update.Tracker
@@ -186,8 +197,8 @@ func (c *Codes) update() ([]*CodeModel, error) {
 	}
 
 	//2. 查询数据库所有股票
-	list := []*CodeModel(nil)
-	if err := c.db.Find(&list); err != nil {
+	list, err := c.store.Load()
+	if err != nil {
 		return nil, err
 	}
 
@@ -200,14 +211,8 @@ func (c *Codes) update() ([]*CodeModel, error) {
 		return list, nil
 	}
 
-	mCode := make(map[string]*CodeModel, len(list))
-	for _, v := range list {
-		mCode[v.FullCode()] = v
-	}
-
 	//3. 从服务器获取所有股票代码
-	inserts := []*CodeModel(nil)
-	updates := []*CodeModel(nil)
+	fresh := []*CodeModel(nil)
 	for _, exchange := range []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ} {
 		resp, err := c.c.GetCodeAll(exchange)
 		if err != nil {
@@ -226,44 +231,12 @@ func (c *Codes) update() ([]*CodeModel, error) {
 				Decimal:   v.Decimal,
 				LastPrice: v.LastPrice,
 			}
-			if val, ok := mCode[exchange.String()+v.Code]; ok {
-				if val.Name != code.Name || val.Multiple != code.Multiple || val.Decimal != code.Decimal || val.LastPrice != code.LastPrice {
-					updates = append(updates, code)
-				}
-				delete(mCode, exchange.String()+v.Code)
-			} else {
-				inserts = append(inserts, code)
-			}
+			fresh = append(fresh, code)
 		}
 	}
 
-	// 增量操作统一放在事务中，保留未变化记录和已有主键。
-	err = c.db.SessionFunc(func(session *xorm.Session) error {
-		for _, v := range mCode {
-			if _, err := session.Where("Exchange=? and Code=?", v.Exchange, v.Code).Delete(v); err != nil {
-				return err
-			}
-		}
-		batchSize := 100 // SQLite 每批不超过 999 个参数。
-		for start := 0; start < len(inserts); start += batchSize {
-			end := min(start+batchSize, len(inserts))
-			if _, err := session.Insert(inserts[start:end]); err != nil {
-				return err
-			}
-		}
-		for _, v := range updates {
-			if _, err := session.Where("Exchange=? and Code=?", v.Exchange, v.Code).
-				Cols("Name", "Multiple", "Decimal", "LastPrice").Update(v); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	list, err = c.store.Save(fresh)
 	if err != nil {
-		return nil, err
-	}
-	list = nil
-	if err := c.db.Find(&list); err != nil {
 		return nil, err
 	}
 

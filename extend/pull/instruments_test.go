@@ -131,7 +131,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 	}
 	t.Log("same 801 records: 4 markets use 2 pages instead of 8")
 	clearMarks := func() {
-		if _, err := s.updatedDB.Exec("DELETE FROM `update`"); err != nil {
+		if _, err := s.store.(*SQLiteStore).updatedDB.Exec("DELETE FROM `update`"); err != nil {
 			t.Fatal(err)
 		}
 	}

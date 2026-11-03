@@ -44,3 +44,7 @@ defer stop()
 `stop` 可重复或并发调用，取消重试等待并等待在途更新退出；`Update()` 本身应有有限超时。应在更新回调外调用 `stop`，避免等待自身退出。
 
 只提供 `StartTimer`，调用方保存并调用 `stop` 释放任务。拆包后的对应关系见 [迁移指南](../../docs/v2-migration.md#交易日历与更新工具独立子包)。
+
+## 自定义标记存储
+
+`Store` 提供 `LoadUpdate(key)` 和 `SaveUpdate(key, unix)`，缺少标记返回 `has=false`。`NewWithStore(store,hour,minute)` 复用原有每日边界计算，不打开数据库、不接管存储生命周期。`New(db,hour,minute)` 保留，通过 `SQLStore` 读写原 `update` 表。标记时间是 Unix 秒，与行情源时间无关。

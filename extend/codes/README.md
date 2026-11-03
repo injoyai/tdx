@@ -42,3 +42,7 @@ defer cache.Close()
 原根包入口的对应关系见 [迁移指南](../../docs/v2-migration.md#代码表接口与缓存独立子包)。本次不改变已有 SQLite 表结构、模型 JSON 字段或数据单位。
 
 默认定时规则公开为 `codes.DefaultSpec`；数据库工厂类型为 `xorms.DialFunc`（`github.com/injoyai/tdx/v2/lib/xorms`）。
+
+## 自定义存储
+
+通过 `WithStore(store)` 注入本包 `Store` 接口，可自行选择 SQL 或其他存储，不再创建默认 SQLite 数据库。存储由调用方关闭，不能同时配置 `WithDB/WithDialDB`。原数据库注入入口保留，并使用本包 `SQLStore` 适配；`NewSQLStore(db)` 可显式包装已有 XORM 引擎。接口行为和资源归属详见 [存储接口说明](../../docs/storage.md)。

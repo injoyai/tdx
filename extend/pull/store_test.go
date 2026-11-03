@@ -167,10 +167,10 @@ func TestStoreMinute(t *testing.T) {
 		t.Errorf("LastMinuteTime = %s, want %s", last, ks[2].Time)
 	}
 
-	if !s.MinuteExists(code, year) {
+	if !s.store.(*SQLiteStore).MinuteExists(code, year) {
 		t.Errorf("MinExists(%d) = false, want true", year)
 	}
-	if s.MinuteExists(code, year+1) {
+	if s.store.(*SQLiteStore).MinuteExists(code, year+1) {
 		t.Errorf("MinExists(%d) = true, want false", year+1)
 	}
 
@@ -388,12 +388,12 @@ func TestEngineCache(t *testing.T) {
 	s := testService(t)
 	code := Code{Market: protocol.MarketAStock, Code: "sh600000"}
 
-	db1, release1, err := s.openDay(code)
+	db1, release1, err := s.store.(*SQLiteStore).openDay(code)
 	if err != nil {
 		t.Fatalf("openDay: %v", err)
 	}
 	defer release1()
-	db2, release2, err := s.openDay(code)
+	db2, release2, err := s.store.(*SQLiteStore).openDay(code)
 	if err != nil {
 		t.Fatalf("openDay 2: %v", err)
 	}

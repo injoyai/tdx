@@ -43,7 +43,11 @@ func TestGbbqRefreshRollback(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		g := &Gbbq{db: db, c: c, updated: u, updateKey: "batch"}
+		store, err := NewSQLStore(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := &Gbbq{store: store, db: db, c: c, updated: u, updateKey: "batch"}
 		_, err = g.update()
 		if (err != nil) != fail {
 			t.Fatal("unexpected refresh result", err)
@@ -86,7 +90,11 @@ func BenchmarkGbbqRefresh(b *testing.B) {
 	for j := range c.rows {
 		c.rows[j] = &protocol.Gbbq{Code: "sz000001", Category: 5, C1: float64(j), C3: 100, C4: 200}
 	}
-	g := &Gbbq{db: db, c: c, updated: u, updateKey: "bench"}
+	store, err := NewSQLStore(db)
+	if err != nil {
+		b.Fatal(err)
+	}
+	g := &Gbbq{store: store, db: db, c: c, updated: u, updateKey: "bench"}
 	b.ResetTimer()
 	for j := 0; j < b.N; j++ {
 		if _, err := g.update(); err != nil {

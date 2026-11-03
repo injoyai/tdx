@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"time"
 
-	_ "github.com/glebarez/go-sqlite"
 	"github.com/injoyai/base/maps"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
@@ -39,6 +38,11 @@ func WithRetry(retry int) Option {
 	return func(w *Workday) {
 		w.retry = retry
 	}
+}
+
+// WithStore 注入自定义持久化；存储由调用方关闭，不能与 WithDB/WithDialDB 同时使用。
+func WithStore(store Store) Option {
+	return func(s *Workday) { s.store = store }
 }
 
 func WithDB(db *xorms.Engine) Option {
@@ -91,6 +95,9 @@ func New(op ...Option) (result *Workday, err error) {
 		v(w)
 	}
 
+	if w.store != nil && (w.db != nil || w.dialDB != nil) {
+		return nil, errors.New("workday: WithStore 不能与 WithDB/WithDialDB 同时使用")
+	}
 	ownedClient, ownedDB := w.c == nil, w.db == nil
 	w.cleanup = func() error {
 		var err error
@@ -109,22 +116,25 @@ func New(op ...Option) (result *Workday, err error) {
 		}
 	}()
 
-	if w.db == nil {
-		if w.dialDB == nil {
-			w.dialDB = func() (*xorms.Engine, error) {
-				return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "workday.db"))
+	if w.store == nil {
+		if w.db == nil {
+			if w.dialDB == nil {
+				w.dialDB = func() (*xorms.Engine, error) {
+					return xorms.NewSQLite(filepath.Join(metadata.DefaultDatabaseDir, "workday.db"))
+				}
+			}
+			w.db, err = w.dialDB()
+			if err != nil {
+				return nil, err
 			}
 		}
-		w.db, err = w.dialDB()
+		if w.db == nil || w.db.Engine == nil {
+			return nil, errors.New("数据库工厂返回空引擎")
+		}
+		w.store, err = NewSQLStore(w.db)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if w.db == nil || w.db.Engine == nil {
-		return nil, errors.New("数据库工厂返回空引擎")
-	}
-	if err := w.db.Sync2(new(WorkdayModel)); err != nil {
-		return nil, err
 	}
 
 	if w.c == nil {
@@ -163,6 +173,7 @@ type Workday struct {
 	dialClient tdx.DialClientFunc
 
 	c     tdx.Client
+	store Store
 	db    *xorms.Engine
 	cache maps.Bit
 }
@@ -182,8 +193,8 @@ func (w *Workday) refresh() error {
 	//判断日K线是否拉取过
 
 	//获取全部工作日
-	all := []*WorkdayModel(nil)
-	if err := w.db.Asc("Unix").Find(&all); err != nil {
+	all, err := w.store.Load()
+	if err != nil {
 		return err
 	}
 	var lastWorkday = &WorkdayModel{}
@@ -202,7 +213,7 @@ func (w *Workday) refresh() error {
 			return err
 		}
 
-		inserts := []any(nil)
+		inserts := []*WorkdayModel(nil)
 		for _, v := range resp.List {
 			day, err := time.ParseInLocation(time.DateOnly, v.Time, protocol.Location())
 			if err != nil || day.Format(time.DateOnly) != v.Time {
@@ -218,12 +229,12 @@ func (w *Workday) refresh() error {
 			return nil
 		}
 
-		_, err = w.db.Insert(inserts)
+		err = w.store.Save(inserts)
 		if err != nil {
 			return err
 		}
 		for _, row := range inserts {
-			w.cache.Set(uint64(row.(*WorkdayModel).Unix), true)
+			w.cache.Set(uint64(row.Unix), true)
 		}
 
 	}

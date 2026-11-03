@@ -1,10 +1,10 @@
 # 🔄 行情数据拉取服务 (pull)
 
-将通达信行情数据**增量拉取并落盘 sqlite**：编排多市场（`Unit` 可插拔）、并发、重试、增量去重、周期合并。
+将通达信行情数据**增量拉取并持久化**（默认 SQLite，可注入 `Store`）：编排多市场（`Unit` 可插拔）、并发、重试、增量去重、周期合并。
 
 只存**日线 + 1分钟线**原始数据，其余周期（5/15/30/60 分钟、N 日等）由查询侧纯内存派生，不落盘。周期合并保留原始浮点精度，不转换成整数厘。
 
-v2 的 K 线及历史分笔拉取统一放在本包。`Service` 负责 K 线 SQLite 存储，`Trade` 负责历史分笔及合成分钟线 CSV 下载导出。原 `extend.PullKline` 已移除，调用方式与旧数据库处理见 [v2 迁移指南](../../docs/v2-migration.md)。
+v2 的 K 线及历史分笔拉取统一放在本包。`Service` 负责 K 线拉取编排及存储调用，`Trade` 负责历史分笔及合成分钟线 CSV 下载导出。原 `extend.PullKline` 已移除，调用方式与旧数据库处理见 [v2 迁移指南](../../docs/v2-migration.md)。
 
 ---
 
@@ -28,11 +28,11 @@ pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服�
      │                    └── a_stock / index / etf_lof / block (7709, 走 manage.Manage)
      │                    └── future / hk / us          (7727, 走 tdx.ClientPool)
      │
-     └──存储──> sqlite（一代码一库，见下方存储布局）
+     └──存储──> Store（默认 SQLite，也可由应用实现）
 ```
 
 - **`Unit`**：一个可拉取的独立市场/品种类别。新增市场 = 新增一个实现 + `pull.Register`，无需改框架。
-- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重、有上限的引擎缓存。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
+- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重；默认 SQLite 存储管理有上限的引擎缓存。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
 
 ---
 
@@ -155,19 +155,24 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 ---
 
+## 自定义存储
+
+通过 `Config.Store` 注入 `pull.Store`，可自选数据库或其他存储。注入后 `Dir` 可省略，不创建本地行情库或更新标记文件。接口契约、生命周期和原文件辅助方法的迁移见 [存储接口说明](../../docs/storage.md)。
+
 ## ⚙️ 配置项
 
 | 字段 | 说明 | 默认值 |
 |---|---|---|
-| `Dir` | 数据根目录（**必填**） | — |
+| `Store` | 自定义持久化存储，由调用方关闭 | 自动创建 SQLiteStore |
+| `Dir` | 默认 SQLite 数据根目录；未设置 Store 时必填 | — |
 | `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
 | `Goroutines` | 并发数 | `8` |
-| `MaxCachedEngines` | 行情数据库引擎缓存上限；使用中的引擎不淘汰，并发借用可暂时超限，释放后回落 | `32` |
+| `MaxCachedEngines` | 默认 SQLite 行情数据库引擎缓存上限；使用中的引擎不淘汰，并发借用可暂时超限，释放后回落 | `32` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
 | `Retry` | 单条失败重试次数 | `tdx.DefaultRetry` |
-| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 自动创建于 `Dir/updated.db` |
+| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 使用 Store 保存标记；默认 SQLite 为 `Dir/updated.db` |
 | `Manage` | 标准行情(7709)连接源 | 无（std 市场需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
 
@@ -177,7 +182,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 日线和分钟线均只保存源时间字符串与已确认的交易日；分钟线的 `Unix`、`TimeZone` 字段和 `Timestamp()` 已移除。存储只校验源日期时分格式、年份和范围，不应用夏令时或来源时区规则。已有 `source-time-v1` 库可以继续读写；历史额外列不再映射或使用，也不会自动删列。
 
-数据根目录自动创建 `.time-format`（`source-time-v1`）。不兼容旧 Unix 主键格式；含 `.storage-timezone` 或未标记旧数据库的目录会被拒绝，请配置新的 `Dir` 并重新拉取。不会自动删除、覆盖或迁移旧数据。
+默认 SQLite 数据根目录自动创建 `.time-format`（`source-time-v1`）。不兼容旧 Unix 主键格式；含 `.storage-timezone` 或未标记旧数据库的目录会被拒绝，请配置新的 `Dir` 并重新拉取。不会自动删除、覆盖或迁移旧数据。
 
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 

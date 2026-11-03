@@ -116,14 +116,14 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if s.MinuteExists(c, 2024) || s.MinuteExists(c, 2026) {
+	if s.Config().Store.(*pull.SQLiteStore).MinuteExists(c, 2024) || s.Config().Store.(*pull.SQLiteStore).MinuteExists(c, 2026) {
 		t.Fatal("空结果创建文件")
 	}
 	failed := errors.New("fetch failed")
 	err = pullMinutes(s, c, now, func(string) ([]*pull.KlineMinute, error) {
 		return []*pull.KlineMinute{{Time: now.Format("2006-01-02 15:04")}}, failed
 	}, nil)
-	if !errors.Is(err, failed) || s.MinuteExists(c, 2026) {
+	if !errors.Is(err, failed) || s.Config().Store.(*pull.SQLiteStore).MinuteExists(c, 2026) {
 		t.Fatal("失败后仍写库", err)
 	}
 }
@@ -186,7 +186,7 @@ func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, err := s.QueryMinute(code, "", "")
-	if err != nil || len(rows) != 1 || rows[0].Time != row.Time || !s.MinuteExists(code, 2027) {
+	if err != nil || len(rows) != 1 || rows[0].Time != row.Time || !s.Config().Store.(*pull.SQLiteStore).MinuteExists(code, 2027) {
 		t.Fatal("host date displaced source year", rows, err)
 	}
 }
@@ -281,7 +281,7 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if s.MinuteExists(code, 2024) || s.MinuteExists(code, 2025) {
+	if s.Config().Store.(*pull.SQLiteStore).MinuteExists(code, 2024) || s.Config().Store.(*pull.SQLiteStore).MinuteExists(code, 2025) {
 		t.Fatal("空历史创建了行情库")
 	}
 	if err := s.Close(); err != nil {

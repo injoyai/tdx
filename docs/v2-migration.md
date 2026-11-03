@@ -360,7 +360,7 @@ import (
 
 ## 数据库支持
 
-内置数据库支持统一使用 SQLite，已移除 MySQL 驱动注册、直接依赖和专用示例。以下入口不再提供：
+默认存储仍使用 SQLite；现可通过 `pull.Config.Store`、`codes.WithStore`、`gbbq.WithStore`、`workday.WithStore` 注入业务存储实现。更新标记也已抽象，不要求自定义实现依赖 SQL 或 XORM。接口契约和生命周期见 [存储接口说明](storage.md)。不内置 MySQL 驱动或 MySQL 行情适配器；以下旧入口仍不提供：
 
 | 已移除的入口 | SQLite 用法 |
 |---|---|
@@ -369,7 +369,7 @@ import (
 | `tdx.NewWorkdayMysql` | `workday.New` |
 | `xorms.NewMysql` | `xorms.NewSQLite(filename)` |
 
-通过 `codes.WithDB`、`workday.WithDB`、`gbbq.WithDB` 或对应 `DialDB` 选项传入 SQLite 引擎，可自定义数据库路径。已有 MySQL 数据不会自动转换为 SQLite；需要保留数据时另行导出转换，不能直接将 MySQL DSN 当作 SQLite 文件名。
+通过 `codes.WithDB`、`workday.WithDB`、`gbbq.WithDB` 或对应 `DialDB` 选项仍可传入引擎，内部使用各模块的 `SQLStore`；其他 SQL 数据库须在应用中注册驱动并验证兼容性。`WithStore` 与数据库注入选项不能同时使用。原 `Service.DayFile/MinuteFile/MinuteExists` 移至 `pull.SQLiteStore`；业务查询方法保持不变。默认 SQLite 的文件布局、表结构与任务身份保持不变，不自动搬迁或转换存量数据。已有 MySQL 数据不会自动转换为 SQLite；需要保留数据时另行导出转换，不能直接将 MySQL DSN 当作 SQLite 文件名。
 
 ## 存量数据库
 
