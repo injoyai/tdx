@@ -3,11 +3,11 @@
 - **项目**：通达信(tdx)协议 Go 实现（标准行情 7709 + 盘后数据 report file + 扩展行情 exhq 7727）。
 - **技术栈**：Go 1.25+，依赖 `github.com/injoyai/conv`（类型转换）、`github.com/injoyai/logs`（日志）。
 - **目录**：
-  - `protocol/`：协议帧编解码与数据结构（`model_*.go`、`unit.go`、`frame.go`、`types.go`）。
-  - `client_interface.go`：统一业务接口；`conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：标准/扩展业务连接；`query.go`：共享业务算法；股本缓存和复权查询位于 `extend/gbbq`，内部纯计算由 `internal/gbbq` 共享；组合管理器位于独立子包 `extend/manage`；代码查询接口和缓存位于 `extend/codes`，纯内存实现由 `internal/codecache` 共享；中国市场历史日历位于 `extend/workday`，通用更新标记和定时工具位于 `lib/update`，数据库工厂类型为 `xorms.DialFunc`，各缓存的默认定时规则由各自子包提供。
-  - `extend/`：离线数据读写（`local.go` 读写）、行情拉取、爬虫、HTTP server、指标计算统一在 `protocol.Klines`。
-  - `lib/`：gbbq、xorms、zip 工具；北交所代码统一由 `Client.GetCodeAll(ExchangeBJ)` 获取。
-  - `examples/`：少量独立可运行示例，每个示例直接放在 `examples/<示例名>/`；从项目根目录运行 `go run ./examples/<示例名>`，索引见 `examples/README.md`。
+  - 根包是 tdx SDK：client_interface.go 定义统一接口，client.go 为市场路由，conn_st.go / conn_ex.go 提供标准／扩展协议业务连接，conn.go 为内部传输，query.go 为共享查询。根包与 protocol 不导入 extend；报价精度只在连接内部保存 Decimal。
+  - `protocol/`：协议帧、编解码、市场规则及行情计算。
+  - `extend/`：基于 SDK 的扩展。pull 统一同步数据；model 提供业务记录与快照；metadata 集中提供 Codes、Gbbq、Workday 内存查询；metadata/httpclient 提供显式 HTTP 刷新；storage 定义持久化接口，storage/sqlite 集中实现 SQLite/XORM。local、export、spider、httpserver 分别负责文件读写、CSV、第三方数据源和 HTTP 服务。应用负责组件组装、调度、快照发布及资源关闭，不恢复 manage。其他后端由应用实现接口，不内置 MySQL。
+  - `lib/`：原始股本文件解密、update、zip 工具；北交所代码由 Client.GetCodeAll(ExchangeBJ) 获取。
+  - `examples/`：独立可运行示例，见 examples/README.md；`docs/` 保存接口、架构、迁移文档，图片集中在 docs/images。目录见 docs/structure.md，数据边界见 docs/data-architecture.md。
 - **外部依赖**：真实连接通达信服务器（`Dial*`/`DialDefault`）；示例与测试大多需要联网，测试可能因行情服务器/数据源而异，失败时先排查网络与数据可用性。
 
 ### 8.2 输出数据统一放 `./output/`（约定）

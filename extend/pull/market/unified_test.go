@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -67,8 +67,8 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer pool.Close()
-			s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20260101", Codes: []string{tc.input},
-				Manage: &manage.Manage{ClientPool: pool}, ExPool: pool})
+			s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{tc.input},
+				Pool: pool, ExPool: pool})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,11 +116,11 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 func TestExtendedMarketPrefixValidation(t *testing.T) {
 	u := &exUnit{name: protocol.MarketFuture, markets: []protocol.Exchange{protocol.ExchangeCFF}}
 	for _, code := range []string{"unknown/IF2609", "47/IF2609", "CFF/IF2609", "us/AAPL", "czc/TA2609"} {
-		if _, _, err := u.marketOf(pull.Code{Code: code}); err == nil {
+		if _, _, err := u.marketOf(model.Code{Code: code}); err == nil {
 			t.Errorf("accepted unsupported or noncanonical prefix: %q", code)
 		}
 	}
-	if _, _, err := (&exUnit{}).marketOf(pull.Code{Code: "AAPL"}); err == nil {
+	if _, _, err := (&exUnit{}).marketOf(model.Code{Code: "AAPL"}); err == nil {
 		t.Fatal("accepted a unit without exchanges")
 	}
 }

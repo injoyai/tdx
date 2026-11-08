@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -11,29 +12,33 @@ import (
 
 	"github.com/injoyai/bar"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Service 拉取服务：编排市场 Unit、增量去重、并发、重试、落库。
 type Service struct {
-	cfg        *Config
-	units      []Unit
-	updated    *update.Tracker
-	store      Store
-	closeStore func() error
-	closed     atomic.Bool
-	closeOnce  sync.Once
-	closeErr   error
-	day        bool
-	minute     bool
-	retry      int
-	goro       int
-	start      time.Time
+	cfg            *Config
+	units          []Unit
+	updated        *update.Tracker
+	store          storage.BarStore
+	closed         atomic.Bool
+	day            bool
+	minute         bool
+	retry          int
+	goro           int
+	start          time.Time
+	contextMu      sync.RWMutex
+	ctx            context.Context
+	universeMu     sync.Mutex
+	universe       []model.Code
+	universeReady  bool
+	freezeUniverse bool
 
 	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
-	overrides map[protocol.Market][]Code
+	overrides map[protocol.Market][]model.Code
 
 	updateMu    sync.Mutex
 	discoveryMu sync.Mutex
@@ -46,8 +51,15 @@ func New(cfg *Config) (*Service, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
-	if cfg.Store == nil && cfg.Dir == "" {
-		return nil, fmt.Errorf("pull: 数据根目录 Dir 不能为空")
+	for name, dependency := range map[string]any{
+		"Pool": cfg.Pool, "ExPool": cfg.ExPool, "CodesStore": cfg.CodesStore, "GbbqStore": cfg.GbbqStore, "WorkdayStore": cfg.WorkdayStore,
+	} {
+		if dependency != nil && isNil(dependency) {
+			return nil, fmt.Errorf("pull: %s 不能包含空对象", name)
+		}
+	}
+	if isNil(cfg.Store) && isNil(cfg.CodesStore) && isNil(cfg.GbbqStore) && isNil(cfg.WorkdayStore) {
+		return nil, fmt.Errorf("pull: 必须提供至少一种存储")
 	}
 	start, err := cfg.parseStart()
 	if err != nil {
@@ -57,6 +69,13 @@ func New(cfg *Config) (*Service, error) {
 	snapshot := *cfg
 	snapshot.Codes = append([]string(nil), cfg.Codes...)
 	cfg = &snapshot
+	if isNil(cfg.Store) {
+		retry := cfg.Retry
+		if retry <= 0 {
+			retry = tdx.DefaultRetry
+		}
+		return &Service{cfg: cfg, start: start, retry: retry}, nil
+	}
 
 	// 归一化默认值
 	day := cfg.Day
@@ -76,7 +95,7 @@ func New(cfg *Config) (*Service, error) {
 	// 代码列表：一次性解析并按市场分组。
 	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
 	// Codes 为空 = 全量模式：全部注册市场各自自动发现代码。
-	overrides := map[protocol.Market][]Code{}
+	overrides := map[protocol.Market][]model.Code{}
 	if len(cfg.Codes) > 0 {
 		for _, s := range cfg.Codes {
 			c, err := ParseCode(s)
@@ -107,19 +126,8 @@ func New(cfg *Config) (*Service, error) {
 		return nil, fmt.Errorf("pull: 未注册任何市场 Unit")
 	}
 	store := cfg.Store
-	var closeStore func() error
-	if store == nil {
-		sqlite, err := NewSQLiteStore(cfg.Dir, cfg.MaxCachedEngines)
-		if err != nil {
-			return nil, err
-		}
-		store = sqlite
-		closeStore = sqlite.Close
-	}
+
 	if store.Identity() == "" {
-		if closeStore != nil {
-			_ = closeStore()
-		}
 		return nil, fmt.Errorf("pull: Store.Identity 不能为空")
 	}
 	cfg.Store = store
@@ -127,9 +135,6 @@ func New(cfg *Config) (*Service, error) {
 	if updated == nil {
 		updated, err = update.NewWithStore(store, 0, 0)
 		if err != nil {
-			if closeStore != nil {
-				_ = closeStore()
-			}
 			return nil, err
 		}
 	}
@@ -141,30 +146,21 @@ func New(cfg *Config) (*Service, error) {
 	}
 
 	return &Service{
-		cfg:        cfg,
-		units:      units,
-		updated:    updated,
-		store:      store,
-		closeStore: closeStore,
-		day:        day,
-		minute:     minute,
-		retry:      retry,
-		goro:       goro,
-		start:      start,
-		overrides:  overrides,
+		cfg:       cfg,
+		units:     units,
+		updated:   updated,
+		store:     store,
+		day:       day,
+		minute:    minute,
+		retry:     retry,
+		goro:      goro,
+		start:     start,
+		overrides: overrides,
 	}, nil
 }
 
-// Close 停止后续存储操作并释放自动创建的 SQLite 存储；注入的 Store/Tracker 由调用方管理。
-func (s *Service) Close() error {
-	s.closeOnce.Do(func() {
-		s.closed.Store(true)
-		if s.closeStore != nil {
-			s.closeErr = s.closeStore()
-		}
-	})
-	return s.closeErr
-}
+// Close 停止后续业务存储操作；注入的组件均由调用方关闭。
+func (s *Service) Close() error { s.closed.Store(true); return nil }
 
 // Config 返回配置副本（只读；Codes 切片拷贝，避免与 Service 共享底层）。
 func (s *Service) Config() Config {
@@ -181,8 +177,68 @@ func (s *Service) TradeFallbackEnabled() bool { return s.cfg.TradeFallback }
 // Start 返回起始日期。
 func (s *Service) Start() time.Time { return s.start }
 
-// Manage 返回标准行情(7709)连接源；未配置返回 nil。
-func (s *Service) Manage() *manage.Manage { return s.cfg.Manage }
+// Pool 返回标准行情(7709)连接池；未配置返回 nil。
+func (s *Service) Pool() tdx.ClientPool { return s.cfg.Pool }
+
+// Context returns the active synchronization context. Standalone helpers use Background.
+func (s *Service) Context() context.Context {
+	s.contextMu.RLock()
+	defer s.contextMu.RUnlock()
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
+}
+
+// DiscoverCodes reads the fixed universe supplied by the application or persisted metadata.
+func (s *Service) DiscoverCodes() ([]model.Code, error) {
+	s.universeMu.Lock()
+	defer s.universeMu.Unlock()
+	if s.freezeUniverse && s.universeReady {
+		return append([]model.Code(nil), s.universe...), nil
+	}
+	list, err := s.loadCodes()
+	if err != nil {
+		return nil, err
+	}
+	if s.freezeUniverse {
+		s.universe = append([]model.Code(nil), list...)
+		s.universeReady = true
+	}
+	return list, nil
+}
+
+func (s *Service) loadCodes() ([]model.Code, error) {
+	if s.cfg.ListCodes != nil {
+		return s.cfg.ListCodes(s.Context())
+	}
+	if s.cfg.CodesStore == nil {
+		return nil, fmt.Errorf("pull: 自动发现需要 CodesStore 或 ListCodes")
+	}
+	snapshot, err := s.cfg.CodesStore.LoadCodes(s.Context(), []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ})
+	if err != nil {
+		return nil, err
+	}
+	if snapshot.FetchedAt.IsZero() {
+		return nil, fmt.Errorf("pull: 代码快照尚未同步")
+	}
+	out := make([]model.Code, 0, len(snapshot.Rows))
+	for _, row := range snapshot.Rows {
+		if row == nil {
+			return nil, fmt.Errorf("pull: nil security in stored snapshot")
+		}
+		i, err := protocol.ParseInstrument(row.FullCode())
+		if err != nil {
+			return nil, err
+		}
+		market, err := i.Market()
+		if err != nil {
+			continue
+		}
+		out = append(out, model.Code{Market: market, Code: row.FullCode(), Name: row.Name})
+	}
+	return out, nil
+}
 
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
 func (s *Service) ExPool() tdx.ClientPool { return s.cfg.ExPool }
@@ -228,9 +284,22 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 
 // Update 执行一次拉取：市场当地收盘后延迟 5 分钟，每个市场每天成功一次。
 // must=true 可提前拉取，仍保留市场级去重；提前拉取不会阻止收盘后的更新。
-func (s *Service) Update(must ...bool) error {
+func (s *Service) Update(must ...bool) error { return s.UpdateContext(context.Background(), must...) }
+
+// UpdateContext performs one bounded synchronization; it never owns the injected resources.
+func (s *Service) UpdateContext(ctx context.Context, must ...bool) error {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	if ctx == nil {
+		return fmt.Errorf("pull: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.contextMu.Lock()
+	s.ctx = ctx
+	s.contextMu.Unlock()
+	defer func() { s.contextMu.Lock(); s.ctx = nil; s.contextMu.Unlock() }()
 	return s.update(time.Now(), len(must) > 0 && must[0])
 }
 
@@ -249,8 +318,23 @@ func (s *Service) update(now time.Time, must bool) error {
 		s.discoveryMu.Unlock()
 	}()
 
+	s.universeMu.Lock()
+	s.freezeUniverse = true
+	s.universeReady = false
+	s.universe = nil
+	s.universeMu.Unlock()
+	defer func() {
+		s.universeMu.Lock()
+		s.freezeUniverse = false
+		s.universeReady = false
+		s.universe = nil
+		s.universeMu.Unlock()
+	}()
 	var firstErr error
 	for _, u := range s.units {
+		if err := s.Context().Err(); err != nil {
+			return err
+		}
 		cutoff, err := marketUpdateTime(protocol.Market(u.Name()), now)
 		if err != nil {
 			if firstErr == nil {
@@ -345,8 +429,11 @@ func (s *Service) updateUnit(u Unit) error {
 		b.Go(func() {
 			b.SetPrefix(fmt.Sprintf("[%s] %s", u.Name(), code.Key()))
 			b.Flush()
-			fetchWithRetry := func(fetch func(*Service, Code) error) (err error) {
+			fetchWithRetry := func(fetch func(*Service, model.Code) error) (err error) {
 				for attempt := 0; attempt < s.retry; attempt++ {
+					if err = s.Context().Err(); err != nil {
+						return err
+					}
 					err = fetch(s, code)
 					if err == nil {
 						return nil
@@ -383,7 +470,7 @@ func (s *Service) updateUnit(u Unit) error {
 
 // codes 获取市场代码列表；Config.Codes 指定时优先使用（已按市场分组）。
 // 注意：overrides 只包含用户显式列出的市场；其他市场仍走自动发现。
-func (s *Service) codes(u Unit) ([]Code, error) {
+func (s *Service) codes(u Unit) ([]model.Code, error) {
 	if override, ok := s.overrides[protocol.Market(u.Name())]; ok {
 		return override, nil
 	}
@@ -395,11 +482,11 @@ func (s *Service) codes(u Unit) ([]Code, error) {
 }
 
 // uniqueCodes 保留首次出现的名称与顺序，避免同一数据库被重复调度。
-func uniqueCodes(codes []Code) []Code {
-	out := make([]Code, 0, len(codes))
-	seen := make(map[Code]bool, len(codes))
+func uniqueCodes(codes []model.Code) []model.Code {
+	out := make([]model.Code, 0, len(codes))
+	seen := make(map[model.Code]bool, len(codes))
 	for _, code := range codes {
-		key := Code{Market: code.Market, Code: code.Code}
+		key := model.Code{Market: code.Market, Code: code.Code}
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, code)

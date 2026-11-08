@@ -3,11 +3,10 @@ package update
 
 import (
 	"errors"
+	"reflect"
 	"time"
 
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
-	"xorm.io/xorm"
 )
 
 // Store 持久化更新标记。缺少记录时 LoadUpdate 返回 has=false；方法须支持并发调用。
@@ -17,19 +16,9 @@ type Store interface {
 	SaveUpdate(key string, unix int64) error
 }
 
-// New 创建使用 SQL 存储、以固定东八区每日 hour:minute 为边界的完成标记。
-// 数据库仍由调用方关闭。
-func New(db *xorms.Engine, hour, minute int) (*Tracker, error) {
-	store, err := NewSQLStore(db)
-	if err != nil {
-		return nil, err
-	}
-	return NewWithStore(store, hour, minute)
-}
-
 // NewWithStore 创建使用自定义存储的完成标记，不打开数据库、不接管存储生命周期。
 func NewWithStore(store Store, hour, minute int) (*Tracker, error) {
-	if store == nil {
+	if store == nil || (reflect.ValueOf(store).Kind() == reflect.Pointer && reflect.ValueOf(store).IsNil()) {
 		return nil, errors.New("update: Store 不能为 nil")
 	}
 	return &Tracker{store: store, hour: hour, minute: minute}, nil
@@ -58,44 +47,4 @@ func (u *Tracker) IsUpdated(key string) (bool, error) {
 		node = node.Add(-24 * time.Hour)
 	}
 	return u.IsUpdatedSince(key, node)
-}
-
-// SQLStore 使用现有 update 表保存标记，不接管数据库生命周期。
-type SQLStore struct{ db *xorms.Engine }
-
-func NewSQLStore(db *xorms.Engine) (*SQLStore, error) {
-	if db == nil || db.Engine == nil {
-		return nil, errors.New("update: 数据库引擎为空")
-	}
-	if err := db.Sync2(new(Record)); err != nil {
-		return nil, err
-	}
-	return &SQLStore{db: db}, nil
-}
-
-func (s *SQLStore) LoadUpdate(key string) (int64, bool, error) {
-	var record Record
-	has, err := s.db.Where("`Key`=?", key).Get(&record)
-	return record.Time, has, err
-}
-
-func (s *SQLStore) SaveUpdate(key string, unix int64) error {
-	return s.db.SessionFunc(func(session *xorm.Session) error {
-		mark := &Record{Key: key, Time: unix}
-		n, err := session.Where("`Key`=?", key).Cols("Time").Update(mark)
-		if err != nil || n > 0 {
-			return err
-		}
-		_, err = session.Insert(mark)
-		return err
-	})
-}
-
-type Record struct {
-	Key  string
-	Time int64 //更新时间
-}
-
-func (*Record) TableName() string {
-	return "update"
 }

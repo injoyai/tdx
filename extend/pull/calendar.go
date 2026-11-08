@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
 // CalendarPeriod 为日历对齐的日线合并周期。
@@ -17,20 +19,20 @@ const (
 )
 
 // DayToCalendar 按源日期的日历周/月/季/年合并，不填补缺失交易日。
-// 输入无需排序；不修改输入。股本取最后一根，换手率累加，源日期取最后实际记录。
-func DayToCalendar(ks []*KlineDay, period CalendarPeriod) ([]*KlineDay, error) {
+// 输入无需排序；不修改输入。源日期取最后实际记录。
+func DayToCalendar(ks []*model.KlineDay, period CalendarPeriod) ([]*model.KlineDay, error) {
 	switch period {
 	case CalendarWeek, CalendarMonth, CalendarQuarter, CalendarYear:
 	default:
 		return nil, fmt.Errorf("pull: 不支持的日历周期 %q", period)
 	}
-	if err := validateDays("", ks); err != nil {
+	if err := model.ValidateDays("", ks); err != nil {
 		return nil, err
 	}
-	input := append([]*KlineDay(nil), ks...)
+	input := append([]*model.KlineDay(nil), ks...)
 	sort.SliceStable(input, func(i, j int) bool { return input[i].Time < input[j].Time })
-	key := func(k *KlineDay) string {
-		t, _ := parseTime(k.Time, time.DateOnly)
+	key := func(k *model.KlineDay) string {
+		t, _ := time.Parse(time.DateOnly, k.Time)
 		y, m, _ := t.Date()
 		switch period {
 		case CalendarWeek:
@@ -44,7 +46,7 @@ func DayToCalendar(ks []*KlineDay, period CalendarPeriod) ([]*KlineDay, error) {
 			return fmt.Sprint(y)
 		}
 	}
-	var out []*KlineDay
+	var out []*model.KlineDay
 	for start := 0; start < len(input); {
 		end, group := start+1, key(input[start])
 		for end < len(input) && key(input[end]) == group {
@@ -68,7 +70,7 @@ type TradingSession struct {
 // MinuteToSessions 按源日期时分和交易时段对齐 N 分钟线，不跨时段、不填造缺失分钟。
 // 调用方传入对应来源的钟面时段；夜盘按时段开始日分桶，不推断交易日。
 // 输入无需排序，不修改输入；时段外数据报错，避免悄悄丢量。
-func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*KlineMinute, error) {
+func MinuteToSessions(ks []*model.KlineMinute, n int, sessions []TradingSession) ([]*model.KlineMinute, error) {
 	if n <= 0 {
 		return nil, fmt.Errorf("pull: 分钟周期必须大于零")
 	}
@@ -99,20 +101,20 @@ func MinuteToSessions(ks []*KlineMinute, n int, sessions []TradingSession) ([]*K
 		if k == nil {
 			return nil, fmt.Errorf("pull: nil 分钟线")
 		}
-		if _, err := parseTime(k.Time, "2006-01-02 15:04"); err != nil {
+		if err := model.ValidateSourceTime(k.Time, "2006-01-02 15:04"); err != nil {
 			return nil, err
 		}
 	}
-	input := append([]*KlineMinute(nil), ks...)
+	input := append([]*model.KlineMinute(nil), ks...)
 	sort.SliceStable(input, func(i, j int) bool { return input[i].Time < input[j].Time })
 	type bucket struct {
 		anchor         string
 		session, index int
 	}
 	var previous bucket
-	var out []*KlineMinute
+	var out []*model.KlineMinute
 	for _, k := range input {
-		t, _ := parseTime(k.Time, "2006-01-02 15:04")
+		t, _ := time.Parse("2006-01-02 15:04", k.Time)
 		var current bucket
 		found := false
 		for i, s := range sessions {

@@ -25,7 +25,7 @@
 | 分时成交 / 历史分时成交  | ✅ 已完成 | `GetTrade` `GetHistoryTrade`                    |
 | K线 / 历史K线 / 指数 | ✅ 已完成 | `GetKline*`（自动识别指数）                         |
 | 股本变迁(除权除息)     | ✅ 已完成 | `GetGbbq` `GetGbbqAll`                          |
-| 前/后复权(对齐通达信)   | ✅ 已完成 | `Gbbq.QFQKlineDay` `HFQKlineDay` `QFQ` `HFQ`     |
+| 前/后复权(对齐通达信)   | ✅ 已完成 | `metadata.Gbbq.QFQ` `HFQ` `GetFactors`     |
 | 集合竞价           | ✅ 已完成 | `GetCallAuction`                               |
 | 财务信息           | ✅ 已完成 | `GetFinanceInfo`                               |
 | F10 公司资料       | ✅ 已完成 | `GetCompanyCategory` `GetCompanyContent`        |
@@ -44,7 +44,7 @@
 
 保留 6 个典型示例，见 [examples](examples/README.md)：跨市场客户端、实时报价、代码列表、K 线、复权和拉取落库。
 
-扩展功能按职责分包：本地文件使用 `extend/local`，CSV 导出使用 `extend/export`，行情拉取及历史分笔下载使用 `extend/pull`，第三方数据源使用 `extend/spider`，HTTP 缓存客户端使用 `extend/metadatahttp`，HTTP 服务使用 `extend/httpserver`。直接导入职责子包，详见 [包职责说明](extend/README.md)。
+扩展功能按职责分包：本地文件使用 `extend/local`，CSV 导出使用 `extend/export`，行情拉取及历史分笔下载使用 `extend/pull`，第三方数据源使用 `extend/spider`，HTTP 缓存客户端使用 `extend/metadata/httpclient`，HTTP 服务使用 `extend/httpserver`。直接导入职责子包，详见 [包职责说明](extend/README.md)。
 
 跨市场行情可只创建一个业务对象，自动路由标准和扩展连接：
 
@@ -63,15 +63,15 @@ _ = a; _ = h; _ = f
 
 `NewClient()` 返回统一业务接口 `Client`（默认实现为 `*MarketClient`），内部按市场路由到实现同一接口的 `StConn` / `ExConn`，统一报价、K 线、分时、分笔、代码列表和市场数量，并提供标准财务、F10、除权及报表入口。返回价格使用品种原币种/报价单位，成交量及五档买卖量使用最小单位（股票为股、期货为张），不再返回 `VolumeUnit`；国内未校准项按用户指定默认倍率100，境外无法确认成交数量的接口明确报错。使用方法和支持边界见 [统一 Client](docs/unified-client.md)，完整示例见 [UnifiedClient](examples/UnifiedClient/main.go)。标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`，两者均实现 `Client`；连接池使用 `Client`，通用传输仅在内部复用；其基础行情、K线便捷方法、完整分笔与代码查询已统一为同名 `Get*`，原 `Ex*` 替换及返回类型变化见迁移指南。
 
-需要组合标准行情连接池、代码缓存、交易日历和工作日任务时，使用独立的 [`extend/manage`](extend/manage/README.md) 包：`m, err := manage.New()`，使用完毕后调用 `m.Close()`。管理器类型与选项已从根包迁出，原 `tdx.NewManage()` 调用需按 [迁移指南](docs/v2-migration.md#管理器独立子包) 更新。
+数据同步统一由 [`extend/pull`](extend/pull/README.md) 完成：SyncCodes、SyncGbbq、SyncWorkdays 同步元数据，UpdateContext 同步行情。服务接收调用方创建的连接池和 storage 小接口，不自动建连或启动定时任务。
 
-独立代码表使用 [`extend/codes`](extend/codes/README.md)：`codes.Interface` 提供读取接口，`codes.NewBase()` 创建内存代码表，`codes.New(...)` 创建持久化自动更新缓存。标准行情连接继续使用内部内存元数据校准报价，不依赖代码缓存服务。
+[`metadata`](extend/metadata/README.md) 集中提供 Codes、Gbbq、Workday 三个独立的纯内存查询对象，构造时接收记录，不执行 I/O，不需要 Close。manage 已删除，应用负责组件组装、任务安排和资源关闭。共享业务模型位于 extend/model，设计与数据边界见[架构说明](docs/data-architecture.md)。
 
-中国市场历史交易日缓存位于 [`extend/workday`](extend/workday/README.md)，使用 `workday.New(...)` 创建；持久化更新标记和可停止的定时更新工具位于 [`lib/update`](lib/update/README.md)，使用 `update.New(...)` 与 `update.StartTimer(...)`。原根包入口的对应关系见 [迁移指南](docs/v2-migration.md#交易日历与更新工具独立子包)。
+通用更新标记和可停止定时工具仍在 [`lib/update`](lib/update/README.md)，应用可以选择使用。SQLite 的标记实现位于 storage/sqlite.NewUpdate。
 
 当前 Go 模块为 `github.com/injoyai/tdx/v2`。从 v1 升级时，调用方需要将根包和所有子包的 import 路径同步改为 `/v2` 路径，例如 `github.com/injoyai/tdx/v2/protocol`。包名仍为 `tdx`，源码继续放在仓库根目录。参见 [Go 主版本升级规则](https://go.dev/doc/modules/major-version)。
 
-v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。持久化默认使用 SQLite；行情、代码表、股本和交易日历均可注入业务存储接口，自行选择数据库，见 [存储接口说明](docs/storage.md)。不内置 MySQL 驱动或 MySQL 行情适配器。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
+v2 已统一成交、60 分钟 K 线和行情拉取接口，并移除北交所官网取码入口。主模块使用 XORM，SQLite 实现在 [storage/sqlite](extend/storage/sqlite/README.md) 单独包中，随 tdx 一起发布；不提供 MySQL 实现，其他后端由用户实现 Store。storage/sqlite.New(dir) 可作为同一个后端注入 pull 的行情和元数据小接口；纯查询包只接收数据。见 [存储接口说明](docs/storage.md)。旧接口替换方式及存量数据库说明见 [v2 迁移指南](docs/v2-migration.md)。
 
 行情时间保留源精度：日及更长周期返回日期，日内周期返回日期时分，不返回 `TimeZone` 或 Unix 时间戳。pull 使用源时间主键和新数据目录，不兼容旧 Unix 主键库，详见 [源时间与存储说明](docs/v2-migration.md#源时间交易日与真实时刻)。
 
@@ -150,38 +150,30 @@ if b := protocol.SpBlockByName(sp, "中证2000"); b != nil {
 
 复权基于股本变迁(gbbq)的除权除息事件做**仿射变换** `price_adj = QFQMul × price_raw + QFQAdd`，
 结果**四舍五入到分(2 位小数)，与电脑端通达信桌面端逐日对齐**(含配股、大比例送转、股改停牌复合事件均已实盘核验)。
-成交量/额不复权。`extend/gbbq` 提供 gbbq 数据自动更新与本地缓存(sqlite)，使用时导入 `github.com/injoyai/tdx/v2/extend/gbbq`。
+成交量/额不复权。`metadata` 提供基于已有事件的内存查询与复权计算，使用时导入 `github.com/injoyai/tdx/v2/extend/metadata`。
 
 ```go
-c, _ := tdx.DialDefault()
-defer c.Close()
-
-gb, _ := gbbq.New(gbbq.WithClient(c)) // 首次会拉取并缓存 gbbq
-defer gb.Close()
-
-// 方式一: 一步到位拉取全量历史 + 复权
-qfq, _ := gb.QFQKlineDay("sh600519") // 前复权日线
-hfq, _ := gb.HFQKlineDay("sh600519") // 后复权日线
-for _, k := range qfq {
-	fmt.Printf("%s 开%.2f 高%.2f 低%.2f 收%.2f\n",
-		k.Time.Format("2006-01-02"), k.Open, k.High, k.Low, k.Close)
-}
-
-// 方式二: 已有不复权 K 线时直接复权
-resp, _ := c.GetKlineDayAll("sh600519")
-ks, _ := resp.Klines()
-qfq2 := gb.QFQ("sh600519", ks)
-_ = qfq2
-
-// 方式三: 仅取复权因子(每个除权区间一个仿射系数), 自行施加
+// backend、ctx、c 由应用创建；事件先经 pull.SyncGbbq 同步。
+snapshot, err := backend.LoadGbbq(ctx, []string{"sh600519"})
+if err != nil { return err }
+gb, err := metadata.NewGbbq(snapshot.Rows)
+if err != nil { return err }
+resp, err := c.GetKlineDayAll("sh600519")
+if err != nil { return err }
+ks, err := resp.Klines() // 将统一股数转换为指标／本地文件使用的整数手
+if err != nil { return err }
+qfq := gb.QFQ("sh600519", ks)
+hfq := gb.HFQ("sh600519", ks)
+_ = qfq
+_ = hfq
 fs := gb.GetFactors("sh600519", ks)
 for _, f := range fs {
-	_ = f.QFQPrice(100) // 对任意原始价做前复权
+    _ = f.QFQPrice(100)
 }
 ```
 
 > 行情价格统一使用 `float64`，标准协议模型的价格及成交额单位为元；跨市场业务结果使用证券原币种/报价单位，不做汇率换算。协议和文件中的整数尺度仅在读写边界转换。旧 `protocol.Price`、`Yuan` 及价格转换方法已移除，详见 [价格迁移说明](docs/v2-migration.md#价格统一为-float64)。
-> 完整演示见 [`examples/GetQFQKline`](examples/GetQFQKline)。
+> 完整演示见 [`GetQFQKline`](examples/GetQFQKline)。
 
 ---
 
@@ -366,8 +358,7 @@ MIT License - 详见 [LICENSE](LICENSE)
 默认测试使用离线样本，覆盖协议解析、指标、导出与拉取存储：
 
 ```sh
-go test . ./tests/... ./internal/... ./protocol/... ./extend/... ./lib/...
-go test ./examples/... -run '^$'
+go test ./...
 ```
 
 根包内部测试与源码同目录，按客户端、连接、查询、拨号和连接池归并；只依赖公开接口的跨包契约、元数据资源归属及数据一致性测试集中在 [`tests/integration/`](tests/integration/README.md)。`go test .` 仅运行根包测试，`go test ./...` 会包含跨包测试。
@@ -379,4 +370,4 @@ TDX_SPIDER_LIVE=1 go test ./extend/spider -run '^Test(GetSinaFactor.*|NewSpiderT
 TDX_EXHQ_LIVE=1 go test . -run '^TestExLive$'
 ```
 
-首次使用新默认缓存目录前，请查看 [v2 迁移指南](docs/v2-migration.md)。
+迁移存储配置或缓存目录前，请查看 [v2 迁移指南](docs/v2-migration.md)。源码与维护入口见 [目录说明](docs/structure.md)。

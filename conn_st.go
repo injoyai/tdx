@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
-	"github.com/injoyai/tdx/v2/internal/codecache"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -25,8 +25,8 @@ const stPort = "7709"
 type StConn struct {
 	*conn
 	*queries
-	quoteMu    sync.Mutex
-	quoteCodes *codecache.Base
+	quoteMu       sync.Mutex
+	quoteDecimals map[string]int8
 }
 
 // GetKline 请求标准 K 线，价格转换为浮点元值，并保留指数特有字段。
@@ -113,7 +113,8 @@ func (c *StConn) standardQuotes(codes []string) (protocol.QuotesResp, error) {
 	defer c.quoteMu.Unlock()
 	loaded := map[protocol.Exchange]bool{}
 	for _, code := range codes {
-		if protocol.IsStock(code) || protocol.IsIndex(code) || c.quoteCodes.Get(code) != nil {
+		_, cached := c.quoteDecimals[code]
+		if protocol.IsStock(code) || protocol.IsIndex(code) || cached {
 			continue
 		}
 		ex, _, err := protocol.DecodeCode(code)
@@ -127,19 +128,17 @@ func (c *StConn) standardQuotes(codes []string) (protocol.QuotesResp, error) {
 		if err != nil {
 			return nil, err
 		}
-		var models []*codecache.CodeModel
-		for _, m := range c.quoteCodes.Iter() {
-			if m.Exchange != ex.String() {
-				models = append(models, m)
+		for key := range c.quoteDecimals {
+			if strings.HasPrefix(key, ex.String()) {
+				delete(c.quoteDecimals, key)
 			}
 		}
 		for _, m := range r.List {
-			models = append(models, &codecache.CodeModel{Exchange: ex.String(), Code: m.Code, Name: m.Name, Decimal: m.Decimal, Multiple: m.Multiple, LastPrice: m.LastPrice})
+			c.quoteDecimals[ex.String()+m.Code] = m.Decimal
 		}
-		c.quoteCodes.Update(models)
 		loaded[ex] = true
 	}
-	return c.getStandardQuotes(c.quoteCodes, codes...)
+	return c.getStandardQuotes(codes...)
 }
 
 // GetCode 获取标准市场代码的一页；北交所使用完整报表列表后分页。
@@ -387,12 +386,12 @@ func (c *StConn) codeList(ls []string, match func(string) bool, exchanges ...pro
 }
 
 // getStandardQuotes 按代码元数据校准标准行情价格。
-func (c *StConn) getStandardQuotes(metadata *codecache.Base, codes ...string) (protocol.QuotesResp, error) {
+func (c *StConn) getStandardQuotes(codes ...string) (protocol.QuotesResp, error) {
 	for i := range codes {
 		//如果是股票代码,则加上前缀
 		codes[i] = protocol.AddPrefix(codes[i])
 		if !protocol.IsStock(codes[i]) && !protocol.IsIndex(codes[i]) {
-			if metadata == nil {
+			if c.quoteDecimals == nil {
 				return nil, errors.New("代码元数据未初始化")
 			}
 			codes[i] = protocol.AddPrefix(codes[i])
@@ -418,21 +417,22 @@ func (c *StConn) getStandardQuotes(metadata *codecache.Base, codes ...string) (p
 			// 股票类代码才需要按 Decimal 修正价格;
 			// 指数(含板块指数 880xxx)与基金行情原始解码价格即正确, 跳过修正。
 			if !protocol.IsStock(code) && !protocol.IsIndex(code) {
-				m := metadata.Get(code)
-				if m == nil {
+				decimal, ok := c.quoteDecimals[code]
+				if !ok {
 					return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
 				}
+				scale := math.Pow10(int(2 - decimal))
 				for ii, v := range quotes[i].SellLevel {
-					quotes[i].SellLevel[ii].Price = m.Price(v.Price)
+					quotes[i].SellLevel[ii].Price = v.Price * scale
 				}
 				for ii, v := range quotes[i].BuyLevel {
-					quotes[i].BuyLevel[ii].Price = m.Price(v.Price)
+					quotes[i].BuyLevel[ii].Price = v.Price * scale
 				}
-				quotes[i].Kline.Last = m.Price(quotes[i].Kline.Last)
-				quotes[i].Kline.Open = m.Price(quotes[i].Kline.Open)
-				quotes[i].Kline.High = m.Price(quotes[i].Kline.High)
-				quotes[i].Kline.Low = m.Price(quotes[i].Kline.Low)
-				quotes[i].Kline.Close = m.Price(quotes[i].Kline.Close)
+				quotes[i].Kline.Last *= scale
+				quotes[i].Kline.Open *= scale
+				quotes[i].Kline.High *= scale
+				quotes[i].Kline.Low *= scale
+				quotes[i].Kline.Close *= scale
 			}
 		}
 	}
@@ -869,7 +869,7 @@ func (*StConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newStConn(core *conn) *StConn {
-	c := &StConn{conn: core, quoteCodes: codecache.NewBase()}
+	c := &StConn{conn: core, quoteDecimals: make(map[string]int8)}
 	c.queries = &queries{source: c}
 	return c
 }

@@ -1,13 +1,15 @@
 package pull
 
+import "github.com/injoyai/tdx/v2/extend/model"
+
 // 周期合并只计算原始浮点字段，避免经过整数厘损失港美股等市场的价格精度。
 
 // DayToPeriod 将日线按固定 N 根分块合并（非日历对齐）；n<=1 原样返回。
-func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
+func DayToPeriod(ks []*model.KlineDay, n int) []*model.KlineDay {
 	if n <= 1 {
 		return ks
 	}
-	var out []*KlineDay
+	var out []*model.KlineDay
 	for start := 0; start < len(ks); {
 		end := start + min(n, len(ks)-start)
 		k := *ks[start]
@@ -19,8 +21,6 @@ func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
 			k.Time, k.Close = v.Time, v.Close
 			k.Volume += v.Volume
 			k.Amount += v.Amount
-			k.Turnover += v.Turnover
-			k.FloatStock, k.TotalStock = v.FloatStock, v.TotalStock
 		}
 		out = append(out, &k)
 		start = end
@@ -30,11 +30,11 @@ func DayToPeriod(ks []*KlineDay, n int) []*KlineDay {
 
 // MinuteToPeriod 按固定 N 根合并，不对齐交易日或时段；n<=1 原样返回。
 // 时段对齐请用 MinuteToSessions。
-func MinuteToPeriod(ks []*KlineMinute, n int) []*KlineMinute {
+func MinuteToPeriod(ks []*model.KlineMinute, n int) []*model.KlineMinute {
 	if n <= 1 {
 		return ks
 	}
-	var out []*KlineMinute
+	var out []*model.KlineMinute
 	for start := 0; start < len(ks); {
 		end := start + min(n, len(ks)-start)
 		k := *ks[start]

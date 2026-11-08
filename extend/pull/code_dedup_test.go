@@ -1,20 +1,22 @@
 package pull
 
 import (
-	"github.com/injoyai/tdx/v2/protocol"
 	"testing"
+
+	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type discoveryTestUnit struct {
 	mockUnit
-	list []Code
+	list []model.Code
 }
 
-func (u *discoveryTestUnit) Codes(*Service) ([]Code, error) { return u.list, nil }
+func (u *discoveryTestUnit) Codes(*Service) ([]model.Code, error) { return u.list, nil }
 
 func TestConfiguredCodesDeduplicateTasksAndIdentity(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one", " test.one "}, Goroutines: 1}
+	cfg := Config{Store: testStore(t.TempDir()), Codes: []string{"test.one", " test.one "}, Goroutines: 1}
 	s, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +52,7 @@ func TestDiscoveredCodesDeduplicateByMarketAndCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	first.Name, alias.Name = "first", "other name"
-	u := &discoveryTestUnit{mockUnit: mockUnit{name: "discovery"}, list: []Code{
+	u := &discoveryTestUnit{mockUnit: mockUnit{name: "discovery"}, list: []model.Code{
 		first, alias, {Market: protocol.MarketUS, Code: first.Code},
 	}}
 	codes, err := s.codes(u)
@@ -63,7 +65,7 @@ func TestDiscoveredCodesDeduplicateByMarketAndCode(t *testing.T) {
 }
 
 func TestUSCodeCaseDedup(t *testing.T) {
-	var codes []Code
+	var codes []model.Code
 	for _, input := range []string{"aapl", "AAPL", "usaapl", "us.AAPL", "us/stock.aapl"} {
 		code, err := ParseCode(input)
 		if err != nil || code.Code != "AAPL" || code.Market != protocol.MarketUS {

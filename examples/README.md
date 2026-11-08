@@ -1,6 +1,6 @@
 # 示例
 
-保留 6 个典型用法，直接放在 `examples/<示例名>/` 下。每个示例独立运行，客户端或服务在退出时关闭。
+主模块保留 6 个典型用法，直接放在 `examples/<示例名>/` 下。每个示例独立运行，客户端或服务在退出时关闭。数据库示例使用主模块内置的 storage/sqlite 包。
 
 | 示例 | 内容 |
 | --- | --- |
@@ -44,6 +44,6 @@ go test ./examples/...
 
 `GetKline` 的 `-type` 使用 `protocol.TypeKline*` 数值，默认 9（日线）；`-all` 查询全部可用历史。`-until` 保留首次早于指定日期的停止记录，不能与 `-all` 同用。
 
-`pull` 默认写入 `./output/pull/`；继续使用原示例数据目录时传入 `-dir ./output/pullv2`，已有数据不会自动搬迁。日线和分钟线至少开启一种；全市场需显式传入 `-all`，`-force` 可忽略当日完成标记。拉取会更新同名数据库，配置与存储单位见 [pull 文档](../extend/pull/README.md)。
+`pull` 默认写入 `./output/pull/`；继续使用原示例数据目录时传入 `-dir ./output/pullv2`，已有数据不会自动搬迁。日线和分钟线至少开启一种；全市场需显式传入 `-all`，`-force` 可提前拉取，但仍按更新边界去重。拉取会更新同名数据库，配置与存储单位见 [pull 文档](../extend/pull/README.md)。
 
 联网结果取决于证券、交易日和服务器保留范围；真实验证遵循 [项目规则](../PROJECT_RULES.md) 的预算与限流要求。更多接口见 [统一 Client](../docs/unified-client.md)、[项目 README](../README.md) 和 [HTTP 服务](../extend/httpserver/README.md)。

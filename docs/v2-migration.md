@@ -1,5 +1,54 @@
 # v2 迁移指南
 
+## 扩展能力目录
+
+根包和 protocol 负责 tdx SDK；基于 SDK 的业务模型、查询、同步、存储和 HTTP 服务归入 extend。
+
+| 原导入路径 | 当前导入路径 |
+| --- | --- |
+| github.com/injoyai/tdx/v2/model | github.com/injoyai/tdx/v2/extend/model |
+| github.com/injoyai/tdx/v2/metadata | github.com/injoyai/tdx/v2/extend/metadata |
+| github.com/injoyai/tdx/v2/storage | github.com/injoyai/tdx/v2/extend/storage |
+| github.com/injoyai/tdx/v2/storage/sqlite | github.com/injoyai/tdx/v2/extend/storage/sqlite |
+| github.com/injoyai/tdx/v2/extend/metadatahttp | github.com/injoyai/tdx/v2/extend/metadata/httpclient |
+
+pull 保持 github.com/injoyai/tdx/v2/extend/pull，内置市场仍从其 market 子包注册。HTTP 客户端包名从 metadatahttp 改为 httpclient，构造入口仍为 DialCodesHTTP、DialGbbqHTTP。不保留旧路径转发。数据库文件、表结构、HTTP 路由、JSON 格式和调度行为不变。源码分组见 [目录说明](structure.md)。
+
+## 统一同步、存储与纯内存查询
+
+这是公开接口重构，不保留旧自动更新构造和 manage。
+
+原 extend/codes、extend/gbbq、extend/workday 合并到extend/metadata，分别使用 metadata.Codes、metadata.Gbbq、metadata.Workday；三个对象仍独立构造，不提供旧导入路径或转发层。原 codes.Interface、gbbq.Interface 已移除，调用方按实际需求声明接口；HTTP 服务的最小代码查询接口为 httpserver.CodesSource。internal/gbbq 的计算已并入查询实现，lib/gbbq 继续独立负责文件下载、解密和解析。
+
+| 原入口 | 当前方式 |
+| --- | --- |
+| codes.New(选项或记录...) | metadata.NewCodes(records)，纯内存代码索引 |
+| codes.Base / NewBase / internal/codecache | 合并为 metadata.Codes / metadata.NewCodes(records)，空索引用 metadata.NewCodes(nil) |
+| codes.CodeModel / CodeModels | 直接使用 model.CodeModel / CodeModels |
+| pull.Code / KlineDay / KlineMinute / MinuteCoverage / MinuteEmptyScan，sqlite 同名别名 | 直接使用 model 对应类型；不再由同步器或后端重导出 |
+| pull.MinuteSourceTrade | model.MinuteSourceTrade |
+| pull.Store | storage.BarStore；Config.Store 字段保留 |
+| gbbq.New(选项或事件...) | metadata.NewGbbq(events)，纯内存事件查询与复权 |
+| workday.New(选项或快照...) | metadata.NewWorkday(model.WorkdaySnapshot)，纯内存日历 |
+| 元数据 WithClient / WithDB / WithStore / WithSpec / Close | 已移除；联网同步和持久化由 pull 与 storage 承接 |
+| 各元数据包的 Store / SQLStore | storage 小接口，SQLite 实现在 storage/sqlite |
+| manage.New / InitGbbq / AddWorkdayTask | 已删除；应用创建资源、安排任务、发布快照 |
+| Config.CodeCache | Config.CodesStore 或 ListCodes；指定证券时均可省略 |
+| Config.Gbbq | 已删除，原始行情不回填派生字段 |
+| QFQKlineDay / HFQKlineDay | Client 获取行情，再调用 metadata.Gbbq.QFQ / HFQ |
+| GetTurnover 的标量返回 | Turnover 返回 (value, available)，区分未知与有效零 |
+| pull.Trade.CodeCache | CodeName func(string) string；Workday 接收 RangeYear 接口 |
+| update.NewSQLStore / update.Record | sqlite.NewUpdate / sqlite.Record；update.Tracker 保留 |
+| 独立数据库模块 | 主模块 storage/sqlite，其他后端由应用实现接口 |
+
+pull.New 不联网、不启动定时任务，显式调用 SyncCodes、SyncGbbq、SyncWorkdays、UpdateContext。元数据快照的范围与刷新时间随数据原子提交，调用方不再单独写完成标记。返回 error 非 nil 时不得发布中间结果。
+
+共享业务模型位于 model。代码记录不再包含数据库 ID、InDate、EditDate，HTTP 代码 JSON 同步移除这些字段；日线不再含 FloatStock、TotalStock、Turnover。保留原始行情的源时间和量价口径，SQLite 旧额外列不会自动删除。新合并后端 sqlite.New(dir) 在 metadata.db 保存元数据；旧独立元数据库和不带覆盖信息的 workday 表不会自动搬迁／推断覆盖范围。
+
+HTTP 元数据服务接收现成的查询快照：ListenCodesHTTP(port, index)、ListenCodesAndGbbqHTTP(port, index, equity)，或将 CodesHandler 挂到现有服务；不再在监听函数内构造缓存。显式 metadata/httpclient HTTP 连接器仍保留自己的 Dial／Close 契约。股本响应须包含有效的事件代码和日期，事件代码须与所在分组一致；事件经 metadata.NewGbbq 校验、复制和排序后整体发布，刷新失败保留旧快照。空对象或 null 仍表示空快照。
+
+完整用法见[数据架构](data-architecture.md)、[存储契约](storage.md)、[pull](../extend/pull/README.md)。
+
 模块路径为 `github.com/injoyai/tdx/v2`，根包名仍为 `tdx`。下面的旧入口已移除，不再提供兼容别名。
 
 ## 市场默认时区与收盘后更新
@@ -116,7 +165,7 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 历史分笔查询新增同代码、同交易日期的日线检查：没有对应日线时返回空分笔，日线查询失败时返回错误；整日分页仅检查一次，跨日查询逐日检查。调用方不能再依赖无对应日线时分笔接口的非空返回；当天实时分笔不受影响。此保护可能增加日线分页请求，详见 [统一 Client](unified-client.md)。
 
-`GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。日历实现使用 `*workday.Workday`（`extend/workday`），它是中国市场历史日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
+`GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。日历实现使用 `*metadata.Workday`（`metadata`），它是中国市场历史日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
 
 复权和协议数据处理可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取保留的标准解码结构，价格和成交额已为浮点元值，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的股数，不能直接作为整数手输入交给 VWAP 或本地文件写入器；这些场景使用新增的 `KlineResp.Klines()`：
 
@@ -161,7 +210,7 @@ HTTP 查询直接返回统一函数的结果，包含证券标识和单位；不
 | `protocol.TypeMinuteTrade` / `TypeHistoryMinuteTrade` | `TypeTrade` / `TypeHistoryTrade`，消息数值不变 |
 | `protocol.Factor.QFQ` / `HFQ` | `QFQPrice(raw)` / `HFQPrice(raw)`，或使用 `Mul * raw + Add` |
 | `PreKline.PreLast` / `Factor.PreLast` / `QFQFactor()` / `HFQFactor()` | `XRXDs.Pre(ks).Factors()` 获取仿射系数；单事件参考价用 `XRXD.Pre(raw)` |
-| `extend.Kline` / `extend.Klines` | 指标使用 `protocol.Kline/Klines`；落库模型使用 `pull.KlineDay/KlineMinute`，注意单位转换 |
+| `extend.Kline` / `extend.Klines` | 指标使用 `protocol.Kline/Klines`；落库模型使用 `model.KlineDay/KlineMinute`，注意单位转换 |
 | `extend.Klines.REF/HHV/LLV` | 调用方检查长度后按切片取值或遍历计算高低值 |
 | `extend.Info` | 调用方按需要组合行情、股本和换手率数据 |
 | `extend.DefaultDayKlineExportTitle` / `DefaultMinuteKlineExportTitle` | CSV 导出使用 `KlinesToCSV`；自定义列由调用方定义 |
@@ -205,103 +254,11 @@ tdx.ExHosts = tdx.ExHosts.Sort()
 
 超时是整轮测速的时间上限（默认一秒），按 TCP 连接耗时排序；全不可用或输入为空时返回空列表，不使用默认地址，也不无限等待第一个可用地址。测速仅检查 TCP 建连，不代表行情握手或查询成功。
 
-### 管理器独立子包
+### 更新工具与元数据查询
 
-管理器迁移到 `github.com/injoyai/tdx/v2/extend/manage`，构造入口为 `manage.New(...)`，类型为 `*manage.Manage`。这是公开接口迁移，调用方需要更新 import、构造函数、类型和选项的包名前缀；根包不再提供管理器入口，避免反向依赖扩展包造成循环引用。
+manage 已删除。codes、gbbq、workday 只处理调用方提供的数据，元数据获取与持久化统一由 pull 和 storage 完成。update.NewWithStore 和 StartTimer 是应用可选择使用的独立工具；StartTimer 仍会立即执行一次，再启动定时任务，其停止函数必须由调用方持有。
 
-| 原入口 | 新入口 |
-|---|---|
-| `tdx.NewManage(...)` | `manage.New(...)` |
-| `*tdx.Manage` | `*manage.Manage` |
-| `tdx.Option` | `manage.Option` |
-| `tdx.WithClients` / `tdx.WithPool` / `tdx.WithDialPool` | 同名 `manage.With*` |
-| `tdx.WithCodes` / `tdx.WithDialCodes` | 同名 `manage.With*` |
-| `tdx.WithWorkday` / `tdx.WithDialWorkday` | 同名 `manage.With*` |
-| `tdx.WithGbbq` / `tdx.WithDialGbbq` / `tdx.WithDialGbbqDefault` | 同名 `manage.With*` |
-| `tdx.WithOption` | `manage.WithOptions` |
-
-```go
-import "github.com/injoyai/tdx/v2/extend/manage"
-
-m, err := manage.New(manage.WithClients(2))
-if err != nil {
-    return err
-}
-defer m.Close()
-```
-
-`pull.Config.Manage`、`Service.Manage()` 和 `pull.Trade` 的管理器参数同步改为 `*manage.Manage`。代码接口、模型和缓存工厂位于 `extend/codes`；股本缓存位于 `extend/gbbq`；连接池和 `tdx.DialClientFunc` 仍在根包，数据库工厂为 `xorms.DialFunc`。代码缓存配置使用 `codes.WithClient` 等入口；交易日历已迁至 `extend/workday`，更新标记及定时工具迁至 `lib/update`。缓存路径、自动更新及资源归属不因迁移改变。用法见 [manage 包说明](../extend/manage/README.md)。
-
-`manage.Manage.Close()` 先停止工作日任务调度，按创建顺序的逆序释放内部缓存和连接池，再等待正在执行的任务退出，避免任务等待空连接池时互相阻塞；初始化失败也执行相同清理。关闭没有强制截止时间，任务自身须有界退出；外部共享连接池的阻塞由调用方解除。`WithPool` / `WithCodes` / `WithWorkday` / `WithGbbq` 直接注入的资源仍由调用方关闭；相应 `WithDial*` 工厂返回的资源归管理器所有。pull 懒加载的股本缓存也由管理器释放。`httpserver.ListenCodesHTTP` / `ListenCodesAndGbbqHTTP` 初始化或监听失败会返回错误并关闭自建缓存；两者共用按 URL 路径匹配的路由，支持查询参数，保持原始 JSON 列表/映射返回。
-
-`manage.New` 在代码、交易日历和股本组件均已提供时不借用连接；需要初始化组件时才从池中获取连接。`WithDialPool` / `WithDialCodes` / `WithDialWorkday` / `WithDialGbbq` 返回空对象（包括接口中的空指针）会导致构造失败并清理已创建的资源。`InitGbbq()` 只替换管理器自己的默认占位对象；通过 `WithGbbq` 或 `WithDialGbbq` 提供的空实现也保持原样，可用于明确禁用股本回填。
-
-`Close()` 会等待正在执行的工作日任务，不能在 `AddWorkdayTask` 的回调内同步调用。任务需要关闭管理器时，向外部调用方发送信号并返回，由外部调用 `Close()`：
-
-```go
-shutdown := make(chan struct{}, 1)
-err := m.AddWorkdayTask("0 0 16 * * *", func(*manage.Manage) {
-    select {
-    case shutdown <- struct{}{}:
-    default:
-    }
-})
-if err != nil {
-    return err
-}
-<-shutdown
-return m.Close()
-```
-
-### 代码表接口与缓存独立子包
-
-`Interface`、代码模型、内存代码表和 SQLite 缓存迁移到 `github.com/injoyai/tdx/v2/extend/codes`。查询方法、模型字段、`codes` 表名、HTTP JSON 形状及默认缓存路径保持原样；需要同步更新调用方的包名前缀。
-
-| 原入口 | 新入口 |
-|---|---|
-| `tdx.ICodes` / `tdx.Codes` | `codes.Interface` / `codes.Codes` |
-| `tdx.CodeModel` / `tdx.CodeModels` / `tdx.CodesBase` | `codes.CodeModel` / `codes.CodeModels` / `codes.Base` |
-| `tdx.NewCodes` / `tdx.NewCodesSqlite` / `tdx.NewCodesBase` | `codes.New` / `codes.NewBase` |
-| `tdx.CodesOption` / `tdx.DialCodesFunc` | `codes.Option` / `codes.DialFunc` |
-| `tdx.WithCodesDB` / `tdx.WithCodesDialDB` | `codes.WithDB` / `codes.WithDialDB` |
-| `tdx.WithCodesSpec` / `tdx.WithCodesRetry` | `codes.WithSpec` / `codes.WithRetry` |
-| `tdx.WithCodesClient` / `tdx.WithCodesDialClient` | `codes.WithClient` / `codes.WithDialClient` |
-| `tdx.WithCodesOption` | `codes.WithOptions`；全局 `DefaultCodes` 已移除 |
-
-`manage.WithCodes` 接受 `codes.Interface`，`manage.WithDialCodes` 接受 `codes.DialFunc`；HTTP 缓存服务的配置参数改为 `codes.Option`。组件注入与工厂资源的归属规则保持不变。`Interface` 只表达代码表读取能力，不强制内存代码表提供关闭方法；需要释放资源时关闭具体缓存对象。
-
-标准行情报价仍在同一连接上取得精度元数据，使用内部的纯内存代码表，不依赖 `codes.New`、全局默认缓存或数据库。内部共享实现也用于对外的 `codes.Base`，避免两份代码分类与价格换算逻辑。元数据刷新和关闭的同步机制由 `internal/lifecycle` 共享，保持关闭等待在途更新的行为。
-
-`codes.Codes`、`gbbq.Gbbq`、`workday.Workday` 使用完成后须调用 `Close()`，停止定时更新并释放自建客户端和数据库。关闭可重复或并发调用，会等待在途更新；关闭后 `Update()` 返回 `net.ErrClosed`，已有内存快照仍可查询。`codes.New`、`gbbq.New`、`workday.New` 初始化失败返回 nil 和错误，并释放本次通过工厂创建的客户端及数据库；`With*Client` / `With*DB` 直接注入的共享资源仍由调用方管理。相应 `With*DialClient` / `With*DialDB` 工厂应返回本次构造独占的资源。HTTP 股本查询和本地查询统一按记录日期的零点生效，协议记录中的 15:00 不作为生效时刻。
-
-### 交易日历与更新工具独立子包
-
-数据库、行情拉取和定时刷新组成的历史交易日历迁至 `github.com/injoyai/tdx/v2/extend/workday`。根包继续保留 `TradingCalendar` 抽象和 `IntegerDay` 日期工具；历史分笔查询不再依赖某个具体日历类型，接口中的空日历指针会在读取行情前返回错误。
-
-| 原入口 | 新入口 |
-|---|---|
-| `tdx.Workday` / `tdx.WorkdayModel` | `workday.Workday` / `workday.WorkdayModel` |
-| `tdx.NewWorkday` / `tdx.NewWorkdaySqlite` | `workday.New` |
-| `tdx.WorkdayOption` / `tdx.DialWorkdayFunc` | `workday.Option` / `workday.DialFunc` |
-| `tdx.WithWorkdayClient` / `tdx.WithWorkdayDialClient` | `workday.WithClient` / `workday.WithDialClient` |
-| `tdx.WithWorkdayDB` / `tdx.WithWorkdayDialDB` | `workday.WithDB` / `workday.WithDialDB` |
-| `tdx.WithWorkdaySpec` / `tdx.WithWorkdayRetry` / `tdx.WithWorkdayOption` | `workday.WithSpec` / `workday.WithRetry` / `workday.WithOptions` |
-
-`manage.Workday` 使用 `*workday.Workday`（`pull.Config.Workday` 已移除，见上文收盘后更新）；`manage.WithDialWorkday` 的工厂类型为 `workday.DialFunc`。数据库 `workday` 表、默认路径 `./output/data/database/workday.db`、固定东八区和历史交易日判断方式保持原样。此实现依赖上证指数已经返回的日线，不提供未来节假日预测，也不自动成为港美股或期货的交易日历。
-
-持久化更新标记与定时执行移至 `github.com/injoyai/tdx/v2/lib/update`，分别位于 `mark.go` 和 `timer.go`。该公共工具包不依赖根包，供行情元数据、扩展缓存及 pull 共同使用。
-
-| 原入口 | 新入口 |
-|---|---|
-| `tdx.Updated` / `tdx.UpdateModel` | `update.Tracker` / `update.Record` |
-| `tdx.NewUpdated(db, hour, minute)` | `update.New(db, hour, minute)` |
-| `tdx.Updater` / `tdx.StartTimer` / `tdx.NewTimer` | `update.Updater` / `update.StartTimer`；保存返回的停止函数 |
-
-`pull.Config.Tracker` 改为 `*update.Tracker`。更新标记沿用 `update` 表名和字段；`IsUpdated` 保留原每日边界，pull 改用 `IsUpdatedSince` 按市场边界判断；`update.New` 使用调用方传入的数据库，不接管其关闭。新包用法见 [workday](../extend/workday/README.md) 和 [update](../lib/update/README.md)。
-
-独立调度使用 `stop, err := update.StartTimer(spec, retry, updater)`，成功后 `defer stop()`。它先验证 cron 表达式并立即更新一次，然后启动定时任务；同一任务不会重叠，停止会取消重试等待并等待正在执行的更新返回。更新函数本身须有有限超时。不保留丢弃停止函数的 `NewTimer`。
-
-`metadatahttp.DialCodesHTTP` / `DialGbbqHTTP` 返回的缓存客户端也须 `Close()`，关闭会取消在途 HTTP 请求并停止更新。外部 HTTP 数据请求（代码/股本缓存、同花顺、新浪和股本文件下载）默认总超时 30 秒；非成功状态、畸形同花顺响应，以及新浪复权因子中的空记录、非法数字、NaN 或无限值均返回错误。
+`httpclient.DialCodesHTTP` / `DialGbbqHTTP` 返回的缓存客户端也须 `Close()`，关闭会取消在途 HTTP 请求并停止更新。外部 HTTP 数据请求（代码/股本缓存、同花顺、新浪和股本文件下载）默认总超时 30 秒；非成功状态、畸形同花顺响应，以及新浪复权因子中的空记录、非法数字、NaN 或无限值均返回错误。
 
 `lib/zip.Encode` 拒绝源文件与目标文件相同的路径、硬链接或符号链接，检查失败不会截断源文件；压缩写入及关闭错误会返回调用方。
 
@@ -312,7 +269,7 @@ return m.Close()
 
 `local.WriteMinute1` 仅在当日包含 15:00 收盘记录时补尾盘占位，盘中或部分日的数据原样编码；已有占位不会重复补入。
 
-代码元数据刷新使用 SQLite 增量事务，保留未变化记录和原主键，更新名称、倍数、小数位与昨收价，删除退市项；内存缓存使用提交后的数据库快照。
+代码快照在明确交易所范围内原子替换，SQLite 内部保留未变化证券身份，但数据库 ID 不再出现在业务模型中。退市项只从当前代码快照移除，不删除其行情或股本历史。
 
 设置请求超时统一使用 `Client.SetTimeout(duration)`；原先直接调用单连接 `Client.Wait.SetTimeout` 的代码需迁移到该方法。具体连接的 `Wait` 保留原类型，用于内部响应关联，直接修改它不会调整 `SendFrame` 的计时器。
 
@@ -341,16 +298,16 @@ import (
 |---|---|
 | `Types: []string{extend.Day, extend.Minute}` | `Day: true, Minute: true` |
 | `Types: []string{extend.Day}` | `Day: true, Minute: false` |
-| `Update(m)` | 在 `Config.Manage` 中传入 `m`，然后调用 `s.Update()` |
+| `Update(m)` | 在 Config 中传入 Pool、Store 和按需使用的 CodesStore，然后调用 `s.UpdateContext(ctx)` |
 | `Run(m, spec)` | 调用方安排定时任务，在任务内调用 `s.Update()` |
 | `DayKlines(code, start, end)` | `s.QueryDay(c, start, end)`，其中 `c` 由 `pull.ParseCode(code)` 获取 |
 | `DayKlinesAll(code)` | `s.QueryDay(c, "", "")` |
 | `DayKline(code, n)` | 查询升序日线后检查长度，按切片下标选取；最新一根为 `ks[len(ks)-1]` |
 | `MinKlines(code, start, end)` | `s.QueryMinute(c, start, end)` |
 
-`Dir` 必须显式设置；`StartAt` 改用 `YYYYMMDD` 字符串，未设置时默认最近两年，非法格式或不存在的日期在创建服务时直接报错，且不会创建数据库。`Day` 与 `Minute` 都为 `false` 时默认同时拉取两种数据。服务使用完成后调用 `s.Close()`，外部连接池仍由调用方关闭。
+`Config.Store` 必须显式设置，原 `Config.Dir` 已移除；SQLite 目录由 `sqlite.NewPull(dir, maxCachedEngines)` 配置。`StartAt` 改用 `YYYYMMDD` 字符串，未设置时默认最近两年，非法格式或不存在的日期在创建服务时直接报错；`pull.New` 不创建数据库。`Day` 与 `Minute` 都为 `false` 时默认同时拉取两种数据。服务使用完成后调用 `s.Close()`，注入的存储、连接池及元数据组件仍由调用方关闭。
 
-日线查询返回 `[]*pull.KlineDay`，分钟查询返回 `[]*pull.KlineMinute`。拉取层直接使用统一 Client 的源时间、浮点价格和最小单位成交量（股票为股、期货为张），不再提取原始协议记录重复换算，不再受 `StandardResponse()` 的 uint16 条数限制。`protocol` 的价格和成交额也为浮点元值，不再乘 1000。
+日线查询返回 `[]*model.KlineDay`，分钟查询返回 `[]*model.KlineMinute`。拉取层直接使用统一 Client 的源时间、浮点价格和最小单位成交量（股票为股、期货为张），不再提取原始协议记录重复换算，不再受 `StandardResponse()` 的 uint16 条数限制。`protocol` 的价格和成交额也为浮点元值，不再乘 1000。
 
 `Amount` 保持 `float64`，Client 未提供金额时保存 0；移除 `AmountUnknown`，不再区分未知金额与真实零成交额。聚合直接求和，金额缺失时不能视为完整成交额。扩展原始持仓字节不会作为金额落库。源时间格式库的旧状态列不再映射或使用，不自动删列、改历史金额；过去自定义写入非零未知金额的记录需自行核对并重拉。示例见 [pull](../examples/pull/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
@@ -360,16 +317,7 @@ import (
 
 ## 数据库支持
 
-默认存储仍使用 SQLite；现可通过 `pull.Config.Store`、`codes.WithStore`、`gbbq.WithStore`、`workday.WithStore` 注入业务存储实现。更新标记也已抽象，不要求自定义实现依赖 SQL 或 XORM。接口契约和生命周期见 [存储接口说明](storage.md)。不内置 MySQL 驱动或 MySQL 行情适配器；以下旧入口仍不提供：
-
-| 已移除的入口 | SQLite 用法 |
-|---|---|
-| `tdx.NewManageMysql` | `manage.New`（`extend/manage`） |
-| `tdx.NewCodesMysql` | `codes.New`（`extend/codes`） |
-| `tdx.NewWorkdayMysql` | `workday.New` |
-| `xorms.NewMysql` | `xorms.NewSQLite(filename)` |
-
-通过 `codes.WithDB`、`workday.WithDB`、`gbbq.WithDB` 或对应 `DialDB` 选项仍可传入引擎，内部使用各模块的 `SQLStore`；其他 SQL 数据库须在应用中注册驱动并验证兼容性。`WithStore` 与数据库注入选项不能同时使用。原 `Service.DayFile/MinuteFile/MinuteExists` 移至 `pull.SQLiteStore`；业务查询方法保持不变。默认 SQLite 的文件布局、表结构与任务身份保持不变，不自动搬迁或转换存量数据。已有 MySQL 数据不会自动转换为 SQLite；需要保留数据时另行导出转换，不能直接将 MySQL DSN 当作 SQLite 文件名。
+storage 定义持久化小接口；SQLite 实现在主模块 storage/sqlite。sqlite.New(dir) 返回可同时实现元数据与行情接口的后端；Open(filename)、NewMetadata(db)、NewPull(dir,limit)、NewUpdate(db) 可独立使用。MySQL 等后端由应用实现接口。纯内存业务包不接收数据库或 Store。
 
 ## 存量数据库
 
@@ -379,12 +327,9 @@ import (
 
 新服务自身已有 SQLite 表的补字段、覆盖标记兼容继续保留，与上述旧服务目录迁移是两回事。
 
-## 默认缓存目录
+## 缓存目录由调用方配置
 
-Go 最低版本为 1.25.0。默认数据目录从 `./data` 调整为 `./output/data`，代码、交易日和股本缓存使用 `./output/data/database`；分笔 CSV 示例输出到 `./output/trade`。
-
-旧缓存不会自动搬迁。需要保留现有代码/交易日/股本缓存时，关闭所有使用它们的进程后，将 `codes.db`、`workday.db`、`gbbq.db` 及对应 SQLite WAL/SHM 文件完整复制到新目录，保留原文件备份；这些缓存表结构不变。也可以通过 `codes.WithDB` / `workday.WithDB` / `gbbq.WithDB` 或对应 `DialDB` 选项显式配置路径。这类元数据缓存迁移与上面的旧 K 线数据库格式转换不同。
-
+Go 最低版本为 1.25.0。目录由 SQLite 后端或应用配置。旧元数据文件不会自动搬迁；旧日历缺少来源及覆盖范围，不自动转换为新日历。详见[存储说明](storage.md)。
 
 ## 源时间、交易日与真实时刻
 
@@ -419,36 +364,9 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 - `GetReportFile` 与 `GetBlockFileRaw` 共享单块校验，超长响应现在返回错误；前者仍按短块/空块结束，后者仍要求达到元数据声明的文件大小。
 - `protocol.DecodeKline` 及 `lib/gbbq` 的 `GetStocks/Equity/Equities/Turnover` 旧派生模型已移除。离线文件保留原始 `GBBQ/GBBQs` 解密结果，文件单位未独立核实，不自动转换为网络股本模型。
 
-## 股本缓存与默认配置归位
+## 股本查询与日历
 
-股本缓存迁至 `github.com/injoyai/tdx/v2/extend/gbbq`，根包不再提供兼容别名。`Client.GetGbbq/GetGbbqAll` 仍是底层查询入口；`protocol` 中的数据结构、单位和复权算法保持不变。
-
-| 原入口 | 当前入口 |
-|---|---|
-| `tdx.NewGbbq` / `tdx.Gbbq` / `tdx.IGbbq` | `gbbq.New` / `gbbq.Gbbq` / `gbbq.Interface` |
-| `tdx.GbbqOption` / `tdx.DialGbbqFunc` | `gbbq.Option` / `gbbq.DialFunc` |
-| `tdx.WithGbbqClient` / `tdx.WithGbbqDialClient` | `gbbq.WithClient` / `gbbq.WithDialClient` |
-| `tdx.WithGbbqDB` / `tdx.WithGbbqDialDB` | `gbbq.WithDB` / `gbbq.WithDialDB` |
-| `tdx.WithGbbqSpec` / `tdx.WithGbbqRetry` / `tdx.WithGbbqOption` | `gbbq.WithSpec` / `gbbq.WithRetry` / `gbbq.WithOptions` |
-| `tdx.DialDBFunc` | `xorms.DialFunc`（`lib/xorms`） |
-| `tdx.DefaultClients` | `manage.DefaultClients` |
-| `tdx.DefaultCodesSpec` / `tdx.DefaultWorkdaySpec` / `tdx.DefaultGbbqSpec` | `codes.DefaultSpec` / `workday.DefaultSpec` / `gbbq.DefaultSpec` |
-| `tdx.DefaultDataDir` / `tdx.DefaultDatabaseDir` | 改为内部路径配置，调用方通过各缓存 `WithDB` / `WithDialDB` 自定义路径 |
-
-`tdx.DialClientFunc` 和通用 `tdx.DefaultRetry` 保留。默认路径仍为 `./output/data/database`，三个缓存默认刷新时间仍为固定东八区 09:01 / 09:03 / 09:05，无需搬迁数据库。HTTP 服务入口位于 `extend/httpserver`，其中股本参数改为 `[]gbbq.Option`，`GbbqHTTP` 实现 `gbbq.Interface`。管理器的股本注入和工厂分别接收 `gbbq.Interface`、`gbbq.DialFunc`；资源归属与懒初始化规则保持不变。`lib/gbbq` 仍用于离线文件解析，不能直接代替股本缓存。
-
-
-## 元数据查询接口命名
-
-独立子包的查询接口统一使用 `Interface`，具体持久化缓存类型保留原名：
-
-| 原子包入口 | 当前入口 |
-|---|---|
-| `gbbq.IGbbq` | `gbbq.Interface` |
-| `codes.ICodes` | `codes.Interface` |
-
-`gbbq.New` 仍返回 `*gbbq.Gbbq`，`codes.New` 仍返回 `*codes.Codes`。接口方法集、工厂及资源归属语义保持不变；管理器、HTTP 和 pull 的类型声明已同步更新。旧接口名不保留兼容别名，调用方需替换类型声明和匿名嵌入字段名称。
-
+股本查询使用 metadata.NewGbbq(events)，数据获取使用 Client.GetGbbq 或 pull.SyncGbbq。复权计算、股本按日生效和量额口径保持原有业务算法；缺失股本的换手率通过 Turnover 的 available=false 表达。metadata.NewWorkday(snapshot) 持有明确市场、来源和历史覆盖，Status 区分已观察交易与来源覆盖，覆盖外为未知，不预测未来节假日。
 
 ## 字符转换与均单成交额名称修正
 
@@ -469,11 +387,11 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 | `tdx.IPool` | `tdx.ClientPool`，具体实现仍为 `*tdx.Pool` |
 | `tdx.DialExHq` / `DialExHqDefault` / `DialExHqHosts` | `tdx.DialEx` / `DialExDefault` / `DialExHosts` |
 | `httpserver.WithExHqHosts` / `httpserver.WithOptions` | `httpserver.WithExHosts` / `httpserver.WithClientOptions` |
-| `codes.WithOption` / `gbbq.WithOption` / `workday.WithOption` / `manage.WithOption` | 对应子包的 `WithOptions` |
-| `xorms.NewSqlite` / `codes.NewSqlite` / `workday.NewSqlite` | 数据库使用 `xorms.NewSQLite`，缓存使用 `codes.New` / `workday.New` |
+| 元数据选项与 manage 选项 | 已移除，使用纯数据构造和 pull.Config 的存储接口 |
+| `xorms.NewSqlite` / `xorms.NewSQLite` / `codes.NewSqlite` / `workday.NewSqlite` | SQLite 引擎使用 `storage/sqlite.Open`，通过 storage 读取数据后使用 `metadata.NewCodes` / `metadata.NewWorkday` 构造查询对象 |
 | `pull.NewService` | `pull.New` |
-| `codes.CodesBase` | `codes.Base`，构造入口仍为 `codes.NewBase` |
-| `update.Updated` / `update.UpdateModel` | `update.Tracker` / `update.Record` |
+| `codes.CodesBase` / `codes.Base` / `codes.Codes` | `metadata.Codes`，构造入口为 `metadata.NewCodes` |
+| `update.Updated` / `update.UpdateModel` | `update.Tracker` / `sqlite.Record` |
 | 标记对象的 `Update(key)` / `Updated(key)` | `Mark(key)` / `IsUpdated(key)`；执行任务的 `Updater.Update()` 保持原名 |
 | `pull.Config.Updated` | `pull.Config.Tracker` |
 | `QueryMin` / `QueryMinCoverage` / `SaveMin` / `SaveMinComplete` / `SaveMinFallbackComplete` / `SaveMinEmptyScan` | `QueryMinute` / `QueryMinuteCoverage` / `SaveMinute` / `SaveMinuteComplete` / `SaveMinuteFallbackComplete` / `SaveMinuteEmptyScan` |
@@ -497,10 +415,10 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 |---|---|
 | `extend.ReadDay/ReadMinute1/ReadMinute5`、`WriteDay/WriteMinute1/WriteMinute5` | `extend/local` |
 | `extend.KlinesToCSV/TradesToCSV` | `extend/export` |
-| `extend.NewPullTrade/PullTrade` | `extend/pull.NewTrade/Trade` |
+| `extend.NewPullTrade/PullTrade` | `pull.NewTrade/Trade` |
 | `extend.GetSinaFactor*`、`GetTHSDayKline*`、`Factor/Factors` 及新浪/同花顺常量 | `extend/spider` |
 | `extend.ListenCodesHTTP/ListenCodesAndGbbqHTTP` | `extend/httpserver` |
-| `extend.DialCodesHTTP/DialGbbqHTTP`、`CodesHTTP/GbbqHTTP` | `extend/metadatahttp` |
+| `extend.DialCodesHTTP/DialGbbqHTTP`、`CodesHTTP/GbbqHTTP` | `extend/metadata/httpclient` |
 
 完整 import 前缀为 `github.com/injoyai/tdx/v2/`。函数签名、缓存刷新规则和资源归属不变，不再在 `extend` 根包重复导出类型；反射或 `%T` 获得的定义包路径会变为新子包。CSV 表头与 BOM、本地文件的价格/量/时间及占位规则保持不变；HTTP 的现行接口见服务文档。第三方比例因子仍不等于 `protocol.Factor` 仿射模型。
 
@@ -511,7 +429,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 当前 v2 仍在开发，不保留旧接口兼容层：
 
 - `pull` 的市场类型、常量与 `ToShares/FromShares` 直接使用 `protocol`；解析统一为 `pull.ParseCode`。完整市场键和简称输入都规范化为同一代码与文件名，例如 `cn/stock.600000` 与 `sh600000` 均使用 `sh600000.db`，不自动搬迁旧文件。
-- `codes.NewSQLite/workday.NewSQLite` 合并到各包 `New`；`DefaultCodes` 已移除。定时任务统一使用返回停止函数的 `update.StartTimer`。
+- `codes.NewSQLite/workday.NewSQLite` 已移除，使用 storage 后端读取快照，再通过 metadata.NewCodes/NewWorkday 构造查询；`DefaultCodes` 已移除。定时任务统一使用返回停止函数的 `update.StartTimer`。
 - `MQuote.Decode` 和 `ParseBlockFile` 直接返回解码错误，不保留忽略错误的包装或 `Checked` 双入口。
 - HTTP `/quote`、`/kline/*`、`/minute/*`、`/trade/*` 按证券前缀选择标准或已启用的扩展池，直接返回 Go 统一结果。`/code` 必须传 `count`，`start` 为 uint32；`/count` 返回整数。
 - 指数使用 `/kline/*`；移除 `/index/*` 和重复的扩展行情路由。市场发现使用 `/markets`，区间 K 线使用 `/kline/range`。保留 `/ex/count`、`/ex/instruments` 的原始协议全市场发现能力及 `/ex/quote_list` 的批量报价。
@@ -544,7 +462,7 @@ difference := math.Abs(k.High - k.Low)
 
 `KlineResp.Klines()` 直接转换统一记录，不再受旧 `protocol.KlineResp.Count uint16` 的 65535 条限制；仍校验标准来源、原始记录和非负整百股。`StandardResponse()` 的旧类型限制和协议分页偏移上限均保留。
 
-`gbbq.QFQKlineDay` / `HFQKlineDay` 现在返回整数手成交量，指数从原始股数改为股数 ÷100，可直接交给 `VWAP()`、`local.Write*` 和 `export.KlinesToCSV`。股票原始量已为手，正常输入的结果不变；不能无损换算为整数手时返回错误。直接调用 `QFQ` / `HFQ` 仍保留输入量额，调用方须先归一化输入。CSV 入口继续接受整数手，不根据证券代码猜测数据来自协议还是本地文件，也不增加单位字段。
+Client 的 `KlineResp.Klines()` 返回整数手成交量，指数从原始股数改为股数 ÷100，随后可交给 metadata.Gbbq.QFQ/HFQ、`VWAP()`、`local.Write*` 和 `export.KlinesToCSV`。股票原始量已为手，正常输入的结果不变；不能无损换算为整数手时返回错误。直接调用 `QFQ` / `HFQ` 仍保留输入量额，调用方须先归一化输入。CSV 入口继续接受整数手，不根据证券代码猜测数据来自协议还是本地文件，也不增加单位字段。
 
 `spider.GetTHSDayKline` 不再舍入成交量：源股数不是非负整数、溢出或不能整除 100 时返回错误；Full 系列的不复权数据也统一为整数手。
 
@@ -559,6 +477,12 @@ difference := math.Abs(k.High - k.Low)
 | --- | --- |
 | `pulltrade.NewPullTrade(dir)` | `pull.NewTrade(dir)` |
 | `pulltrade.PullTrade` | `pull.Trade` |
-| `downloader.Pull(ctx, m, code)` / `PullYear(ctx, m, year, code)` | 方法及参数保持不变 |
+| `downloader.Pull(ctx, m, code)` / `PullYear(ctx, m, year, code)` | 设置 downloader 的 Pool、Workday、CodeName，调用 `Pull(ctx, code)` / `PullYear(ctx, year, code)` |
 
-调用方将 import 改为 `github.com/injoyai/tdx/v2/extend/pull`，并更新构造函数和类型名。分笔请求、交易日遍历、错误传播、取消检查、CSV 路径、各周期合成及量额口径保持不变；CSV 编码仍由 `extend/export` 负责。该下载器使用调用方提供的管理器，不引入 K 线 Service 的数据库和更新标记初始化。
+调用方将 import 改为 `github.com/injoyai/tdx/v2/extend/pull`，并更新构造函数和类型名。分笔请求、交易日遍历、错误传播、取消检查、CSV 路径、各周期合成及量额口径保持不变；CSV 编码仍由 `extend/export` 负责。该下载器直接使用调用方提供的连接池和交易日历，代码表仅用于导出名称，不引入 K 线 Service 的数据库和更新标记初始化。
+
+### pull 直接接入连接池与存储
+
+Config.Pool／ExPool 提供来源连接，Store 提供行情持久化；CodesStore、GbbqStore、WorkdayStore 提供按需使用的元数据小接口。它们可指向同一个后端，也可分别实现。至少提供一种存储；仅同步元数据不需要行情市场注册。
+
+代码发现使用 ListCodes(ctx) 或已提交的 CodesStore 快照，每轮固定一次；行情 Unit 可以继续自定义发现，不被框架按市场名强制替换。指定证券时跳过发现。股本与日历查询对象不传入行情服务。生命周期、错误处理和快照发布见[架构说明](data-architecture.md)。

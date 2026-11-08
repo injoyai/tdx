@@ -11,7 +11,6 @@ require (
 	github.com/injoyai/logs v1.0.12
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/text v0.34.0
-	xorm.io/core v0.7.3
 	xorm.io/xorm v1.3.9
 )
 
@@ -20,7 +19,7 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/goccy/go-json v0.8.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.5.0 // indirect
 	github.com/grafov/m3u8 v0.12.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kr/text v0.2.0 // indirect

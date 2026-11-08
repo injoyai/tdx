@@ -4,17 +4,15 @@ package market
 
 import (
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/gbbq"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// stdUnit 标准行情(7709)市场的基础实现：通过 manage.Manage 连接源取连接。
+// stdUnit 标准行情(7709)市场的基础实现：直接使用连接池和元数据缓存。
 // 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
 	name protocol.Market // 市场标识（protocol.Market 枚举）
@@ -23,33 +21,26 @@ type stdUnit struct {
 func (u *stdUnit) Name() string { return u.name.String() }
 
 // Codes 从同一份标准代码元数据筛选新增的国内品种。
-func (u *stdUnit) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := u.Manage(s)
+func (u *stdUnit) Codes(s *pull.Service) ([]model.Code, error) {
+	list, err := s.DiscoverCodes()
 	if err != nil {
 		return nil, err
 	}
-	out := []pull.Code{}
-	for _, model := range m.Codes.Iter() {
-		i, err := protocol.ParseInstrument(model.FullCode())
-		if err != nil {
-			continue
-		}
-		market, err := i.Market()
-		if err == nil && market == u.name {
-			out = append(out, pull.Code{Market: u.name, Code: model.FullCode(), Name: model.Name})
+	out := []model.Code{}
+	for _, code := range list {
+		if code.Market == u.name {
+			out = append(out, code)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
 	return out, nil
 }
 
-// Manage 只获取标准行情连接源；不因查询代码、指数或分钟线触发股本初始化。
-func (u *stdUnit) Manage(s *pull.Service) (*manage.Manage, error) {
-	m := s.Manage()
-	if m == nil {
-		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Manage（标准行情7709连接源）", u.name)
+func (u *stdUnit) pool(s *pull.Service) (tdx.ClientPool, error) {
+	p := s.Pool()
+	if p == nil {
+		return nil, fmt.Errorf("pull: 市场 %s 需要配置 Pool（标准行情7709连接池）", u.name)
 	}
-	return m, nil
+	return p, nil
 }
 
 func (u *stdUnit) dayUntil(c tdx.Client, code, from string) ([]tdx.Kline, error) {
@@ -117,57 +108,12 @@ func init() {
 	pull.Register(&Other{stdUnit{name: protocol.MarketOther}})
 }
 
-// ---- Codes 实现 ----
-
-func (a *AStock) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := a.Manage(s)
-	if err != nil {
-		return nil, err
-	}
-	out := []pull.Code{}
-	for _, v := range m.Codes.GetStocks() {
-		out = append(out, pull.Code{Market: a.name, Code: v.FullCode(), Name: v.Name})
-	}
-	return out, nil
-}
-
-func (i *Index) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := i.Manage(s)
-	if err != nil {
-		return nil, err
-	}
-	out := []pull.Code{}
-	for _, v := range m.Codes.GetIndexes() {
-		out = append(out, pull.Code{Market: i.name, Code: v.FullCode(), Name: v.Name})
-	}
-	return out, nil
-}
-
-func (e *EtfLof) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := e.Manage(s)
-	if err != nil {
-		return nil, err
-	}
-	out := []pull.Code{}
-	for _, v := range m.Codes.GetETFs() {
-		out = append(out, pull.Code{Market: e.name, Code: v.FullCode(), Name: v.Name})
-	}
-	return out, nil
-}
-
 // ---- FetchDay 通用实现（含换手率/股本回填，仅股票有） ----
 
-func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
-	m, err := u.Manage(s)
+func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
+	pool, err := u.pool(s)
 	if err != nil {
 		return err
-	}
-	var equity gbbq.Interface
-	if u.name == protocol.MarketAStock {
-		equity, err = m.InitGbbq()
-		if err != nil {
-			return err
-		}
 	}
 	last, err := s.LastDayTime(code)
 	if err != nil {
@@ -176,7 +122,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	from := max(last, s.Start().Format(time.DateOnly))
 
 	var ks []tdx.Kline
-	err = m.ClientPool.Do(func(c tdx.Client) error {
+	err = pool.Do(func(c tdx.Client) error {
 		var err error
 		ks, err = u.dayUntil(c, code.Code, from)
 		return err
@@ -185,9 +131,9 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		return err
 	}
 
-	out := make([]*pull.KlineDay, 0, len(ks))
+	out := make([]*model.KlineDay, 0, len(ks))
 	for _, k := range ks {
-		d := &pull.KlineDay{
+		d := &model.KlineDay{
 			Time:   k.Time,
 			Open:   k.Open,
 			High:   k.High,
@@ -198,26 +144,15 @@ func (u *stdUnit) FetchDay(s *pull.Service, code pull.Code) error {
 		if k.Amount != nil {
 			d.Amount = *k.Amount
 		}
-		// 换手率/股本回填：仅股票有（Gbbq 非股票返回 nil）
-		if equity != nil {
-			at, err := time.ParseInLocation(time.DateOnly, k.Time, protocol.Location())
-			if err != nil {
-				return err
-			}
-			if eq := equity.GetEquity(code.Code, at); eq != nil {
-				d.FloatStock = float64(eq.Float)
-				d.TotalStock = float64(eq.Total)
-				d.Turnover = eq.Turnover(d.Volume)
-			}
-		}
+
 		out = append(out, d)
 	}
 	return saveDays(s, code, from, out)
 }
 
 // FetchMinute 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
-func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
-	m, err := u.Manage(s)
+func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
+	pool, err := u.pool(s)
 	if err != nil {
 		return err
 	}
@@ -226,7 +161,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {
 				var days []tdx.Kline
-				err := m.ClientPool.Do(func(c tdx.Client) error {
+				err := pool.Do(func(c tdx.Client) error {
 					var err error
 					days, err = u.dayUntil(c, code.Code, from.Format(time.DateOnly))
 					return err
@@ -235,7 +170,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 			},
 			trades: func(day time.Time) (protocol.Trades, error) {
 				var trades protocol.Trades
-				err := m.ClientPool.Do(func(c tdx.Client) error {
+				err := pool.Do(func(c tdx.Client) error {
 					resp, err := c.GetHistoryTradeDay(day.Format("20060102"), code.Code)
 					if err != nil {
 						return err
@@ -251,9 +186,9 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 			},
 		}
 	}
-	return pullMinutes(s, code, time.Now(), func(from string) ([]*pull.KlineMinute, error) {
+	return pullMinutes(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		var ks []tdx.Kline
-		err := m.ClientPool.Do(func(c tdx.Client) error {
+		err := pool.Do(func(c tdx.Client) error {
 			var err error
 			ks, err = u.minUntil(c, code.Code, from)
 			return err
@@ -261,9 +196,9 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code pull.Code) error {
 		if err != nil {
 			return nil, err
 		}
-		out := make([]*pull.KlineMinute, 0, len(ks))
+		out := make([]*model.KlineMinute, 0, len(ks))
 		for _, k := range ks {
-			row := &pull.KlineMinute{
+			row := &model.KlineMinute{
 				Time: k.Time, Open: k.Open, High: k.High,
 				Low: k.Low, Close: k.Close,
 				Volume: k.Volume,

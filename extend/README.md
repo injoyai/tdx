@@ -7,13 +7,18 @@
 | `extend/local` | 通达信 `.day/.lc1/.lc5` 本地文件编解码 | `ReadDay`、`ReadMinute1/5`、`WriteDay`、`WriteMinute1/5` |
 | `extend/export` | 标准行情 K 线与分笔 CSV 导出 | `KlinesToCSV`、`TradesToCSV` |
 | `extend/spider` | 新浪、同花顺数据源及其比例复权因子 | `GetSinaFactor*`、`GetTHSDayKline*`、`Factor/Factors` |
+| `extend/model` | 共享业务记录、快照与校验 | Code、CodeSnapshot、GbbqSnapshot、WorkdaySnapshot |
+| `extend/metadata` | 证券、股本、历史日历的内存查询 | NewCodes、NewGbbq、NewWorkday |
+| `extend/metadata/httpclient` | HTTP 元数据获取与刷新 | DialCodesHTTP、DialGbbqHTTP |
+| `extend/storage`、`extend/storage/sqlite` | 存储契约与 SQLite 实现 | BarStore、CodesStore、GbbqStore、WorkdayStore；sqlite.New |
+| `extend/pull`、`extend/pull/market` | 元数据、行情同步与历史分笔下载 | pull.New、pull.NewTrade |
 | `extend/httpserver` | 行情 HTTP 服务，以及独立代码/股本 HTTP 服务 | `New`、`ListenCodesHTTP`、`ListenCodesAndGbbqHTTP` |
-| `extend/metadatahttp` | 从 HTTP 服务定时刷新代码表和股本缓存 | `DialCodesHTTP`、`DialGbbqHTTP` |
-| `extend/codes`、`extend/gbbq`、`extend/workday` | 代码、股本与交易日历缓存 | 各包 `New` |
-| `extend/manage` | 组合缓存、连接池与工作日任务 | `New` |
-| `extend/pull`、`extend/pull/market` | 多市场 K 线拉取、存储、历史分笔下载导出与市场适配 | `pull.New`、`pull.NewTrade`；空导入 `market` 注册内置市场 |
 
-`pull.Service` 管理日线/分钟线 SQLite 数据；同包的 `pull.Trade` 负责历史分笔及合成分钟线 CSV 下载导出。CSV 编码继续复用 `extend/export`，仅保留年度分笔和 1 分钟数据，其他周期逐个派生导出。
+扩展均位于 extend：同步入口见 [pull](pull/README.md)，内存查询见 [metadata](metadata/README.md)，持久化契约与实现见 [storage](storage/README.md)，共享数据见 model。元数据 HTTP 客户端位于 metadata/httpclient。
+
+`pull.Service` 通过显式注入的 Store 管理日线/分钟线数据；同包的 `pull.Trade` 负责历史分笔及合成分钟线 CSV 下载导出。CSV 编码继续复用 `extend/export`，仅保留年度分笔和 1 分钟数据，其他周期逐个派生导出。
+
+证券索引、股本计算和交易日历集中在 [metadata](metadata/README.md)，入口为 NewCodes、NewGbbq、NewWorkday；原三个扩展包已删除。
 
 根包 `extend` 只提供 `DoIncomes` 收益计算。其余功能直接导入职责子包，不提供旧入口、转发函数或类型别名。
 
@@ -32,8 +37,12 @@ return export.KlinesToCSV("./output/export/sz000001.csv", "sz000001", "平安银
 
 本地读写和 CSV 的价格、成交量、时间及占位记录规则保持不变。CSV 的 K 线输入须为整数手：行情查询先用 `KlineResp.Klines()`，一站式复权和本地读取返回的数据可直接导出；指数原始 `StandardResponse().List` 不能直接使用。CSV 仍带 UTF-8 BOM；本地 `Write*` 只返回字节，不写文件。`spider.Factor` 是第三方比例因子，与 `protocol.Factor` 的仿射复权模型不同，不能互换。
 
-`metadatahttp` 返回的缓存客户端使用后须 `Close()`，关闭时停止定时刷新并取消在途请求。独立元数据服务返回原始 JSON，与行情服务 `New` 的 `code/msg/data` 包装不同，路由与返回结构见 [HTTP 服务说明](httpserver/README.md)。
+`httpclient` 返回的缓存客户端使用后须 `Close()`，关闭时停止定时刷新并取消在途请求。独立元数据服务返回原始 JSON，与行情服务 `New` 的 `code/msg/data` 包装不同，路由与返回结构见 [HTTP 服务说明](httpserver/README.md)。
 
-通用基础设施继续放在 `lib/zip`、`lib/xorms`、`lib/update`；仅仓库内部复用的实现放在 `internal`。只有一个功能使用的私有辅助函数留在该功能包，不集中到通用 `utils` 包。具体迁移对应关系见 [迁移指南](../docs/v2-migration.md#扩展功能按职责拆包)。
+HTTP 股本事件须携带有效代码与日期，并与所在代码分组一致。客户端复用 metadata.NewGbbq 的校验和排序，只在整份响应有效时替换快照；失败保留原查询结果。
+
+通用基础设施继续放在 `lib/zip`、`lib/update`；仅仓库内部复用的实现放在 `internal`。只有一个功能使用的私有辅助函数留在该功能包，不集中到通用 `utils` 包。具体迁移对应关系见 [迁移指南](../docs/v2-migration.md#扩展功能按职责拆包)。
 
 `spider.GetTHSDayKline` 及其 Full/FactorFull 组合接口统一返回整数手成交量。同花顺数量必须是可表示的非负整数股数且能整除 100，否则报错，不再把零股静默四舍五入；Full 的不复权数据也通过 `KlineResp.Klines()` 适配。
+
+SQLite 连接与行情存储位于主模块的 storage/sqlite 单独包，见 [存储说明](../docs/storage.md)。元数据同步由 pull 执行，查询包只接收记录；其他后端由调用方实现 storage 小接口并注入 pull；本库不提供 MySQL 实现。

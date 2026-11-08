@@ -9,8 +9,7 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/export"
-	"github.com/injoyai/tdx/v2/extend/gbbq"
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -29,21 +28,20 @@ func (c *adjustedIndexClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 
 func TestAdjustedIndexExportsAndIndicatorsUseLots(t *testing.T) {
 	raw := &protocol.Kline{Time: consistencyDay(19), Open: 10.8, High: 10.8, Low: 10.8, Close: 10.8, Volume: 20000, Amount: 216000}
-	db, err := xorms.NewSQLite(":memory:")
+	g, err := metadata.NewGbbq(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	g, err := gbbq.New(gbbq.WithDB(db), gbbq.WithClient(&adjustedIndexClient{raw: raw}), gbbq.WithSpec("@every 87600h"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer g.Close()
-	for _, fetch := range []func(string) (protocol.Klines, error){g.QFQKlineDay, g.HFQKlineDay} {
-		ks, err := fetch("sh000001")
-		if err != nil || len(ks) != 1 {
-			t.Fatal(ks, err)
+	for _, adjust := range []func(string, protocol.Klines) protocol.Klines{g.QFQ, g.HFQ} {
+		response, err := (&adjustedIndexClient{raw: raw}).GetKlineDayAll("sh000001")
+		if err != nil {
+			t.Fatal(err)
 		}
+		ks, err := response.Klines()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ks = adjust("sh000001", ks)
 		if ks[0].Volume != 200 || raw.Volume != 20000 || ks.VWAP() != 10.8 {
 			t.Fatal("index units changed", ks[0], raw, ks.VWAP())
 		}

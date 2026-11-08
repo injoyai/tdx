@@ -4,6 +4,7 @@ package market
 
 import (
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -20,13 +21,13 @@ func init() {
 
 // Codes 从板块文件(block_zs.dat)拉取板块指数代码列表。
 // 板块指数代码如 880xxx/881xxx，归 sh 市场。
-func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
-	m, err := u.Manage(s)
+func (u *Block) Codes(s *pull.Service) ([]model.Code, error) {
+	pool, err := u.pool(s)
 	if err != nil {
 		return nil, err
 	}
 	var blocks []*protocol.Block
-	err = m.ClientPool.Do(func(c tdx.Client) error {
+	err = pool.Do(func(c tdx.Client) error {
 		var err error
 		blocks, err = c.GetBlockDataWithIndex(protocol.BlockFileZS)
 		return err
@@ -34,13 +35,13 @@ func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := []pull.Code{}
+	out := []model.Code{}
 	for _, b := range blocks {
 		if b.Index == "" {
 			continue
 		}
 		// 板块指数代码(如 880xxx) 需带市场前缀，走 sh
-		out = append(out, pull.Code{
+		out = append(out, model.Code{
 			Market: u.name,
 			Code:   protocol.AddPrefix(b.Index),
 			Name:   b.Name,
@@ -50,11 +51,11 @@ func (u *Block) Codes(s *pull.Service) ([]pull.Code, error) {
 }
 
 // FetchDay 板块指数日线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchDay(s *pull.Service, code pull.Code) error {
+func (u *Block) FetchDay(s *pull.Service, code model.Code) error {
 	return u.stdUnit.FetchDay(s, code)
 }
 
 // FetchMinute 板块指数分钟线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchMinute(s *pull.Service, code pull.Code) error {
+func (u *Block) FetchMinute(s *pull.Service, code model.Code) error {
 	return u.stdUnit.FetchMinute(s, code)
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -19,8 +20,8 @@ type minuteFallback struct {
 
 // fill 只补原生分钟最早日期之前的交易日，返回可落库数据和未完成错误。
 // 本地数据参与合并，避免补旧日期时被现有删尾重插规则删除；原生数据优先。
-func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endValue, boundaryValue string,
-	native []*pull.KlineMinute) ([]*pull.KlineMinute, error) {
+func (f *minuteFallback) fill(s *pull.Service, code model.Code, fromValue, endValue, boundaryValue string,
+	native []*model.KlineMinute) ([]*model.KlineMinute, error) {
 	from, err := time.ParseInLocation(protocol.TimeLayout, fromValue, protocol.Location())
 	if err != nil {
 		return nil, err
@@ -37,7 +38,7 @@ func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endVal
 	if err != nil {
 		return nil, err
 	}
-	rows := make(map[string]*pull.KlineMinute, len(local)+len(native))
+	rows := make(map[string]*model.KlineMinute, len(local)+len(native))
 	for _, k := range local {
 		rows[k.Time] = k
 	}
@@ -48,8 +49,8 @@ func (f *minuteFallback) fill(s *pull.Service, code pull.Code, fromValue, endVal
 	for _, k := range native {
 		rows[k.Time] = k
 	}
-	result := func() []*pull.KlineMinute {
-		out := make([]*pull.KlineMinute, 0, len(rows))
+	result := func() []*model.KlineMinute {
+		out := make([]*model.KlineMinute, 0, len(rows))
 		for _, k := range rows {
 			out = append(out, k)
 		}
@@ -107,7 +108,7 @@ func minuteDay(t time.Time, loc *time.Location) time.Time {
 }
 
 // hasMinuteDay 不把只有几根记录的旧库当作完整交易日。
-func hasMinuteDay(rows map[string]*pull.KlineMinute, day time.Time) bool {
+func hasMinuteDay(rows map[string]*model.KlineMinute, day time.Time) bool {
 	for m := 570; m <= 900; m++ {
 		if m > 690 && m <= 780 {
 			continue
@@ -122,7 +123,7 @@ func hasMinuteDay(rows map[string]*pull.KlineMinute, day time.Time) bool {
 
 // tradesToMinutes 复用 Trades.Klines 的 241 根规则；合成值是近似值。
 // 按请求交易日的时区校验时间，不重新标记分笔的时区。
-func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute, error) {
+func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*model.KlineMinute, error) {
 	if len(trades) == 0 {
 		return nil, errors.New("历史分笔为空，保留缺口")
 	}
@@ -150,12 +151,12 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*pull.KlineMinute
 	}
 	sort.SliceStable(normalized, func(i, j int) bool { return normalized[i].Time.Before(normalized[j].Time) })
 	ks := normalized.Klines()
-	out := make([]*pull.KlineMinute, 0, len(ks))
+	out := make([]*model.KlineMinute, 0, len(ks))
 	for _, k := range ks {
-		out = append(out, &pull.KlineMinute{
+		out = append(out, &model.KlineMinute{
 			Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume),
-			Amount: k.Amount, Source: pull.MinuteSourceTrade,
+			Amount: k.Amount, Source: model.MinuteSourceTrade,
 		})
 	}
 	return out, nil

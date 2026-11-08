@@ -3,20 +3,21 @@ package pull
 import (
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
 func TestCalendarWeekAndMetadata(t *testing.T) {
 	loc := time.FixedZone("test", 8*3600)
-	day := func(y int, m time.Month, d int) *KlineDay {
-		return &KlineDay{Time: time.Date(y, m, d, 15, 0, 0, 0, loc).Format("2006-01-02"), Open: 1, High: 2, Low: 1, Close: 2, Volume: 100, FloatStock: 1000, TotalStock: 2000, Turnover: 10}
+	day := func(y int, m time.Month, d int) *model.KlineDay {
+		return &model.KlineDay{Time: time.Date(y, m, d, 15, 0, 0, 0, loc).Format("2006-01-02"), Open: 1, High: 2, Low: 1, Close: 2, Volume: 100}
 	}
-	ks := []*KlineDay{day(2026, 1, 5), day(2025, 12, 29), day(2026, 1, 2)}
-	ks[2].FloatStock = 1200
+	ks := []*model.KlineDay{day(2026, 1, 5), day(2025, 12, 29), day(2026, 1, 2)}
 	out, err := DayToCalendar(ks, CalendarWeek)
 	if err != nil || len(out) != 2 {
 		t.Fatal(out, err)
 	}
-	if out[0].Volume != 200 || out[0].FloatStock != 1200 || out[0].Turnover != 20 || out[0].Time != ks[2].Time {
+	if out[0].Volume != 200 || out[0].Time != ks[2].Time {
 		t.Fatal("ISO 跨年周或元数据错误", out[0])
 	}
 	if ks[0].Time != time.Date(2026, 1, 5, 15, 0, 0, 0, loc).Format("2006-01-02") {
@@ -28,7 +29,7 @@ func TestCalendarWeekAndMetadata(t *testing.T) {
 			t.Fatal(period, len(out), err)
 		}
 	}
-	if out := DayToPeriod(ks, 1); out[0].FloatStock != 1000 || out[0].Turnover != 10 {
+	if out := DayToPeriod(ks, 1); out[0].Volume != 100 {
 		t.Fatal("n=1 丢失字段")
 	}
 }
@@ -36,14 +37,14 @@ func TestCalendarWeekAndMetadata(t *testing.T) {
 func TestMinuteSessions241TwoDays(t *testing.T) {
 	loc := time.FixedZone("test", 8*3600)
 	sessions := []TradingSession{{570, 690}, {780, 900}}
-	var ks []*KlineMinute
+	var ks []*model.KlineMinute
 	for day := 5; day <= 6; day++ {
 		for _, minute := range []int{570} {
-			ks = append(ks, &KlineMinute{Time: time.Date(2026, 1, day, 0, minute, 0, 0, loc).Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 10})
+			ks = append(ks, &model.KlineMinute{Time: time.Date(2026, 1, day, 0, minute, 0, 0, loc).Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 10})
 		}
 		for _, session := range sessions {
 			for m := session.StartMinute + 1; m <= session.EndMinute; m++ {
-				ks = append(ks, &KlineMinute{Time: time.Date(2026, 1, day, 0, m, 0, 0, loc).Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 1})
+				ks = append(ks, &model.KlineMinute{Time: time.Date(2026, 1, day, 0, m, 0, 0, loc).Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 1})
 			}
 		}
 	}
@@ -66,13 +67,13 @@ func TestMinuteSessions241TwoDays(t *testing.T) {
 func TestMinuteSessionsMissingAndOvernight(t *testing.T) {
 	loc := time.FixedZone("test", 8*3600)
 	base := time.Date(2026, 1, 5, 9, 30, 0, 0, loc)
-	ks := []*KlineMinute{{Time: base.Add(time.Minute).Format("2006-01-02 15:04"), Volume: 1}, {Time: base.Add(5 * time.Minute).Format("2006-01-02 15:04"), Volume: 2}, {Time: base.Add(6 * time.Minute).Format("2006-01-02 15:04"), Volume: 3}}
+	ks := []*model.KlineMinute{{Time: base.Add(time.Minute).Format("2006-01-02 15:04"), Volume: 1}, {Time: base.Add(5 * time.Minute).Format("2006-01-02 15:04"), Volume: 2}, {Time: base.Add(6 * time.Minute).Format("2006-01-02 15:04"), Volume: 3}}
 	out, err := MinuteToSessions(ks, 5, []TradingSession{{570, 690}})
 	if err != nil || len(out) != 2 || out[0].Volume != 3 || out[1].Volume != 3 {
 		t.Fatal("缺分钟导致桶偏移", out, err)
 	}
 	night := time.Date(2026, 1, 5, 21, 0, 0, 0, loc)
-	ks = []*KlineMinute{{Time: night.Add(time.Minute).Format("2006-01-02 15:04"), Volume: 1}, {Time: night.Add(3 * time.Hour).Format("2006-01-02 15:04"), Volume: 2}, {Time: night.Add(3*time.Hour + time.Minute).Format("2006-01-02 15:04"), Volume: 3}}
+	ks = []*model.KlineMinute{{Time: night.Add(time.Minute).Format("2006-01-02 15:04"), Volume: 1}, {Time: night.Add(3 * time.Hour).Format("2006-01-02 15:04"), Volume: 2}, {Time: night.Add(3*time.Hour + time.Minute).Format("2006-01-02 15:04"), Volume: 3}}
 	out, err = MinuteToSessions(ks, 240, []TradingSession{{1260, 150}})
 	if err != nil || len(out) != 1 || out[0].Volume != 6 {
 		t.Fatal("夜盘跨午夜被拆开", out, err)

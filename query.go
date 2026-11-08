@@ -233,7 +233,7 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 	return q.source.tradePage(date, code, start, count)
 }
 
-// TradingCalendar 由调用方提供证券对应市场的交易日；中国市场历史日历实现位于 extend/workday。
+// TradingCalendar 由调用方提供证券对应市场的交易日；中国市场历史日历使用 metadata.Workday。
 type TradingCalendar interface {
 	Range(start, end time.Time, visit func(time.Time) bool)
 }

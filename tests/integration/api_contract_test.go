@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -16,11 +16,13 @@ func TestJSONUsesCurrentFieldNames(t *testing.T) {
 		current, removed string
 	}{
 		{tdx.Kline{}, "Time", "TradingDate"},
-		{pull.KlineDay{}, "Time", "TradingDate"},
-		{pull.KlineMinute{}, "Amount", "AmountUnknown"},
+		{model.KlineDay{}, "Time", "TradingDate"},
+		{model.KlineDay{}, "Time", "FloatStock"},
+		{model.KlineDay{}, "Time", "TotalStock"},
+		{model.KlineDay{}, "Time", "Turnover"},
+		{model.KlineMinute{}, "Amount", "AmountUnknown"},
 		{protocol.Quote{}, "Reserved0", "ReversedBytes0"},
 		{pull.Config{}, "Tracker", "Updated"},
-		{manage.Manage{}, "ClientPool", "IPool"},
 	} {
 		data, err := json.Marshal(tc.value)
 		if err != nil {

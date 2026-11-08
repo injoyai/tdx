@@ -10,15 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/codes"
-	"github.com/injoyai/tdx/v2/extend/manage"
-	"github.com/injoyai/tdx/v2/extend/workday"
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/extend/metadata"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -29,9 +28,20 @@ type tradeTestPool struct {
 
 func (p tradeTestPool) Do(fn func(tdx.Client) error) error { return fn(p.c) }
 
-type tradeTestCodes struct{ codes.Interface }
+type tradeTestCodes struct{}
 
 func (tradeTestCodes) GetName(string) string { return "测试股票" }
+
+func TestTradeMissingDependencies(t *testing.T) {
+	downloader := NewTrade(t.TempDir())
+	if err := downloader.PullYear(context.Background(), 2025, "sz000001"); err == nil || !strings.Contains(err.Error(), "Pool") {
+		t.Fatal("missing pool", err)
+	}
+	downloader.Pool = tradeTestPool{}
+	if err := downloader.PullYear(context.Background(), 2025, "sz000001"); err == nil || !strings.Contains(err.Error(), "Workday") {
+		t.Fatal("missing calendar", err)
+	}
+}
 
 func TestTradePeriods(t *testing.T) {
 	var c tdx.Client
@@ -89,31 +99,24 @@ func TestTradePeriods(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	c.SetTimeout(time.Second)
 
-	db, err := xorms.NewSQLite(filepath.Join(t.TempDir(), "workday.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Sync2(new(workday.WorkdayModel)); err != nil {
-		t.Fatal(err)
-	}
+	snapshot := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2025-01-02", Through: time.Now().In(protocol.Location()).Format(time.DateOnly)}
 	for _, date := range []time.Time{
 		time.Date(2025, 1, 2, 15, 0, 0, 0, protocol.Location()),
 		time.Date(2025, 1, 3, 15, 0, 0, 0, protocol.Location()),
 		tdx.IntegerDay(time.Now().In(protocol.Location())).Add(15 * time.Hour),
 	} {
-		if _, err := db.Insert(&workday.WorkdayModel{Unix: date.Unix(), Date: date.Format("20060102")}); err != nil {
-			t.Fatal(err)
-		}
+		snapshot.Dates = append(snapshot.Dates, date.Format(time.DateOnly))
 	}
-	w, err := workday.New(workday.WithDB(db), workday.WithClient(c), workday.WithSpec("@every 87600h"))
+	w, err := metadata.NewWorkday(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { w.Close() })
 	dir := t.TempDir()
-	m := &manage.Manage{ClientPool: tradeTestPool{c: c}, Workday: w, Codes: tradeTestCodes{}}
-	if err := NewTrade(dir).PullYear(context.Background(), m, 2025, "sz000001"); err != nil {
+	downloader := NewTrade(dir)
+	downloader.Pool = tradeTestPool{c: c}
+	downloader.Workday = w
+	downloader.CodeName = (tradeTestCodes{}).GetName
+	if err := downloader.PullYear(context.Background(), 2025, "sz000001"); err != nil {
 		t.Fatal(err)
 	}
 	for _, period := range []int{1, 5, 15, 30, 60} {

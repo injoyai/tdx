@@ -3,10 +3,12 @@ package pull
 import (
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
-func mkDay(value string, open, close float64, vol int64) *KlineDay {
-	return &KlineDay{
+func mkDay(value string, open, close float64, vol int64) *model.KlineDay {
+	return &model.KlineDay{
 		Time:   value,
 		Open:   open,
 		High:   close,
@@ -20,7 +22,7 @@ func mkDay(value string, open, close float64, vol int64) *KlineDay {
 func TestDayToPeriod(t *testing.T) {
 	// 6 个连续自然日的日线（2026-01-05 起，Merge 为固定 N 根分块、不按日历对齐）
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
-	ks := make([]*KlineDay, 0, 6)
+	ks := make([]*model.KlineDay, 0, 6)
 	for i := 0; i < 6; i++ {
 		ks = append(ks, mkDay(base.AddDate(0, 0, i).Format("2006-01-02"), float64(i+1), float64(i+1), int64(i+1)))
 	}
@@ -45,7 +47,7 @@ func TestDayToPeriod(t *testing.T) {
 
 func TestDayToPeriodSingle(t *testing.T) {
 	// n<=1 原样返回
-	ks := []*KlineDay{mkDay("2026-01-05", 1, 1, 1)}
+	ks := []*model.KlineDay{mkDay("2026-01-05", 1, 1, 1)}
 	if out := DayToPeriod(ks, 1); len(out) != 1 {
 		t.Fatalf("n=1 应原样返回, got %d", len(out))
 	}
@@ -54,8 +56,8 @@ func TestDayToPeriodSingle(t *testing.T) {
 	}
 }
 
-func mkMinute(value string, open, close float64, vol int64) *KlineMinute {
-	return &KlineMinute{
+func mkMinute(value string, open, close float64, vol int64) *model.KlineMinute {
+	return &model.KlineMinute{
 		Time:   value,
 		Open:   open,
 		High:   close,
@@ -68,7 +70,7 @@ func mkMinute(value string, open, close float64, vol int64) *KlineMinute {
 func TestMinuteToPeriod(t *testing.T) {
 	// 10 根 1 分钟线，合并成 5 分钟
 	base := time.Date(2026, 1, 5, 9, 31, 0, 0, time.Local)
-	ks := make([]*KlineMinute, 0, 10)
+	ks := make([]*model.KlineMinute, 0, 10)
 	for i := 0; i < 10; i++ {
 		ks = append(ks, mkMinute(base.Add(time.Duration(i)*time.Minute).Format("2006-01-02 15:04"), float64(i+1), float64(i+1), int64(i+1)))
 	}
@@ -90,20 +92,20 @@ func TestMinuteToPeriod(t *testing.T) {
 
 func TestPeriodMergePreservesPrecisionAndInput(t *testing.T) {
 	for _, price := range []float64{0.1234, -1.2345} {
-		days := []*KlineDay{
-			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Turnover: 1, FloatStock: 100, TotalStock: 200},
-			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3, Turnover: 2, FloatStock: 110, TotalStock: 220},
+		days := []*model.KlineDay{
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2},
+			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
 		}
 		got := DayToPeriod(days, 2)
-		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Turnover != 3 || got[0].FloatStock != 110 || got[0].TotalStock != 220 || got[0].Time != "2026-01-06" {
+		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Time != "2026-01-06" {
 			t.Fatal("day precision/metadata lost", got)
 		}
-		minutes := []*KlineMinute{
-			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: MinuteSourceTrade},
+		minutes := []*model.KlineMinute{
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: model.MinuteSourceTrade},
 			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
 		}
 		min := MinuteToPeriod(minutes, 2)
-		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || min[0].Amount != got[0].Amount || min[0].Volume != 5 || min[0].Source != MinuteSourceTrade {
+		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || min[0].Amount != got[0].Amount || min[0].Volume != 5 || min[0].Source != model.MinuteSourceTrade {
 			t.Fatal("minute precision/source lost", min)
 		}
 		if days[0].Volume != 2 || minutes[0].Volume != 2 {

@@ -1,6 +1,6 @@
 # 🔄 行情数据拉取服务 (pull)
 
-将通达信行情数据**增量拉取并持久化**（默认 SQLite，可注入 `Store`）：编排多市场（`Unit` 可插拔）、并发、重试、增量去重、周期合并。
+将通达信行情数据**增量拉取并持久化**（必须显式传入 `Store`）：编排多市场（`Unit` 可插拔）、并发、重试、增量去重、周期合并。
 
 只存**日线 + 1分钟线**原始数据，其余周期（5/15/30/60 分钟、N 日等）由查询侧纯内存派生，不落盘。周期合并保留原始浮点精度，不转换成整数厘。
 
@@ -12,10 +12,13 @@ v2 的 K 线及历史分笔拉取统一放在本包。`Service` 负责 K 线拉�
 
 ```go
 downloader := pull.NewTrade("./output/trade")
-err := downloader.PullYear(ctx, m, 2025, "sz000001")
+downloader.Pool = pool
+downloader.Workday = calendar
+downloader.CodeName = codeCache.GetName // 可选，用于导出名称
+err := downloader.PullYear(ctx, 2025, "sz000001")
 ```
 
-`ctx` 为 `context.Context`，`m` 为已初始化连接池、交易日历和代码缓存的 `*manage.Manage`，由调用方关闭。`PullYear` 按指定年份下载，`Pull` 从 2000 年到当前年份逐年执行；使用标准行情分笔及沪深 241 分钟合成规则。
+`ctx` 为 `context.Context`，`Pool` 为标准行情连接池，`Workday` 为提供 RangeYear 的历史交易日历接口；缺少其中任意组件会返回错误。`CodeName` 为可选的 `func(string) string`，未提供时导出名称为空。组件由调用方维护和关闭。`PullYear` 按指定年份下载，`Pull(ctx, code)` 从 2000 年到当前年份逐年执行；使用标准行情分笔及沪深 241 分钟合成规则。
 
 输出仍按 `分时成交/1分钟/5分钟/15分钟/30分钟/60分钟/{代码}-{年份}.csv` 保存，保留原表头、UTF-8 BOM、竞价和午休边界。该入口复用 `extend/export` 编码，不创建 `Service` 或 SQLite 行情库；无需导入 `market` 注册市场。旧分笔下载包已移除，调用迁移见 [v2 迁移指南](../../docs/v2-migration.md#历史分笔下载并入-pull)。
 
@@ -25,66 +28,44 @@ err := downloader.PullYear(ctx, m, 2025, "sz000001")
 ```
 pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服务器
      │                    │
-     │                    └── a_stock / index / etf_lof / block (7709, 走 manage.Manage)
+     │                    └── a_stock / index / etf_lof / block (7709, 走 Pool)
      │                    └── future / hk / us          (7727, 走 tdx.ClientPool)
      │
-     └──存储──> Store（默认 SQLite，也可由应用实现）
+     └──存储──> Store（调用方提供）
 ```
 
 - **`Unit`**：一个可拉取的独立市场/品种类别。新增市场 = 新增一个实现 + `pull.Register`，无需改框架。
-- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重；默认 SQLite 存储管理有上限的引擎缓存。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
+- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
 
 ---
 
 ## 🚀 快速开始
 
 ```go
-package main
-
 import (
-
-	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
-	"github.com/injoyai/tdx/v2/extend/pull"
-	_ "github.com/injoyai/tdx/v2/extend/pull/market" // 注册全部内置市场 Unit
+    "context"
+    "github.com/injoyai/tdx/v2"
+    "github.com/injoyai/tdx/v2/extend/pull"
+    _ "github.com/injoyai/tdx/v2/extend/pull/market"
+    "github.com/injoyai/tdx/v2/extend/storage/sqlite"
 )
 
-func main() {
-	// 标准行情(7709)连接源：股票/指数/ETF/板块需要
-	m, err := manage.New()
-	if err != nil {
-		panic(err)
-	}
-	defer m.Close()
-
-	// 扩展行情(7727)连接池：期货/港股/美股需要
-	ex, err := tdx.NewPool(func() (tdx.Client, error) {
-		return tdx.DialExDefault()
-	}, 4)
-	if err != nil {
-		panic(err)
-	}
-	defer ex.Close()
-
-	s, err := pull.New(&pull.Config{
-		Dir:     "./output/pull", // 数据根目录
-		StartAt: "20260101",        // 首次全量的最早日期；空 = 只拉最近两年
-		Manage:  m,
-		ExPool:  ex,
-	})
-	if err != nil {
-		panic(err)
-	}
-	defer s.Close()
-
-	// 拉取（收盘后延迟 5 分钟更新，已完成市场自动跳过）
-	if err := s.Update(); err != nil {
-		panic(err)
-	}
+func syncExample(ctx context.Context, pool tdx.ClientPool) error {
+    backend, err := sqlite.New("./output/pull")
+    if err != nil { return err }
+    defer backend.Close()
+    service, err := pull.New(&pull.Config{
+        Store: backend,
+        Pool: pool,
+        Codes: []string{"sz000001"},
+        Day: true,
+        StartAt: "20260101",
+    })
+    if err != nil { return err }
+    defer service.Close()
+    return service.UpdateContext(ctx, true)
 }
 ```
-
-> 完整演示见 [`examples/pull`](../../examples/pull)：默认拉取单证券，可通过代码参数、`-all` 或 `-minute=false` 选择指定范围、全市场或只拉日线。
 
 ### 两种拉取模式
 
@@ -157,24 +138,26 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 ## 自定义存储
 
-通过 `Config.Store` 注入 `pull.Store`，可自选数据库或其他存储。注入后 `Dir` 可省略，不创建本地行情库或更新标记文件。接口契约、生命周期和原文件辅助方法的迁移见 [存储接口说明](../../docs/storage.md)。
+行情同步必须通过 `Config.Store` 注入 `storage.BarStore`；服务只依赖存储契约，不选择数据库、不创建文件。原 Dir 和 MaxCachedEngines 配置已移入具体存储实现。共享模型位于 model，接口契约、生命周期和原文件辅助方法的迁移见 [存储接口说明](../../docs/storage.md)。
 
 ## ⚙️ 配置项
 
 | 字段 | 说明 | 默认值 |
 |---|---|---|
-| `Store` | 自定义持久化存储，由调用方关闭 | 自动创建 SQLiteStore |
-| `Dir` | 默认 SQLite 数据根目录；未设置 Store 时必填 | — |
+| `Store` | 行情同步必填；仅同步元数据时可省略 | 无 |
 | `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
 | `Goroutines` | 并发数 | `8` |
-| `MaxCachedEngines` | 默认 SQLite 行情数据库引擎缓存上限；使用中的引擎不淘汰，并发借用可暂时超限，释放后回落 | `32` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
 | `Retry` | 单条失败重试次数 | `tdx.DefaultRetry` |
-| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 使用 Store 保存标记；默认 SQLite 为 `Dir/updated.db` |
-| `Manage` | 标准行情(7709)连接源 | 无（std 市场需要） |
+| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 使用 Store 保存标记 |
+| `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
+| `CodesStore` | storage.CodesStore，代码快照同步与自动发现 | 无 |
+| `ListCodes` | 每轮行情同步只调用一次的代码列表函数；优先于 CodesStore | 无 |
+| `GbbqStore` | storage.GbbqStore，供 SyncGbbq 使用 | 无 |
+| `WorkdayStore` | storage.WorkdayStore，供 SyncWorkdays 使用 | 无 |
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
@@ -182,15 +165,34 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 日线和分钟线均只保存源时间字符串与已确认的交易日；分钟线的 `Unix`、`TimeZone` 字段和 `Timestamp()` 已移除。存储只校验源日期时分格式、年份和范围，不应用夏令时或来源时区规则。已有 `source-time-v1` 库可以继续读写；历史额外列不再映射或使用，也不会自动删列。
 
-默认 SQLite 数据根目录自动创建 `.time-format`（`source-time-v1`）。不兼容旧 Unix 主键格式；含 `.storage-timezone` 或未标记旧数据库的目录会被拒绝，请配置新的 `Dir` 并重新拉取。不会自动删除、覆盖或迁移旧数据。
-
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 
-> **股本数据自动启用**：`manage.New()` 默认塞入空 Gbbq（股本变迁数据未初始化），
-> 拉取股票日线时 pull 会检测到并**自动初始化**（首跑全量拉取一次，约几分钟，落库
-> `./output/data/database/gbbq.db`；之后每日 09:05 定时增量更新）。之后流通股/总股本/换手率
-> 自动回填到日线。只在股票日线任务中触发，查询代码、指数/ETF 和纯分钟任务均不初始化股本。
-> 通过 `manage.WithGbbq` 或 `manage.WithDialGbbq` 提供的对象（包括空实现）会原样使用；辅助库位置不随 `Config.Dir` 改变。
+### 显式同步与内存查询
+
+New 仅保存依赖并校验配置，不联网、不启动定时任务。至少传入一种存储接口；只同步元数据时无需行情 Store 或市场注册。应用显式调用：
+
+```go
+codeSnapshot, err := s.SyncCodes(ctx) // 默认沪深北；可明确传入交易所范围
+if err != nil { return err }
+codeIndex := metadata.NewCodes(codeSnapshot.Rows)
+events, err := s.SyncGbbq(ctx, []string{"sh600000"})
+if err != nil { return err }
+equity, err := metadata.NewGbbq(events.Rows)
+if err != nil { return err }
+calendarSnapshot, err := s.SyncWorkdays(ctx) // 当前仅从上证指数提取中国历史日期
+if err != nil { return err }
+calendar, err := metadata.NewWorkday(calendarSnapshot)
+if err != nil { return err }
+_ = codeIndex
+_ = equity
+_ = calendar
+```
+
+三个同步方法总是执行本次显式刷新，不暗中启动定时任务；只在返回 error=nil 后发布结果。分页读取和完整性校验成功后，数据与刷新时间由后端原子提交。股本只替换明确证券，保留未请求的退市证券历史。
+
+行情同步使用 UpdateContext(ctx, must...)，Update 是 Background 的便捷入口。标准证券自动发现每轮只读取一次 ListCodes 或 CodesStore 的已同步快照；未同步的快照返回错误。板块从板块文件发现，扩展市场从 ExPool 发现。指定 Codes 时跳过代码发现。
+
+日线不再回填 FloatStock、TotalStock、Turnover。历史股本与换手率由 gbbq 查询／计算，缺失股本返回不可用，不从当前数据回填历史。manage、CodeCache、Config.Gbbq 已删除，应用直接组装组件。详见[架构说明](../../docs/data-architecture.md)。
 
 ### 代码自动路由
 
@@ -217,28 +219,9 @@ Codes: []string{
 
 ---
 
-## 💾 存储布局
+## 数据与存储边界
 
-```
-{Dir}/
-├── .time-format               # source-time-v1 源日期时分格式
-├── updated.db                  # 增量去重标记
-├── cn/                          # 中国大陆
-│   ├── stock/day/{code}.db      # 沪深股票
-│   ├── stock/min/{code}/{code}-{year}.db
-│   ├── index/ ...               # 沪深指数
-│   ├── etf/ ...                 # ETF/LOF
-│   └── block/ ...               # 板块指数
-├── hk/                          # 香港
-│   ├── stock/ ...               # 港股主板
-│   └── index/ ...               # 港股指数（恒生系/中华系）
-├── us/                          # 美国（股票/ETF/指数混合）
-│   └── stock/ ...
-└── cn/
-    └── future/ ...              # 期货（各交易所共用）
-```
-
-两级「地区/资产」目录（`cn/stock` / `cn/etf` / `hk/index` / `us/stock` / `cn/future` …），按地区或资产类别整体删除/归档即删对应目录。**文件名用原始代码**（目录已含市场信息，无需市场前缀），如 `cn/stock/day/sh600000.db`、`hk/stock/day/00700.db`、`hk/index/day/HSI.db`、`us/stock/day/AAPL.db`；期货多交易所代码含 `/`（如 `cff/IF2609`），文件名替换为 `-`：`cn/future/day/cff-IF2609.db`。同市场内代码唯一，无撞名风险。
+文件布局、建表、连接缓存和事务实现由具体 Store 负责；内置 SQLite 在主模块的 [storage/sqlite](../storage/sqlite/README.md) 单独包。MySQL 由用户实现 Store。本包负责同步编排；model 提供共享数据，storage 定义持久化契约。
 
 ### 单位约定
 
@@ -300,14 +283,14 @@ Codes: []string{
 
 `Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
 失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
-标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，再通过 `StandardResponse()` 提取原始字段；连接池直接使用 `ClientPool.Do`。
+标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，保存统一结果中的量价和源时间；连接池直接使用 `ClientPool.Do`。
 正在进行的拉取等待底层响应或超时，不提供取消接口。
 
 迁移调用方式：`s.Update(ctx)` → `s.Update()`，`s.Update(ctx, true)` → `s.Update(true)`。
 自定义 `Unit` 的 `Codes/FetchDay/FetchMinute` 方法也需移除首个 `context.Context` 参数，见下方接口示例。
 
 调用方应在更新结束后 `defer s.Close()`；内部行情引擎按最近使用顺序淘汰，使用中的查询/事务由引用计数保护。
-外部传入的连接池与 `Tracker` 仍由调用方管理。
+外部传入的连接池、各类 Store 与 `Tracker` 均由调用方管理，构造失败或 `Service.Close()` 时也不会关闭它们。先等待拉取结束并关闭 Service，再关闭共享组件；Service 不持有任何自建存储。
 
 ---
 
@@ -351,7 +334,7 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, []pull.TradingSession{
 ```
 
 `DayToPeriod` 与 `MinuteToPeriod` 保留固定根数语义；`n<=1` 原样返回。
-日线合并的股本取最后一根、换手率累加。新增日历/时段接口不修改输入，按时间排序，不填造缺失记录。
+日线合并只处理原始量价字段。新增日历/时段接口不修改输入，按时间排序，不填造缺失记录。
 `MinuteToSessions` 使用收盘时刻 `(start,end]` 分桶，时段开始时刻的独立记录单独保留；时段外数据或重叠时段报错。
 聚合接口不再接收 `loc`：日历聚合直接使用 `Time` 源日期；分钟聚合按源钟面时段分桶，不进行时区转换。跨午夜时段如 `{StartMinute: 21*60, EndMinute: 2*60+30}` 按时段开始日对齐，但不把它当成期货交易日。跨市场真实时刻比较需先确认来源时区。
 
@@ -364,9 +347,9 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, []pull.TradingSession{
 type MyUnit struct{}
 
 func (u *MyUnit) Name() string { return "my" }
-func (u *MyUnit) Codes(s *pull.Service) ([]pull.Code, error) { /* ... */ }
-func (u *MyUnit) FetchDay(s *pull.Service, code pull.Code) error { /* ... */ }
-func (u *MyUnit) FetchMinute(s *pull.Service, code pull.Code) error { /* ... */ }
+func (u *MyUnit) Codes(s *pull.Service) ([]model.Code, error) { /* ... */ }
+func (u *MyUnit) FetchDay(s *pull.Service, code model.Code) error { /* ... */ }
+func (u *MyUnit) FetchMinute(s *pull.Service, code model.Code) error { /* ... */ }
 
 func init() { pull.Register(&MyUnit{}) }
 ```
@@ -380,7 +363,7 @@ func init() { pull.Register(&MyUnit{}) }
 ## 🧪 测试
 
 ```bash
-go test ./extend/pull/... -count=1
+go test ./pull/... -count=1
 ```
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/pull`。

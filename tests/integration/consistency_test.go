@@ -9,13 +9,11 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend"
-	"github.com/injoyai/tdx/v2/extend/codes"
-	"github.com/injoyai/tdx/v2/extend/gbbq"
 	"github.com/injoyai/tdx/v2/extend/local"
+	"github.com/injoyai/tdx/v2/extend/metadata"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
-	"github.com/injoyai/tdx/v2/extend/workday"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -53,22 +51,21 @@ func (*consistencyClient) GetKlineDayAll(code string) (*tdx.KlineResp, error) {
 }
 
 func TestConsistencyAdjustmentCodeForms(t *testing.T) {
-	db, err := xorms.NewSQLite(":memory:")
+	g, err := metadata.NewGbbq([]*model.Gbbq{{Code: "sz000001", Time: consistencyDay(20), Category: 1, C1: 10}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	g, err := gbbq.New(gbbq.WithDB(db), gbbq.WithClient(&consistencyClient{}), gbbq.WithSpec("@every 87600h"))
+	response, err := (&consistencyClient{}).GetKlineDayAll("sz000001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer g.Close()
-	want, err := g.QFQKlineDay("sz000001")
+	raw, err := response.Klines()
+	want := g.QFQ("sz000001", raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, code := range []string{"SZ000001", "sz.000001", "000001.SZ"} {
-		got, err := g.QFQKlineDay(code)
+		got := g.QFQ(code, raw)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,16 +76,10 @@ func TestConsistencyAdjustmentCodeForms(t *testing.T) {
 }
 
 func TestConsistencyCalendarReverseSameWindow(t *testing.T) {
-	db, err := xorms.NewSQLite(":memory:")
+	w, err := metadata.NewWorkday(model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2026-10-19", Through: "2026-10-21", Dates: []string{"2026-10-19", "2026-10-20", "2026-10-21"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	w, err := workday.New(workday.WithDB(db), workday.WithClient(&consistencyClient{}), workday.WithSpec("@every 87600h"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer w.Close()
 	var forward, reverse []string
 	for d := range w.Iter(consistencyDay(19), consistencyDay(21)) {
 		forward = append(forward, d.Format(time.DateOnly))
@@ -128,38 +119,6 @@ func TestConsistencyCalendarReverseSameWindow(t *testing.T) {
 	}
 }
 
-func TestConsistencyNilDatabaseFactories(t *testing.T) {
-	nilDB := func() (*xorms.Engine, error) { return nil, nil }
-	for _, tc := range []struct {
-		name string
-		run  func() error
-	}{
-		{"codes", func() error {
-			_, err := codes.New(codes.WithClient(&consistencyClient{}), codes.WithDialDB(nilDB))
-			return err
-		}},
-		{"gbbq", func() error {
-			_, err := gbbq.New(gbbq.WithClient(&consistencyClient{}), gbbq.WithDialDB(nilDB))
-			return err
-		}},
-		{"workday", func() error {
-			_, err := workday.New(workday.WithClient(&consistencyClient{}), workday.WithDialDB(nilDB))
-			return err
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if p := recover(); p != nil {
-					t.Errorf("factory returned nil,nil: panic=%v", p)
-				}
-			}()
-			if err := tc.run(); err == nil {
-				t.Error("expected error")
-			}
-		})
-	}
-}
-
 func TestConsistencyIncomeDateZone(t *testing.T) {
 	ks := protocol.Klines{{Time: consistencyDay(19), Close: 10}, {Time: consistencyDay(20), Close: 11}}
 	for _, loc := range []*time.Location{protocol.Location(), time.UTC} {
@@ -176,8 +135,8 @@ func TestConsistencyIncomeDateZone(t *testing.T) {
 }
 
 func TestConsistencyCodeCacheCanonicalOutput(t *testing.T) {
-	c := codes.NewBase()
-	c.Update(codes.CodeModels{{Exchange: "sz", Code: "000001", Name: "sample"}})
+	c := metadata.NewCodes(nil)
+	c.Update(model.CodeModels{{Exchange: "sz", Code: "000001", Name: "sample"}})
 	i, _ := protocol.ParseInstrument("sz000001")
 	if got := c.GetName(i.String()); got != "sample" {
 		t.Errorf("GetName(%q)=%q; GetName(sz000001)=%q", i.String(), got, c.GetName("sz000001"))
@@ -190,7 +149,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	s, err := pull.New(&pull.Config{Dir: t.TempDir(), Codes: []string{"cffIF2609"}, StartAt: "20261019", Day: true, ExPool: p})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{"cffIF2609"}, StartAt: "20261019", Day: true, ExPool: p})
 	if err != nil {
 		t.Fatal(err)
 	}

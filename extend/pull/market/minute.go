@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -20,8 +21,8 @@ type minuteTarget struct {
 
 // pullMinutes 所有缺失年份共用一次从新到旧的扫描；扫描成功后再按年提交。
 // 完成指已读完服务器可提供的区间，不保证服务器保留了上市以来的全部历史。
-func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
-	fetch func(string) ([]*pull.KlineMinute, error), supplement *minuteFallback) error {
+func pullMinutes(s *pull.Service, code model.Code, now time.Time,
+	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) error {
 	start := s.Start()
 	now = now.In(start.Location())
 	info, known := code.Market.Info()
@@ -133,9 +134,9 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 			})
 			return days, daysErr
 		}}
-		var merged []*pull.KlineMinute
+		var merged []*model.KlineMinute
 		for _, target := range targets {
-			var yearNative []*pull.KlineMinute
+			var yearNative []*model.KlineMinute
 			for _, k := range ks {
 				if k.Time >= target.from && k.Time < target.through {
 					yearNative = append(yearNative, k)
@@ -151,14 +152,14 @@ func pullMinutes(s *pull.Service, code pull.Code, now time.Time,
 		ks = merged
 	}
 	var saveErrors []error
-	byYear := make(map[int][]*pull.KlineMinute)
+	byYear := make(map[int][]*model.KlineMinute)
 	for _, k := range ks {
 		var year int
 		fmt.Sscanf(k.Time[:4], "%d", &year)
 		byYear[year] = append(byYear[year], k)
 	}
 	for _, target := range targets {
-		var out []*pull.KlineMinute
+		var out []*model.KlineMinute
 		for _, k := range byYear[target.year] {
 			if k.Time >= target.from {
 				out = append(out, k)

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -16,14 +17,14 @@ type Unit interface {
 	Name() string
 
 	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。
-	// s 提供连接源（Manage 标准行情 / ExPool 扩展行情）访问。
-	Codes(s *Service) ([]Code, error)
+	// s 提供连接池（Pool 标准行情 / ExPool 扩展行情）和已持久化代码快照／代码列表函数访问。
+	Codes(s *Service) ([]model.Code, error)
 
 	// FetchDay 拉取并存储某代码日线；实现需读取最后源日期、控制增量边界并调用 SaveDay。
-	FetchDay(s *Service, code Code) error
+	FetchDay(s *Service, code model.Code) error
 
 	// FetchMinute 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。
-	FetchMinute(s *Service, code Code) error
+	FetchMinute(s *Service, code model.Code) error
 }
 
 // registry 市场注册表（可插拔核心）。

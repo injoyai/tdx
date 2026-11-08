@@ -125,10 +125,6 @@ type Gbbq struct {
 	C4       float64
 }
 
-func (*Gbbq) TableName() string {
-	return "gbbq"
-}
-
 func (g *Gbbq) IsEquity() bool {
 	switch g.Category {
 	case 2, 3, 5, 7, 8, 9, 10:

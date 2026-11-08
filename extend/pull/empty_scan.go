@@ -1,19 +1,17 @@
 package pull
 
-import "time"
+import (
+	"time"
 
-// MinuteEmptyScan 记录成功扫描为空的历史范围，不表示数据完整。
-type MinuteEmptyScan struct {
-	From      string
-	CheckedAt int64 // 缓存检查时间，Unix 秒；并非行情源时间
-}
+	"github.com/injoyai/tdx/v2/extend/model"
+)
 
 // MinuteYearRecentlyEmpty 检查最近 7 天的空历史扫描；更早范围和时钟回退不复用。
-func (s *Service) MinuteYearRecentlyEmpty(code Code, year int, from string, now time.Time) (bool, error) {
+func (s *Service) MinuteYearRecentlyEmpty(code model.Code, year int, from string, now time.Time) (bool, error) {
 	if err := s.checkOpen(); err != nil {
 		return false, err
 	}
-	if err := validateRange(from, "", "2006-01-02 15:04"); err != nil {
+	if err := model.ValidateTimeRange(from, "", "2006-01-02 15:04"); err != nil {
 		return false, err
 	}
 	scan, err := s.store.LoadMinuteEmptyScan(code, year)
@@ -25,12 +23,12 @@ func (s *Service) MinuteYearRecentlyEmpty(code Code, year int, from string, now 
 }
 
 // SaveMinuteEmptyScan 仅记录成功的空历史扫描，不能缓存失败请求。
-func (s *Service) SaveMinuteEmptyScan(code Code, year int, from string, now time.Time) error {
+func (s *Service) SaveMinuteEmptyScan(code model.Code, year int, from string, now time.Time) error {
 	if err := s.checkOpen(); err != nil {
 		return err
 	}
-	if err := validateRange(from, "", "2006-01-02 15:04"); err != nil {
+	if err := model.ValidateTimeRange(from, "", "2006-01-02 15:04"); err != nil {
 		return err
 	}
-	return s.store.SaveMinuteEmptyScan(code, year, MinuteEmptyScan{From: from, CheckedAt: now.Unix()})
+	return s.store.SaveMinuteEmptyScan(code, year, model.MinuteEmptyScan{From: from, CheckedAt: now.Unix()})
 }

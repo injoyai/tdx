@@ -1,20 +1,22 @@
 package pull
 
 import (
-	"github.com/injoyai/tdx/v2/protocol"
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestQueryMinuteUsesSourceCalendar(t *testing.T) {
 	s := testService(t)
-	code := Code{Market: protocol.MarketUS, Code: "AAPL"}
+	code := model.Code{Market: protocol.MarketUS, Code: "AAPL"}
 	for _, value := range []string{"2025-12-31 23:59", "2026-01-01 00:01"} {
 		year := 2025
 		if value[:4] == "2026" {
 			year = 2026
 		}
-		if err := s.SaveMinute(code, year, "", []*KlineMinute{{Time: value, Close: 10}}); err != nil {
+		if err := s.SaveMinute(code, year, "", []*model.KlineMinute{{Time: value, Close: 10}}); err != nil {
 			t.Fatal(err)
 		}
 	}

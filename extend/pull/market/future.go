@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -34,12 +35,12 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.ClientPool, error) {
 
 // Codes 从 GetInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
 // 多交易所市场（期货）时 Code.Code 带交易所前缀，如 "cff/IF2609"。
-func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
+func (u *exUnit) Codes(s *pull.Service) ([]model.Code, error) {
 	ins, err := s.GetInstruments()
 	if err != nil {
 		return nil, err
 	}
-	out := []pull.Code{}
+	out := []model.Code{}
 	for _, it := range ins {
 		exchange := protocol.Exchange(it.Market)
 		if !u.isMarket(exchange) {
@@ -49,7 +50,7 @@ func (u *exUnit) Codes(s *pull.Service) ([]pull.Code, error) {
 		if u.multiMarket() {
 			code = exchange.String() + "/" + it.Code
 		}
-		out = append(out, pull.Code{Market: u.name, Code: code, Name: it.Name})
+		out = append(out, model.Code{Market: u.name, Code: code, Name: it.Name})
 	}
 
 	return out, nil
@@ -69,7 +70,7 @@ func (u *exUnit) isMarket(m protocol.Exchange) bool {
 func (u *exUnit) multiMarket() bool { return len(u.markets) > 1 }
 
 // marketOf 解析 Code 的市场编码与裸代码（去掉交易所前缀）。
-func (u *exUnit) marketOf(code pull.Code) (protocol.Exchange, string, error) {
+func (u *exUnit) marketOf(code model.Code) (protocol.Exchange, string, error) {
 	codeStr := code.Code
 	if i := strings.IndexByte(codeStr, '/'); i > 0 {
 		prefix := codeStr[:i]
@@ -87,7 +88,7 @@ func (u *exUnit) marketOf(code pull.Code) (protocol.Exchange, string, error) {
 }
 
 // bars 复用客户端分页；过滤 Until 包含的界外停止记录。
-func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from string) ([]tdx.Kline, error) {
+func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from string) ([]tdx.Kline, error) {
 	p, err := u.Ex(s)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func (u *exUnit) bars(s *pull.Service, code pull.Code, category uint8, from stri
 }
 
 // FetchDay 增量拉日线，含最后一根以便重插修复。
-func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
+func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
 	info, ok := u.name.Info()
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
@@ -153,9 +154,9 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 	if err != nil {
 		return err
 	}
-	out := make([]*pull.KlineDay, 0, len(bars))
+	out := make([]*model.KlineDay, 0, len(bars))
 	for _, k := range bars {
-		row := &pull.KlineDay{
+		row := &model.KlineDay{
 			Time: k.Time, Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: k.Volume,
 		}
@@ -168,19 +169,19 @@ func (u *exUnit) FetchDay(s *pull.Service, code pull.Code) error {
 }
 
 // FetchMinute 多年份共用一次分页，成功扫描后才提交年度完成标记。
-func (u *exUnit) FetchMinute(s *pull.Service, code pull.Code) error {
+func (u *exUnit) FetchMinute(s *pull.Service, code model.Code) error {
 	info, ok := u.name.Info()
 	if !ok {
 		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	return pullMinutes(s, code, time.Now(), func(from string) ([]*pull.KlineMinute, error) {
+	return pullMinutes(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		bars, err := u.bars(s, code, info.Minute.Category, from)
 		if err != nil {
 			return nil, err
 		}
-		out := make([]*pull.KlineMinute, 0, len(bars))
+		out := make([]*model.KlineMinute, 0, len(bars))
 		for _, k := range bars {
-			row := &pull.KlineMinute{
+			row := &model.KlineMinute{
 				Time: k.Time, Open: k.Open, High: k.High,
 				Low: k.Low, Close: k.Close, Volume: k.Volume,
 			}

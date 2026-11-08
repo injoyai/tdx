@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
 type instrumentTestUnit struct {
@@ -18,7 +19,7 @@ type instrumentTestUnit struct {
 	empty bool
 }
 
-func (u *instrumentTestUnit) Codes(s *Service) ([]Code, error) {
+func (u *instrumentTestUnit) Codes(s *Service) ([]model.Code, error) {
 	ins, err := s.GetInstruments()
 	if err == nil && ((u.empty && len(ins) != 0) || (!u.empty && (len(ins) != 801 || ins[800].Code != "LAST"))) {
 		return nil, errors.New("incomplete instrument snapshot")
@@ -131,9 +132,10 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 	}
 	t.Log("same 801 records: 4 markets use 2 pages instead of 8")
 	clearMarks := func() {
-		if _, err := s.store.(*SQLiteStore).updatedDB.Exec("DELETE FROM `update`"); err != nil {
-			t.Fatal(err)
-		}
+		store := s.store.(*memoryStore)
+		store.Mu.Lock()
+		defer store.Mu.Unlock()
+		store.Marks.Marks = nil
 	}
 	clearMarks()
 	if err := s.Update(true); err != nil || pages.Load() != 4 {

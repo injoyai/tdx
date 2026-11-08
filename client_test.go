@@ -156,6 +156,52 @@ func TestMarketClientMixedQuotesAndMetadata(t *testing.T) {
 	}
 }
 
+func TestQuotePrecisionCacheAcrossExchanges(t *testing.T) {
+	var requests [2]atomic.Int32
+	c := marketTestClient(t, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:12]) != protocol.TypeCode {
+			return testQuoteResponse(b)
+		}
+		ex := protocol.Exchange(b[0])
+		requests[int(ex)].Add(1)
+		data := make([]byte, 31)
+		binary.LittleEndian.PutUint16(data, 1)
+		if ex == protocol.ExchangeSH {
+			copy(data[2:8], "110075")
+			data[22] = 4
+		} else {
+			copy(data[2:8], "123001")
+			data[22] = 0 // 零位精度同样必须缓存，不能当作缺失。
+		}
+		return data
+	}, nil)
+	for _, codes := range [][]string{{"sh110075"}, {"sz123001"}, {"sh110075", "sz123001"}} {
+		quotes, err := c.GetQuote(codes...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, code := range codes {
+			want := 0.1
+			if code == "sz123001" {
+				want = 1000
+			}
+			if quotes[i].Price != want {
+				t.Fatalf("%s price = %v, want %v", code, quotes[i].Price, want)
+			}
+		}
+	}
+	if _, err := c.GetQuote("sh110076"); err == nil {
+		t.Fatal("missing precision metadata was accepted")
+	}
+	quotes, err := c.GetQuote("sz123001")
+	if err != nil || len(quotes) != 1 || quotes[0].Price != 1000 {
+		t.Fatal("refreshing Shanghai metadata affected Shenzhen", quotes, err)
+	}
+	if requests[protocol.ExchangeSH].Load() != 2 || requests[protocol.ExchangeSZ].Load() != 1 {
+		t.Fatal("metadata cache reused or refreshed the wrong exchange", requests[0].Load(), requests[1].Load())
+	}
+}
+
 func TestMarketClientTicks(t *testing.T) {
 	c := marketTestClient(t, func(h, _ []byte) []byte {
 		switch binary.LittleEndian.Uint16(h[10:12]) {

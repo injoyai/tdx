@@ -2,15 +2,16 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"github.com/injoyai/tdx/v2/protocol"
 	"time"
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
+	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func main() {
@@ -29,25 +30,39 @@ func main() {
 	}
 	_, err := time.Parse("20060102", *since)
 	logs.PanicErr(err)
-	codes := flag.Args()
-	if !*all && len(codes) == 0 {
-		codes = []string{"sz000001"}
+	inputs := flag.Args()
+	if !*all && len(inputs) == 0 {
+		inputs = []string{"sz000001"}
 	}
-	needsEx := *all
-	for _, raw := range codes {
+	needsSt, needsEx := *all, *all
+	for _, raw := range inputs {
 		code, err := pull.ParseCode(raw)
 		logs.PanicErr(err)
 		switch code.Market {
 		case protocol.MarketFuture, protocol.MarketHK, protocol.MarketHKIndex, protocol.MarketUS:
 			needsEx = true
+		default:
+			needsSt = true
 		}
 	}
-	m, err := manage.New()
-	logs.PanicErr(err)
-	defer m.Close()
 	cfg := &pull.Config{
-		Dir: *dir, Codes: codes, Day: *day, Minute: *minute, StartAt: *since,
-		Goroutines: 1, Manage: m,
+		Codes: inputs, Day: *day, Minute: *minute, StartAt: *since,
+		Goroutines: 1,
+	}
+	store, err := sqlite.New(*dir)
+	logs.PanicErr(err)
+	defer store.Close()
+	cfg.Store = store
+	if needsSt {
+		pool, err := tdx.NewPool(func() (tdx.Client, error) {
+			return tdx.DialDefault(tdx.WithRedial(false))
+		}, 1)
+		logs.PanicErr(err)
+		defer pool.Close()
+		cfg.Pool = pool
+	}
+	if *all {
+		cfg.CodesStore = store
 	}
 	if needsEx {
 		ex, err := tdx.NewPool(func() (tdx.Client, error) {
@@ -60,9 +75,13 @@ func main() {
 	s, err := pull.New(cfg)
 	logs.PanicErr(err)
 	defer s.Close()
-	logs.PanicErr(s.Update(*force))
+	if *all {
+		_, err := s.SyncCodes(context.Background())
+		logs.PanicErr(err)
+	}
+	logs.PanicErr(s.UpdateContext(context.Background(), *force))
 	if *day {
-		for _, raw := range codes {
+		for _, raw := range inputs {
 			code, err := pull.ParseCode(raw)
 			logs.PanicErr(err)
 			ks, err := s.QueryDay(code, "", "")

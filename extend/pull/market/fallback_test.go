@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -37,7 +38,7 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 	if *trades[0] != before {
 		t.Fatal("修改了原分笔")
 	}
-	at := func(h, m int) *pull.KlineMinute {
+	at := func(h, m int) *model.KlineMinute {
 		stamp := time.Date(2025, 1, 6, h, m, 0, 0, loc).Format("2006-01-02 15:04")
 		for _, k := range rows {
 			if k.Time == stamp {
@@ -62,7 +63,7 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 	var volume int64
 	var amount float64
 	for _, k := range rows {
-		if k.Source != pull.MinuteSourceTrade {
+		if k.Source != model.MinuteSourceTrade {
 			t.Fatal("缺少来源", k)
 		}
 		volume += k.Volume
@@ -83,19 +84,19 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 }
 
 func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
-	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	day2 := day.AddDate(0, 0, 1)
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
-	current := &pull.KlineMinute{Time: minuteDay(now, protocol.Location()).Add(9*time.Hour + 31*time.Minute).Format("2006-01-02 15:04"), Close: 20}
+	current := &model.KlineMinute{Time: minuteDay(now, protocol.Location()).Add(9*time.Hour + 31*time.Minute).Format("2006-01-02 15:04"), Close: 20}
 	// 旧标记和本地原生记录必须保留，但不能因此跳过分笔兜底。
-	nativeOld := &pull.KlineMinute{Time: day.Add(9*time.Hour + 31*time.Minute).Format("2006-01-02 15:04"), Close: 99}
-	if err := s.SaveMinuteComplete(code, 2025, day.Format("2006-01-02 15:04"), []*pull.KlineMinute{nativeOld}); err != nil {
+	nativeOld := &model.KlineMinute{Time: day.Add(9*time.Hour + 31*time.Minute).Format("2006-01-02 15:04"), Close: 99}
+	if err := s.SaveMinuteComplete(code, 2025, day.Format("2006-01-02 15:04"), []*model.KlineMinute{nativeOld}); err != nil {
 		t.Fatal(err)
 	}
 	calls := map[string]int{}
@@ -117,7 +118,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 			return fallbackTrades(d), nil
 		},
 	}
-	fetch := func(string) ([]*pull.KlineMinute, error) { return []*pull.KlineMinute{current}, nil }
+	fetch := func(string) ([]*model.KlineMinute, error) { return []*model.KlineMinute{current}, nil }
 	if err := pullMinutes(s, code, now, fetch, fallback); !errors.Is(err, want) {
 		t.Fatal(err)
 	}
@@ -153,11 +154,11 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 	if err != nil || c == nil || !c.TradeFallback || c.From != day.Format("2006-01-02 15:04") || c.Through != end {
 		t.Fatal(c, err)
 	}
-	if err := pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+	if err := pullMinutes(s, code, now, func(from string) ([]*model.KlineMinute, error) {
 		if from != current.Time {
 			t.Fatal("已完成历史仍重扫", from)
 		}
-		return []*pull.KlineMinute{current}, nil
+		return []*model.KlineMinute{current}, nil
 	}, fallback); err != nil {
 		t.Fatal(err)
 	}
@@ -167,12 +168,12 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 }
 
 func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
-	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20260105", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260105", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	now := s.Start().AddDate(0, 0, 2).Add(16 * time.Hour)
 	calls := 0
 	fallback := &minuteFallback{
@@ -183,11 +184,11 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 		trades: func(time.Time) (protocol.Trades, error) { return nil, nil },
 	}
 	network := errors.New("native network failed")
-	if err := pullMinutes(s, c, now, func(string) ([]*pull.KlineMinute, error) { return nil, network }, fallback); !errors.Is(err, network) || calls != 0 {
+	if err := pullMinutes(s, c, now, func(string) ([]*model.KlineMinute, error) { return nil, network }, fallback); !errors.Is(err, network) || calls != 0 {
 		t.Fatal("网络失败进入兜底", err, calls)
 	}
-	native := &pull.KlineMinute{Time: minuteDay(now, protocol.Location()).Add(10 * time.Hour).Format("2006-01-02 15:04"), Close: 10}
-	if err := pullMinutes(s, c, now, func(string) ([]*pull.KlineMinute, error) { return []*pull.KlineMinute{native}, nil }, fallback); err == nil {
+	native := &model.KlineMinute{Time: minuteDay(now, protocol.Location()).Add(10 * time.Hour).Format("2006-01-02 15:04"), Close: 10}
+	if err := pullMinutes(s, c, now, func(string) ([]*model.KlineMinute, error) { return []*model.KlineMinute{native}, nil }, fallback); err == nil {
 		t.Fatal("空分笔未报告缺口")
 	}
 	rows, err := s.QueryMinute(c, "", "")
@@ -198,25 +199,25 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 		t.Fatal("空分笔标记完成", coverage, err)
 	}
 	// 新原生数据可以替换已有合成值。
-	native.Source = pull.MinuteSourceTrade
-	if err := s.SaveMinute(c, 2026, native.Time, []*pull.KlineMinute{native}); err != nil {
+	native.Source = model.MinuteSourceTrade
+	if err := s.SaveMinute(c, 2026, native.Time, []*model.KlineMinute{native}); err != nil {
 		t.Fatal(err)
 	}
-	replacement := &pull.KlineMinute{Time: native.Time, Close: 88}
+	replacement := &model.KlineMinute{Time: native.Time, Close: 88}
 	from := minuteDay(now, protocol.Location())
-	rows, err = fallback.fill(s, c, from.Format(protocol.TimeLayout), now.Format(protocol.TimeLayout), from.Format(time.DateOnly), []*pull.KlineMinute{replacement})
+	rows, err = fallback.fill(s, c, from.Format(protocol.TimeLayout), now.Format(protocol.TimeLayout), from.Format(time.DateOnly), []*model.KlineMinute{replacement})
 	if err != nil || len(rows) != 1 || rows[0].Close != 88 || rows[0].Source != "" {
 		t.Fatal("原生未替换合成", rows, err)
 	}
 }
 
 func TestMinuteFallbackYearRollover(t *testing.T) {
-	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20251230", Codes: []string{"sz000001"}})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	now := day.AddDate(0, 0, 4).Add(16 * time.Hour)
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
@@ -240,7 +241,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 		},
 	}
 	// 原生分钟完全为空时，也应通过分笔补齐上一年的剩余交易日。
-	if err := pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+	if err := pullMinutes(s, code, now, func(from string) ([]*model.KlineMinute, error) {
 		if from != day.Format(protocol.TimeLayout) {
 			t.Fatal("跨年跳过未覆盖的年末", from)
 		}
@@ -259,7 +260,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 }
 
 func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
-	cfg := &pull.Config{Dir: t.TempDir(), StartAt: "20251230", Codes: []string{"sz000001"}, TradeFallback: true}
+	cfg := &pull.Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}, TradeFallback: true}
 	s, err := pull.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +272,7 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	if got := s.Config(); !got.TradeFallback || got.Codes[0] != "sz000001" {
 		t.Fatal("Service 配置被调用方修改", got)
 	}
-	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
 	if err != nil {
@@ -285,7 +286,7 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	}
 	now := time.Date(2026, 1, 2, 16, 0, 0, 0, protocol.Location())
 	called := false
-	if err := pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+	if err := pullMinutes(s, code, now, func(from string) ([]*model.KlineMinute, error) {
 		called = true
 		if from != day.Format(protocol.TimeLayout) {
 			t.Fatal("关闭兜底后跳过部分覆盖范围", from)
@@ -297,12 +298,12 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 }
 
 func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
-	s, err := pull.New(&pull.Config{Dir: t.TempDir(), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := pull.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := s.Start()
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
 	if err := s.SaveMinuteEmptyScan(code, 2025, day.Format("2006-01-02 15:04"), now); err != nil {
@@ -318,11 +319,11 @@ func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
 			return fallbackTrades(d), nil
 		},
 	}
-	err = pullMinutes(s, code, now, func(from string) ([]*pull.KlineMinute, error) {
+	err = pullMinutes(s, code, now, func(from string) ([]*model.KlineMinute, error) {
 		if from != day.Format(protocol.TimeLayout) {
 			t.Fatal("空原生历史缓存阻止了分笔兜底", from)
 		}
-		return []*pull.KlineMinute{{Time: now.Add(-time.Hour).Format("2006-01-02 15:04"), Close: 20}}, nil
+		return []*model.KlineMinute{{Time: now.Add(-time.Hour).Format("2006-01-02 15:04"), Close: 20}}, nil
 	}, fallback)
 	if err != nil || calls != 1 {
 		t.Fatal("未补缺失历史交易日", calls, err)

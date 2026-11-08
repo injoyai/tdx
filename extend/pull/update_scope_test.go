@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
 type scopeTestUnit struct {
@@ -11,12 +13,12 @@ type scopeTestUnit struct {
 	days, minutes []string
 }
 
-func (u *scopeTestUnit) FetchDay(_ *Service, c Code) error {
+func (u *scopeTestUnit) FetchDay(_ *Service, c model.Code) error {
 	u.days = append(u.days, c.Code)
 	return nil
 }
 
-func (u *scopeTestUnit) FetchMinute(_ *Service, c Code) error {
+func (u *scopeTestUnit) FetchMinute(_ *Service, c model.Code) error {
 	u.minutes = append(u.minutes, c.Code)
 	return nil
 }
@@ -34,7 +36,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 			{"fallback", func(c *Config) { c.TradeFallback = true }},
 		} {
 			t.Run(fmt.Sprintf("%s/must=%t", tt.name, must), func(t *testing.T) {
-				cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one"}, Day: true, StartAt: "20260101", Goroutines: 1}
+				cfg := Config{Store: testStore(t.TempDir()), Codes: []string{"test.one"}, Day: true, StartAt: "20260101", Goroutines: 1}
 				u := &scopeTestUnit{mockUnit: mockUnit{name: "test"}}
 				s, err := New(&cfg)
 				if err != nil {
@@ -78,7 +80,7 @@ func TestUpdateScopesConfiguration(t *testing.T) {
 
 func TestUpdateScopeIgnoresCodeOrder(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	cfg := Config{Dir: t.TempDir(), Codes: []string{"test.one", "test.two"}, StartAt: "20260101"}
+	cfg := Config{Store: testStore(t.TempDir()), Codes: []string{"test.one", "test.two"}, StartAt: "20260101"}
 	s1, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)

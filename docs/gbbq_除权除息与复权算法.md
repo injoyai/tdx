@@ -120,6 +120,6 @@ gbbq 文件常含**已公告但 ex-day 在未来**的除权记录。前复权锚
   - `Factor.QFQPrice(raw)` / `Factor.HFQPrice(raw)` 仿射 + 四舍五入得复权价
   - `roundHalfUpYuan` 逢五进一到 2 位小数
 - v2 仅保留仿射复权入口；旧比例字段与方法已删除，精确复权使用 `QFQPrice/HFQPrice`。
-- 对外接口:`extend/gbbq/gbbq.go`(`Interface.GetFactors` → `GetXRXDs(code).Pre(ks).Factors()`),计算及参数语义保持不变。
+- 对外接口:`metadata/gbbq.go`(`metadata.Gbbq.GetFactors` → `GetXRXDs(code).Pre(ks).Factors()`),计算及参数语义保持不变。
 - 测试:`protocol/model_gbbq_test.go`(600519 股改复合 / 000651 配股+大送转 / 舍入边界 /
   已知特例 / HFQ 一致性),全部用通达信实盘值断言。

@@ -77,7 +77,7 @@ func TestUpdateMarketsAfterClose(t *testing.T) {
 			}
 			if got[i] != before[i] {
 				// Mark 使用真实时钟；将持久化完成时间对齐本测试的模拟时钟。
-				if _, err := s.store.(*SQLiteStore).updatedDB.Exec("UPDATE `update` SET `Time`=? WHERE `Key`=?", now.Unix(), s.updateKey("pull:"+u.Name())); err != nil {
+				if err := s.store.SaveUpdate(s.updateKey("pull:"+u.Name()), now.Unix()); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -121,7 +121,7 @@ func TestEarlyUpdateDoesNotSuppressAfterClose(t *testing.T) {
 		if u.dayCalls != i+1 {
 			t.Fatal("early mark suppressed after-close update", u.dayCalls)
 		}
-		if _, err := s.store.(*SQLiteStore).updatedDB.Exec("UPDATE `update` SET `Time`=? WHERE `Key`=?", now.Unix(), s.updateKey("pull:"+u.Name())); err != nil {
+		if err := s.store.SaveUpdate(s.updateKey("pull:"+u.Name()), now.Unix()); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.update(now, true); err != nil {

@@ -5,8 +5,8 @@
 | 文件 | 范围 |
 | --- | --- |
 | `api_contract_test.go` | JSON 公开字段名 |
-| `metadata_test.go` | 元数据初始化失败时的资源释放 |
-| `metadata_ownership_test.go` | 注入资源与工厂资源的关闭归属 |
+| `adjusted_export_test.go` | 纯计算复权与本地导出的成交量口径 |
+| 元数据同步与事务 | 位于 pull/metadata_test.go 和 storage/sqlite/metadata_test.go，验证失败回滚、快照状态与资源归属 |
 | `consistency_test.go` | 代码格式、交易日历、时区、成交量和存储的一致性 |
 
 从项目根目录运行：

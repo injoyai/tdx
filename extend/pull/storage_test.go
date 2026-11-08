@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -15,13 +17,13 @@ import (
 type probeStore struct {
 	identity         string
 	marks            map[string]int64
-	code             Code
+	code             model.Code
 	year             int
 	from, start, end string
-	days             []*KlineDay
-	minutes          []*KlineMinute
-	coverage         *MinuteCoverage
-	scan             *MinuteEmptyScan
+	days             []*model.KlineDay
+	minutes          []*model.KlineMinute
+	coverage         *model.MinuteCoverage
+	scan             *model.MinuteEmptyScan
 	err              error
 	closed           bool
 	writes           int
@@ -43,29 +45,29 @@ func (p *probeStore) SaveUpdate(key string, unix int64) error {
 	p.marks[key] = unix
 	return nil
 }
-func (p *probeStore) LastDayTime(code Code) (string, error) {
+func (p *probeStore) LastDayTime(code model.Code) (string, error) {
 	p.code = code
 	if len(p.days) == 0 {
 		return "", p.err
 	}
 	return p.days[len(p.days)-1].Time, p.err
 }
-func (p *probeStore) LastMinuteTime(code Code, year int) (string, error) {
+func (p *probeStore) LastMinuteTime(code model.Code, year int) (string, error) {
 	p.code, p.year = code, year
 	if len(p.minutes) == 0 {
 		return "", p.err
 	}
 	return p.minutes[len(p.minutes)-1].Time, p.err
 }
-func (p *probeStore) QueryDay(code Code, start, end string) ([]*KlineDay, error) {
+func (p *probeStore) QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error) {
 	p.code, p.start, p.end = code, start, end
 	return p.days, p.err
 }
-func (p *probeStore) QueryMinute(code Code, start, end string) ([]*KlineMinute, error) {
+func (p *probeStore) QueryMinute(code model.Code, start, end string) ([]*model.KlineMinute, error) {
 	p.code, p.start, p.end = code, start, end
 	return p.minutes, p.err
 }
-func (p *probeStore) SaveDay(code Code, from string, rows []*KlineDay) error {
+func (p *probeStore) SaveDay(code model.Code, from string, rows []*model.KlineDay) error {
 	if p.err != nil {
 		return p.err
 	}
@@ -73,7 +75,7 @@ func (p *probeStore) SaveDay(code Code, from string, rows []*KlineDay) error {
 	p.code, p.from, p.days = code, from, rows
 	return nil
 }
-func (p *probeStore) SaveMinute(code Code, year int, from string, rows []*KlineMinute, coverage *MinuteCoverage) error {
+func (p *probeStore) SaveMinute(code model.Code, year int, from string, rows []*model.KlineMinute, coverage *model.MinuteCoverage) error {
 	if p.err != nil {
 		return p.err
 	}
@@ -81,15 +83,15 @@ func (p *probeStore) SaveMinute(code Code, year int, from string, rows []*KlineM
 	p.code, p.year, p.from, p.minutes, p.coverage = code, year, from, rows, coverage
 	return nil
 }
-func (p *probeStore) QueryMinuteCoverage(code Code, year int) (*MinuteCoverage, error) {
+func (p *probeStore) QueryMinuteCoverage(code model.Code, year int) (*model.MinuteCoverage, error) {
 	p.code, p.year = code, year
 	return p.coverage, p.err
 }
-func (p *probeStore) LoadMinuteEmptyScan(code Code, year int) (*MinuteEmptyScan, error) {
+func (p *probeStore) LoadMinuteEmptyScan(code model.Code, year int) (*model.MinuteEmptyScan, error) {
 	p.code, p.year = code, year
 	return p.scan, p.err
 }
-func (p *probeStore) SaveMinuteEmptyScan(code Code, year int, scan MinuteEmptyScan) error {
+func (p *probeStore) SaveMinuteEmptyScan(code model.Code, year int, scan model.MinuteEmptyScan) error {
 	if p.err != nil {
 		return p.err
 	}
@@ -97,10 +99,10 @@ func (p *probeStore) SaveMinuteEmptyScan(code Code, year int, scan MinuteEmptySc
 	return nil
 }
 
-func customService(t *testing.T, p Store, dir string) *Service {
+func customService(t *testing.T, p storage.BarStore, dir string) *Service {
 	t.Helper()
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
-	s, err := New(&Config{Store: p, Dir: dir, Codes: []string{"test.one"}})
+	s, err := New(&Config{Store: p, Codes: []string{"test.one"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,8 +114,8 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 	p := &probeStore{identity: "dataset-a"}
 	dir := filepath.Join(t.TempDir(), "must-not-be-created")
 	s := customService(t, p, dir)
-	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	if err := s.SaveDay(c, "2025-01-01", []*KlineDay{{Time: "2025-01-02", Close: 3}}); err != nil {
+	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	if err := s.SaveDay(c, "2025-01-01", []*model.KlineDay{{Time: "2025-01-02", Close: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	if p.code != c || p.from != "2025-01-01" {
@@ -125,7 +127,7 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 	if rows, err := s.QueryDay(c, "2025-01-01", "2025-01-03"); err != nil || len(rows) != 1 || p.start != "2025-01-01" || p.end != "2025-01-03" {
 		t.Fatal(rows, err)
 	}
-	rows := []*KlineMinute{{Time: "2025-01-02 09:32"}, {Time: "2025-01-02 09:31"}}
+	rows := []*model.KlineMinute{{Time: "2025-01-02 09:32"}, {Time: "2025-01-02 09:31"}}
 	if err := s.SaveMinuteComplete(c, 2025, "2025-01-01 00:00", rows); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +165,7 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 	if p.closed {
 		t.Fatal("closed injected store")
 	}
-	if err := s.SaveDay(c, "", []*KlineDay{{Time: "2025-01-01"}}); !errors.Is(err, net.ErrClosed) {
+	if err := s.SaveDay(c, "", []*model.KlineDay{{Time: "2025-01-01"}}); !errors.Is(err, net.ErrClosed) {
 		t.Fatal(err)
 	}
 }
@@ -171,11 +173,11 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 func TestCustomStoreValidationFailureAndNamespace(t *testing.T) {
 	p := &probeStore{identity: "dataset-a"}
 	s := customService(t, p, "") // Dir is optional for custom storage.
-	c := Code{Market: protocol.MarketAStock, Code: "sz000001"}
-	if err := s.SaveDay(c, "", []*KlineDay{{Time: "bad"}}); err == nil {
+	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	if err := s.SaveDay(c, "", []*model.KlineDay{{Time: "bad"}}); err == nil {
 		t.Fatal("invalid source date reached store")
 	}
-	if err := s.SaveMinute(c, 2024, "", []*KlineMinute{{Time: "2025-01-01 09:31"}}); err == nil {
+	if err := s.SaveMinute(c, 2024, "", []*model.KlineMinute{{Time: "2025-01-01 09:31"}}); err == nil {
 		t.Fatal("wrong source year reached store")
 	}
 	if err := s.SaveMinuteComplete(c, 2024, "", nil); err != nil || p.writes != 0 {
@@ -187,7 +189,7 @@ func TestCustomStoreValidationFailureAndNamespace(t *testing.T) {
 	}
 	want := errors.New("write failed")
 	p.err = want
-	if err := s.SaveMinuteFallbackComplete(c, 2025, "2025-01-01 00:00", "2025-01-03 00:00", []*KlineMinute{{Time: "2025-01-02 09:31"}}); !errors.Is(err, want) {
+	if err := s.SaveMinuteFallbackComplete(c, 2025, "2025-01-01 00:00", "2025-01-03 00:00", []*model.KlineMinute{{Time: "2025-01-02 09:31"}}); !errors.Is(err, want) {
 		t.Fatal(err)
 	}
 	if p.coverage != nil || p.writes != 0 {

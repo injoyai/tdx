@@ -1,13 +1,13 @@
 # 更新标记与定时更新
 
-`github.com/injoyai/tdx/v2/lib/update` 提供共享的更新基础设施，不依赖根包。`mark.go` 负责数据库完成标记，`timer.go` 负责可停止的定时执行。
+`github.com/injoyai/tdx/v2/lib/update` 提供共享的更新基础设施，不依赖根包。`mark.go` 负责通过 Store 读写完成标记，`timer.go` 负责可停止的定时执行。
 
 ## 持久化完成标记
 
 ```go
 import "github.com/injoyai/tdx/v2/lib/update"
 
-marks, err := update.New(db, 15, 1)
+marks, err := update.NewWithStore(store, 15, 1)
 if err != nil {
     return err
 }
@@ -23,11 +23,11 @@ if !done {
 }
 ```
 
-`db` 为调用方提供的 `*xorms.Engine`，关闭仍由调用方负责。`New` 初始化 `update` 表；记录模型为 `Record`，数据库字段和表名保持原样。每天的更新边界按固定东八区计算，例中的 15:01 表示当天边界。
+`store` 必须实现本包 Store，由调用方创建和关闭；不提供默认数据库；可用 `sqlite.NewUpdate(db)` 复用调用方的 SQLite 原生 `*xorm.Engine`。每天的更新边界按固定东八区计算，例中的 15:01 表示当天边界。
 
-`IsUpdated(key)` 只查询，不创建占位行；`Mark(key)` 可以直接写入首次标记。标记表示任务已完成，不是执行锁，调用方仍需按业务要求安排并发。`pull.Config.Tracker` 接受 `*update.Tracker`。
+`IsUpdated(key)` 只查询，不创建占位行；`Mark(key)` 可以直接写入首次标记。标记表示任务已完成，不是执行锁，调用方仍需按业务要求安排并发。
 
-`IsUpdatedSince(key, since)` 查询在指定时刻（含）之后是否已完成，忽略 `New` 的固定东八区每日边界。pull 用此方法判断各市场当地收盘后延迟 5 分钟的完成情况；`IsUpdated` 的既有行为不变。
+`IsUpdatedSince(key, since)` 查询在指定时刻（含）之后是否已完成，忽略 `New` 的固定东八区每日边界。`IsUpdated` 的既有行为不变。
 
 ## 可停止的定时执行
 
@@ -47,4 +47,4 @@ defer stop()
 
 ## 自定义标记存储
 
-`Store` 提供 `LoadUpdate(key)` 和 `SaveUpdate(key, unix)`，缺少标记返回 `has=false`。`NewWithStore(store,hour,minute)` 复用原有每日边界计算，不打开数据库、不接管存储生命周期。`New(db,hour,minute)` 保留，通过 `SQLStore` 读写原 `update` 表。标记时间是 Unix 秒，与行情源时间无关。
+`Store` 提供 `LoadUpdate(key)` 和 `SaveUpdate(key, unix)`，缺少标记返回 `has=false`。`NewWithStore(store,hour,minute)` 复用原有每日边界计算，不打开数据库、不接管存储生命周期。`sqlite.NewUpdate(db, prefix...)` 创建缺失的标记表并可加键前缀，已有表不自动迁移；引擎仍由调用方关闭。SQLite 沿用 update 表；其他数据库由调用方实现 update.Store。标记时间是 Unix 秒，与行情源时间无关。

@@ -156,7 +156,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 		})
 	}
 	got, err := ParseCode("CN/STOCK.600000")
-	if err != nil || got.Market != protocol.MarketAStock || got.FileName() != "sh600000" {
+	if err != nil || got.Market != protocol.MarketAStock {
 		t.Fatal("market code was not normalized", got, err)
 	}
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
@@ -169,7 +169,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
 	dir := t.TempDir()
 	for _, input := range []string{"us.12345", "us.ABCDEFGHIJ", "cn/stock.hk00700"} {
-		s, err := New(&Config{Dir: dir, Codes: []string{input}})
+		s, err := New(&Config{Store: testStore(dir), Codes: []string{input}})
 		if err == nil {
 			s.Close()
 			t.Fatal("invalid input initialized service", input)
