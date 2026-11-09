@@ -1,6 +1,6 @@
 # 元数据内存查询
 
-本包集中提供证券索引、历史股本与复权查询、中国市场历史日历。三个对象独立构造，按需使用；不联网、不读写数据库、不启动后台任务，无需 Close。数据获取使用 Client 或 pull，同步与持久化契约见[数据架构](../../docs/data-architecture.md)和[存储接口](../../docs/storage.md)。
+本包集中提供证券索引、历史股本与复权查询、中国市场历史日历。三个对象独立构造，按需使用；不联网、不读写数据库、不启动后台任务，无需 Close。数据获取使用 Client 或 pull.Fetch*，持久化由应用选择；数据边界见[数据架构](../../docs/data-architecture.md)和[存储接口](../../docs/storage.md)。
 
 需要从 HTTP 服务刷新数据时，显式导入独立子包 [httpclient](httpclient/README.md)；该子包持有请求与定时任务，需 Close。导入本包不会自动引入 HTTP 客户端。
 

@@ -2,12 +2,21 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"log/slog"
+	"os"
 
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("示例执行失败", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	flag.Parse()
 	codes := flag.Args()
 	if len(codes) == 0 {
@@ -17,8 +26,11 @@ func main() {
 	defer c.Close()
 
 	resp, err := c.GetQuote(codes...)
-	logs.PanicErr(err)
-	for _, quote := range resp {
-		logs.Debug(quote.Instrument, quote.Price, quote.Volume)
+	if err != nil {
+		return err
 	}
+	for _, quote := range resp {
+		fmt.Println(quote.Instrument, quote.Price, quote.Volume)
+	}
+	return nil
 }

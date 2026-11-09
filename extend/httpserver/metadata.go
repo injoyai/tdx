@@ -3,11 +3,11 @@ package httpserver
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/extend/model"
 )
@@ -24,7 +24,7 @@ func ListenCodesAndGbbqHTTP(port int, code CodesSource, equity *metadata.Gbbq) e
 	if missingCodes(code) || equity == nil {
 		return errors.New("httpserver: metadata snapshots are required")
 	}
-	logs.Infof("[:%d] 开启HTTP服务...\n", port)
+	slog.Info("开启元数据 HTTP 服务", "port", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), codesHandler(code, equity))
 }
 
@@ -32,7 +32,7 @@ func ListenCodesHTTP(port int, code CodesSource) error {
 	if missingCodes(code) {
 		return errors.New("httpserver: code snapshot is required")
 	}
-	logs.Infof("[:%d] 开启HTTP服务...\n", port)
+	slog.Info("开启元数据 HTTP 服务", "port", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), codesHandler(code, nil))
 }
 

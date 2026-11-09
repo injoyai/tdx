@@ -10,9 +10,9 @@ tdx/
 │   ├── model/           扩展共享业务记录、快照与输入校验
 │   ├── metadata/        证券、股本、历史日历的内存查询
 │   │   └── httpclient/  可选的元数据 HTTP 获取与刷新
-│   ├── pull/            元数据与行情同步、历史分笔下载
+│   ├── pull/            元数据获取与行情同步、历史分笔下载
 │   │   └── market/      内置市场适配器及注册
-│   ├── storage/         持久化接口和事务契约
+│   ├── storage/         行情 BarStore 和事务契约
 │   │   └── sqlite/      SQLite/XORM 实现、表模型及文件布局
 │   ├── export/          CSV 导出
 │   ├── local/           通达信本地文件读写
@@ -29,7 +29,7 @@ tdx/
 
 依赖方向为扩展使用 SDK；根包和 protocol 不导入 extend。标准连接仅在连接内保存报价 Decimal，用于协议价格校准，不引用扩展证券索引、存储接口或业务模型。
 
-扩展内部，pull 通过 Client 获取数据，通过 storage 接口提交，model 提供共享记录与校验。metadata 直接查询内存数据，不依赖 pull、storage 或 HTTP 客户端。metadata/httpclient 是独立子包，负责请求和快照替换，必须由调用方关闭；导入 metadata 不会引入该子包。
+扩展内部，pull 通过 Client 获取数据，元数据直接返回快照，行情通过 storage.BarStore 提交，model 提供共享记录与校验。metadata 直接查询内存数据，不依赖 pull、storage 或 HTTP 客户端。metadata/httpclient 是独立子包，负责请求和快照替换，必须由调用方关闭；导入 metadata 不会引入该子包。
 
 单元测试与实现同目录；公开跨包行为放在 tests/integration，测试替身放在 internal/testutil。示例独立运行，生成数据统一写入 output。
 

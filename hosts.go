@@ -2,13 +2,13 @@ package tdx
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/logs"
 )
 
 // Addrs 是包含端口的 TCP 地址列表，可直接传入接收 []string 的拨号函数。
@@ -157,11 +157,11 @@ func (a Addrs) Sort(timeout ...time.Duration) Addrs {
 			c, err := (&net.Dialer{}).DialContext(ctx, "tcp", host)
 			r := result{}
 			if err != nil {
-				logs.Err(err)
+				slog.Error("服务器测速失败", "addr", host, "err", err)
 			} else {
 				r = result{host: host, elapsed: time.Since(now)}
 				c.Close()
-				logs.Debugf("Host: %-21s  Speed: %s\n", host, r.elapsed)
+				slog.Debug("服务器测速完成", "addr", host, "elapsed", r.elapsed)
 			}
 			results <- r
 		}(host)

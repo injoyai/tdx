@@ -3,11 +3,11 @@ package pull
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"time"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/export"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -76,7 +76,7 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 			return err
 		})
 		if err != nil {
-			logs.Err(err)
+			slog.Error("拉取历史分笔失败", "code", code, "date", date, "err", err)
 			return false
 		}
 

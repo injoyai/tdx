@@ -3,13 +3,13 @@ package tdx
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/injoyai/ios"
-	"github.com/injoyai/logs"
 )
 
 // NewTCPDial 连接指定的完整 TCP 地址，不补端口。
@@ -66,7 +66,7 @@ func NewRangeDial(hosts []string) ios.DialFunc {
 			}
 			if i < len(hosts)-1 {
 				//最后一个错误返回出去
-				logs.Err(err, "等待2秒后尝试下一个服务地址...")
+				slog.Error("连接失败，等待后尝试下一个服务地址", "addr", addr, "retry_in", 2*time.Second, "err", err)
 				select {
 				case <-ctx.Done():
 					return nil, "", ctx.Err()

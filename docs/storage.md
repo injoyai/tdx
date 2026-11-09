@@ -1,6 +1,6 @@
 # 持久化存储
 
-存储契约集中在根目录 storage 包。业务模型来自 model；SQLite 和 XORM 实现仅在 storage/sqlite。各接口支持并发调用；错误必须返回，不可把数据库错误当作无数据。其他后端由应用实现，不内置 MySQL 驱动或适配器。
+行情存储契约集中在 extend/storage 的 BarStore。业务模型来自 model；SQLite 和 XORM 实现仅在 extend/storage/sqlite。元数据获取不要求存储接口；SQLite 提供可选的具体读写方法。实现支持并发调用，错误必须返回，不可把数据库错误当作无数据。其他行情后端由应用实现，不内置 MySQL 驱动或适配器。
 
 ## SQLite 接入
 
@@ -10,34 +10,33 @@ if err != nil { return err }
 defer backend.Close()
 syncer, err := pull.New(&pull.Config{
     Pool: pool,
-    CodesStore: backend,
-    GbbqStore: backend,
-    WorkdayStore: backend,
 })
 if err != nil { return err }
 defer syncer.Close()
-snapshot, err := syncer.SyncCodes(ctx)
+snapshot, err := syncer.FetchCodes(ctx)
 if err != nil { return err }
+// 应用选择持久化；FetchCodes 本身不写入 backend。
+if err := backend.ReplaceCodes(ctx, snapshot); err != nil { return err }
 index := metadata.NewCodes(snapshot.Rows)
 _ = index.GetName("sh600000")
 ```
 
-pool 与 ctx 由应用提供。只同步元数据无需注册行情市场。加入 `Store: backend` 后可同步行情，需导入 pull/market。指定证券只拉行情时无需任何元数据 Store。
+pool 与 ctx 由应用提供。只获取元数据无需存储或注册行情市场；仅在内存查询时可省略 backend 和 ReplaceCodes。加入 `Store: backend` 后可同步行情，需导入 pull/market。标准证券自动发现通过 ListCodes 提供列表；显式指定证券时可省略。
 
-## 小接口与原子状态
+## 行情接口与元数据具体方法
 
-| 接口 | 读取 | 写入 |
+| 契约／具体类型 | 读取 | 写入 |
 | --- | --- | --- |
-| CodesStore | LoadCodes(ctx, exchanges) | ReplaceCodes(ctx, snapshot) |
-| GbbqStore | LoadGbbq(ctx, codes) | ReplaceGbbq(ctx, snapshot) |
-| WorkdayStore | LoadWorkdays(ctx, market) | SaveWorkdays(ctx, snapshot) |
+| sqlite.Metadata 代码 | LoadCodes(ctx, exchanges) | ReplaceCodes(ctx, snapshot) |
+| sqlite.Metadata 股本 | LoadGbbq(ctx, codes) | ReplaceGbbq(ctx, snapshot) |
+| sqlite.Metadata 日历 | LoadWorkdays(ctx, market) | SaveWorkdays(ctx, snapshot) |
 | BarStore | 行情范围、最后时间和状态查询 | 增量行情、分钟覆盖与任务状态 |
 
 CodeSnapshot 的 Exchanges、GbbqSnapshot 的 Codes 明确替换范围。写入必须同时提交记录和 FetchedAt，失败保留旧记录与旧刷新状态。有效空快照仅清除指定范围。Load 返回调用方拥有的记录；缺少刷新状态时 FetchedAt 为零。查询多个范围时，FetchedAt 是这些范围中最早的刷新时间；任一范围未同步时返回零。
 
 日历只接受同市场、同来源、相交或相接的覆盖区间。保存时修正本次扫描范围，保留范围之外已知的日期，并与刷新时间原子提交。拒绝不同来源和不相接的区间。Status 的覆盖语义见[架构说明](data-architecture.md)。
 
-实现者不负责代码分类、股本计算、分页、网络重试或调度。共享后端可实现多个小接口。格式和范围校验由 model／pull 提供，具体实现仍应在修改数据前拒绝无效批次。事务边界是每次接口调用，不提供跨任务或跨进程调度锁。
+存储不负责代码分类、股本计算、分页、网络重试或调度。格式和范围校验由 model／pull 提供，存储实现仍应在修改数据前拒绝无效批次。事务边界是每次保存调用，不提供跨任务或跨进程调度锁。Fetch 成功仅代表获取完成；持久化成功后才可视为已提交。
 
 ## 行情契约
 

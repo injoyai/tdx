@@ -1,5 +1,29 @@
 # v2 迁移指南
 
+## 元数据获取与存储解耦
+
+`Service.SyncCodes`、`SyncGbbq`、`SyncWorkdays` 改名为 `FetchCodes`、`FetchGbbq`、`FetchWorkdays`，只获取并校验快照，不写入存储。失败返回零值快照。`storage.CodesStore`、`GbbqStore`、`WorkdayStore` 及 Config 同名字段删除，不保留转发接口。
+
+只获取元数据时配置 Pool 即可。需要持久化的调用方在 Fetch 成功后显式调用 SQLite 的 ReplaceCodes、ReplaceGbbq、SaveWorkdays，或使用自己的保存方式。标准证券自动发现改为 ListCodes(ctx)，指定 Codes 时可省略。SQLite 元数据文件、事务和范围替换规则不变；不删除或迁移已有数据。
+
+## 日志改为标准库
+
+tdx、扩展包和定时任务使用 log/slog，默认日志跟随应用的 slog.Default。新增 WithLogger(*slog.Logger) 设置独立连接日志；nil 回到默认日志，SDK 不修改全局配置。不新增日志接口或独立日志包。
+
+通讯读写使用 Debug 级别和结构化 prefix/data 字段，保留 HEX／UTF8 编码及 WithDebug、WithLevel 配置。原 ios 把 LevelNone=0、LevelAll=999 直接转换为旧 logs.Level，导致关闭／全部的实际过滤相反；本次修正为 LevelNone 关闭、LevelAll 允许全部，再由 slog Handler 筛选。现有 LevelInfo、LevelRead、LevelWrite、LevelError 等常量值不变。默认 slog Handler 不输出 Debug，查看原始帧须启用 Debug Handler 和对应通讯级别。
+
+示例查询结果使用 fmt 输出到 stdout，诊断通过 slog 输出，默认到 stderr；结果不再带旧日志前缀或依赖 Debug 开关。示例自身的参数校验和执行错误以 exit 1 结束，替代原 panic／exit 2，资源在返回错误时先关闭，不再打印预期错误的 panic 堆栈。标准 flag 的语法错误仍返回 exit 2，-h 仍返回 0。协议数据、重试等待和错误传播不变。
+
+go.mod 将 github.com/injoyai/logs 标为 indirect：上游 ios 仍依赖它，本次不修改上游。连接配置见 [日志说明](unified-client.md#日志)。
+
+## 区间价格涨跌的返回值
+
+`extend.DoIncomes` 改为返回 `(extend.Incomes, error)`；调用方检查错误后再使用结果。输入必须按时间升序排列，nil 记录和非有限收盘价报错，不返回部分结果。偏移参数按 K 线条数计，0 为基准记录；负数及越界偏移仍忽略。固定东八区的起算日期规则保留。
+
+`(*extend.Income).RiseRate()` 改为返回 `(rate float64, available bool)`，不可计算与真实零涨跌分别为 `(0, false)`、`(0, true)`。基准收盘价为零时 Rise 的价差仍可计算，RiseRate 不可用。String 不再输出 NaN% 或 Inf%；不可计算显示“不可计算”，百分数超出显示范围时明确标注。Source、Current 现在保留完整 K 线，而非仅 OHLC。`protocol.Kline.RiseRate` 不属于此次接口调整。
+
+完整用法见 [扩展功能说明](../extend/README.md#区间价格涨跌)。
+
 ## 扩展能力目录
 
 根包和 protocol 负责 tdx SDK；基于 SDK 的业务模型、查询、同步、存储和 HTTP 服务归入 extend。
@@ -30,10 +54,10 @@ pull 保持 github.com/injoyai/tdx/v2/extend/pull，内置市场仍从其 market
 | pull.Store | storage.BarStore；Config.Store 字段保留 |
 | gbbq.New(选项或事件...) | metadata.NewGbbq(events)，纯内存事件查询与复权 |
 | workday.New(选项或快照...) | metadata.NewWorkday(model.WorkdaySnapshot)，纯内存日历 |
-| 元数据 WithClient / WithDB / WithStore / WithSpec / Close | 已移除；联网同步和持久化由 pull 与 storage 承接 |
-| 各元数据包的 Store / SQLStore | storage 小接口，SQLite 实现在 storage/sqlite |
+| 元数据 WithClient / WithDB / WithStore / WithSpec / Close | 已移除；pull.Fetch* 获取快照，应用自行决定持久化 |
+| 各元数据包的 Store / SQLStore | 不再要求元数据存储接口；可直接使用 storage/sqlite 的具体方法 |
 | manage.New / InitGbbq / AddWorkdayTask | 已删除；应用创建资源、安排任务、发布快照 |
-| Config.CodeCache | Config.CodesStore 或 ListCodes；指定证券时均可省略 |
+| Config.CodeCache | ListCodes(ctx)；指定证券时可省略 |
 | Config.Gbbq | 已删除，原始行情不回填派生字段 |
 | QFQKlineDay / HFQKlineDay | Client 获取行情，再调用 metadata.Gbbq.QFQ / HFQ |
 | GetTurnover 的标量返回 | Turnover 返回 (value, available)，区分未知与有效零 |
@@ -41,7 +65,7 @@ pull 保持 github.com/injoyai/tdx/v2/extend/pull，内置市场仍从其 market
 | update.NewSQLStore / update.Record | sqlite.NewUpdate / sqlite.Record；update.Tracker 保留 |
 | 独立数据库模块 | 主模块 storage/sqlite，其他后端由应用实现接口 |
 
-pull.New 不联网、不启动定时任务，显式调用 SyncCodes、SyncGbbq、SyncWorkdays、UpdateContext。元数据快照的范围与刷新时间随数据原子提交，调用方不再单独写完成标记。返回 error 非 nil 时不得发布中间结果。
+pull.New 不联网、不启动定时任务。显式调用 FetchCodes、FetchGbbq、FetchWorkdays 获取元数据，或 UpdateContext 同步行情。元数据获取仅需 Pool，成功返回经过完整性校验的快照，失败返回零值；应用决定是否持久化及何时发布。使用 SQLite 时显式调用 ReplaceCodes、ReplaceGbbq、SaveWorkdays，数据与刷新时间仍在单次事务中提交。
 
 共享业务模型位于 model。代码记录不再包含数据库 ID、InDate、EditDate，HTTP 代码 JSON 同步移除这些字段；日线不再含 FloatStock、TotalStock、Turnover。保留原始行情的源时间和量价口径，SQLite 旧额外列不会自动删除。新合并后端 sqlite.New(dir) 在 metadata.db 保存元数据；旧独立元数据库和不带覆盖信息的 workday 表不会自动搬迁／推断覆盖范围。
 
@@ -298,7 +322,7 @@ import (
 |---|---|
 | `Types: []string{extend.Day, extend.Minute}` | `Day: true, Minute: true` |
 | `Types: []string{extend.Day}` | `Day: true, Minute: false` |
-| `Update(m)` | 在 Config 中传入 Pool、Store 和按需使用的 CodesStore，然后调用 `s.UpdateContext(ctx)` |
+| `Update(m)` | 在 Config 中传入 Pool、Store 和自动发现所需的 ListCodes，然后调用 `s.UpdateContext(ctx)` |
 | `Run(m, spec)` | 调用方安排定时任务，在任务内调用 `s.Update()` |
 | `DayKlines(code, start, end)` | `s.QueryDay(c, start, end)`，其中 `c` 由 `pull.ParseCode(code)` 获取 |
 | `DayKlinesAll(code)` | `s.QueryDay(c, "", "")` |
@@ -317,7 +341,7 @@ import (
 
 ## 数据库支持
 
-storage 定义持久化小接口；SQLite 实现在主模块 storage/sqlite。sqlite.New(dir) 返回可同时实现元数据与行情接口的后端；Open(filename)、NewMetadata(db)、NewPull(dir,limit)、NewUpdate(db) 可独立使用。MySQL 等后端由应用实现接口。纯内存业务包不接收数据库或 Store。
+storage 仅定义行情 BarStore；SQLite 实现在主模块 storage/sqlite。sqlite.New(dir) 提供行情与元数据具体读写方法；Open(filename)、NewMetadata(db)、NewPull(dir,limit)、NewUpdate(db) 可独立使用。其他行情后端由应用实现 BarStore；元数据持久化由应用决定。纯内存业务包不接收数据库或 Store。
 
 ## 存量数据库
 
@@ -366,7 +390,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 
 ## 股本查询与日历
 
-股本查询使用 metadata.NewGbbq(events)，数据获取使用 Client.GetGbbq 或 pull.SyncGbbq。复权计算、股本按日生效和量额口径保持原有业务算法；缺失股本的换手率通过 Turnover 的 available=false 表达。metadata.NewWorkday(snapshot) 持有明确市场、来源和历史覆盖，Status 区分已观察交易与来源覆盖，覆盖外为未知，不预测未来节假日。
+股本查询使用 metadata.NewGbbq(events)，数据获取使用 Client.GetGbbq 或 pull.FetchGbbq。复权计算、股本按日生效和量额口径保持原有业务算法；缺失股本的换手率通过 Turnover 的 available=false 表达。metadata.NewWorkday(snapshot) 持有明确市场、来源和历史覆盖，Status 区分已观察交易与来源覆盖，覆盖外为未知，不预测未来节假日。
 
 ## 字符转换与均单成交额名称修正
 
@@ -387,7 +411,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 | `tdx.IPool` | `tdx.ClientPool`，具体实现仍为 `*tdx.Pool` |
 | `tdx.DialExHq` / `DialExHqDefault` / `DialExHqHosts` | `tdx.DialEx` / `DialExDefault` / `DialExHosts` |
 | `httpserver.WithExHqHosts` / `httpserver.WithOptions` | `httpserver.WithExHosts` / `httpserver.WithClientOptions` |
-| 元数据选项与 manage 选项 | 已移除，使用纯数据构造和 pull.Config 的存储接口 |
+| 元数据选项与 manage 选项 | 已移除，使用纯数据构造；pull.Fetch* 获取元数据，应用自行保存 |
 | `xorms.NewSqlite` / `xorms.NewSQLite` / `codes.NewSqlite` / `workday.NewSqlite` | SQLite 引擎使用 `storage/sqlite.Open`，通过 storage 读取数据后使用 `metadata.NewCodes` / `metadata.NewWorkday` 构造查询对象 |
 | `pull.NewService` | `pull.New` |
 | `codes.CodesBase` / `codes.Base` / `codes.Codes` | `metadata.Codes`，构造入口为 `metadata.NewCodes` |
@@ -483,6 +507,6 @@ Client 的 `KlineResp.Klines()` 返回整数手成交量，指数从原始股数
 
 ### pull 直接接入连接池与存储
 
-Config.Pool／ExPool 提供来源连接，Store 提供行情持久化；CodesStore、GbbqStore、WorkdayStore 提供按需使用的元数据小接口。它们可指向同一个后端，也可分别实现。至少提供一种存储；仅同步元数据不需要行情市场注册。
+Config.Pool／ExPool 提供来源连接，Store 提供行情持久化。元数据获取仅需 Pool，不需要存储或行情市场注册。CodesStore、GbbqStore、WorkdayStore 接口及同名配置字段已删除；SQLite 的具体元数据读写方法保留，由应用显式调用。
 
-代码发现使用 ListCodes(ctx) 或已提交的 CodesStore 快照，每轮固定一次；行情 Unit 可以继续自定义发现，不被框架按市场名强制替换。指定证券时跳过发现。股本与日历查询对象不传入行情服务。生命周期、错误处理和快照发布见[架构说明](data-architecture.md)。
+标准证券代码发现使用 ListCodes(ctx)，每轮固定一次；行情 Unit 可以继续自定义发现，不被框架按市场名强制替换。指定证券时跳过发现。股本与日历查询对象不传入行情服务。生命周期、错误处理和快照发布见[架构说明](data-architecture.md)。

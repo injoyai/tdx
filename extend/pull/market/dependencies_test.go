@@ -115,7 +115,7 @@ func TestMissingStandardDependencies(t *testing.T) {
 	for _, market := range []protocol.Market{protocol.MarketAStock, protocol.MarketIndex,
 		protocol.MarketEtfLof, protocol.MarketBond, protocol.MarketOther} {
 		u, _ := pull.Get(market.String())
-		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "CodesStore") {
+		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "ListCodes") {
 			t.Fatalf("missing cache %s: %v", market, err)
 		}
 	}

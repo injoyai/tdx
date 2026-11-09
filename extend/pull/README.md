@@ -144,7 +144,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 | 字段 | 说明 | 默认值 |
 |---|---|---|
-| `Store` | 行情同步必填；仅同步元数据时可省略 | 无 |
+| `Store` | 行情同步必填；仅获取元数据时可省略 | 无 |
 | `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
@@ -154,10 +154,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 使用 Store 保存标记 |
 | `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
-| `CodesStore` | storage.CodesStore，代码快照同步与自动发现 | 无 |
-| `ListCodes` | 每轮行情同步只调用一次的代码列表函数；优先于 CodesStore | 无 |
-| `GbbqStore` | storage.GbbqStore，供 SyncGbbq 使用 | 无 |
-| `WorkdayStore` | storage.WorkdayStore，供 SyncWorkdays 使用 | 无 |
+| `ListCodes` | 标准证券自动发现回调，每轮只调用一次；指定 Codes 时跳过 | 无 |
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
@@ -167,19 +164,19 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 
-### 显式同步与内存查询
+### 显式获取与内存查询
 
-New 仅保存依赖并校验配置，不联网、不启动定时任务。至少传入一种存储接口；只同步元数据时无需行情 Store 或市场注册。应用显式调用：
+New 仅保存依赖并校验配置，不联网、不启动定时任务。行情同步需要 Store；仅获取元数据时使用 `pull.New(&pull.Config{Pool: pool})` 即可，无需存储或市场注册。应用显式调用：
 
 ```go
-codeSnapshot, err := s.SyncCodes(ctx) // 默认沪深北；可明确传入交易所范围
+codeSnapshot, err := s.FetchCodes(ctx) // 默认沪深北；可明确传入交易所范围
 if err != nil { return err }
 codeIndex := metadata.NewCodes(codeSnapshot.Rows)
-events, err := s.SyncGbbq(ctx, []string{"sh600000"})
+events, err := s.FetchGbbq(ctx, []string{"sh600000"})
 if err != nil { return err }
 equity, err := metadata.NewGbbq(events.Rows)
 if err != nil { return err }
-calendarSnapshot, err := s.SyncWorkdays(ctx) // 当前仅从上证指数提取中国历史日期
+calendarSnapshot, err := s.FetchWorkdays(ctx) // 当前仅从上证指数提取中国历史日期
 if err != nil { return err }
 calendar, err := metadata.NewWorkday(calendarSnapshot)
 if err != nil { return err }
@@ -188,9 +185,11 @@ _ = equity
 _ = calendar
 ```
 
-三个同步方法总是执行本次显式刷新，不暗中启动定时任务；只在返回 error=nil 后发布结果。分页读取和完整性校验成功后，数据与刷新时间由后端原子提交。股本只替换明确证券，保留未请求的退市证券历史。
+行情并发任务共用固定的市场进度条前缀；错误信息保留具体证券代码。
 
-行情同步使用 UpdateContext(ctx, must...)，Update 是 Background 的便捷入口。标准证券自动发现每轮只读取一次 ListCodes 或 CodesStore 的已同步快照；未同步的快照返回错误。板块从板块文件发现，扩展市场从 ExPool 发现。指定 Codes 时跳过代码发现。
+三个 Fetch 方法只获取并校验快照，不写数据库；失败返回零值快照，成功返回的 FetchedAt 表示获取完成时间。应用可直接构造查询对象，也可先显式调用 SQLite 的 ReplaceCodes、ReplaceGbbq、SaveWorkdays 保存，再发布结果。保存失败时继续保留旧查询对象。
+
+行情同步使用 UpdateContext(ctx, must...)，Update 是 Background 的便捷入口。标准证券自动发现必须提供 ListCodes(ctx)，每轮只调用一次并固定结果；回调可从应用内存、数据库或 FetchCodes 的结果生成 model.Code 列表。板块从板块文件发现，扩展市场从 ExPool 发现。指定 Codes 时跳过代码发现。
 
 日线不再回填 FloatStock、TotalStock、Turnover。历史股本与换手率由 gbbq 查询／计算，缺失股本返回不可用，不从当前数据回填历史。manage、CodeCache、Config.Gbbq 已删除，应用直接组装组件。详见[架构说明](../../docs/data-architecture.md)。
 

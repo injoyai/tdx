@@ -52,14 +52,14 @@ func New(cfg *Config) (*Service, error) {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
 	for name, dependency := range map[string]any{
-		"Pool": cfg.Pool, "ExPool": cfg.ExPool, "CodesStore": cfg.CodesStore, "GbbqStore": cfg.GbbqStore, "WorkdayStore": cfg.WorkdayStore,
+		"Store": cfg.Store, "Pool": cfg.Pool, "ExPool": cfg.ExPool,
 	} {
 		if dependency != nil && isNil(dependency) {
 			return nil, fmt.Errorf("pull: %s 不能包含空对象", name)
 		}
 	}
-	if isNil(cfg.Store) && isNil(cfg.CodesStore) && isNil(cfg.GbbqStore) && isNil(cfg.WorkdayStore) {
-		return nil, fmt.Errorf("pull: 必须提供至少一种存储")
+	if isNil(cfg.Store) && isNil(cfg.Pool) {
+		return nil, fmt.Errorf("pull: 行情同步需要 Store，元数据获取需要 Pool")
 	}
 	start, err := cfg.parseStart()
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Service) Context() context.Context {
 	return context.Background()
 }
 
-// DiscoverCodes reads the fixed universe supplied by the application or persisted metadata.
+// DiscoverCodes reads the universe supplied by ListCodes, fixed for the current Update.
 func (s *Service) DiscoverCodes() ([]model.Code, error) {
 	s.universeMu.Lock()
 	defer s.universeMu.Unlock()
@@ -209,35 +209,10 @@ func (s *Service) DiscoverCodes() ([]model.Code, error) {
 }
 
 func (s *Service) loadCodes() ([]model.Code, error) {
-	if s.cfg.ListCodes != nil {
-		return s.cfg.ListCodes(s.Context())
+	if s.cfg.ListCodes == nil {
+		return nil, fmt.Errorf("pull: 标准证券自动发现需要 ListCodes")
 	}
-	if s.cfg.CodesStore == nil {
-		return nil, fmt.Errorf("pull: 自动发现需要 CodesStore 或 ListCodes")
-	}
-	snapshot, err := s.cfg.CodesStore.LoadCodes(s.Context(), []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ})
-	if err != nil {
-		return nil, err
-	}
-	if snapshot.FetchedAt.IsZero() {
-		return nil, fmt.Errorf("pull: 代码快照尚未同步")
-	}
-	out := make([]model.Code, 0, len(snapshot.Rows))
-	for _, row := range snapshot.Rows {
-		if row == nil {
-			return nil, fmt.Errorf("pull: nil security in stored snapshot")
-		}
-		i, err := protocol.ParseInstrument(row.FullCode())
-		if err != nil {
-			return nil, err
-		}
-		market, err := i.Market()
-		if err != nil {
-			continue
-		}
-		out = append(out, model.Code{Market: market, Code: row.FullCode(), Name: row.Name})
-	}
-	return out, nil
+	return s.cfg.ListCodes(s.Context())
 }
 
 // ExPool 返回扩展行情(7727)连接池；未配置返回 nil。
@@ -427,8 +402,7 @@ func (s *Service) updateUnit(u Unit) error {
 	for _, code := range codes {
 		code := code
 		b.Go(func() {
-			b.SetPrefix(fmt.Sprintf("[%s] %s", u.Name(), code.Key()))
-			b.Flush()
+			// The shared progress prefix stays fixed; Bar.SetPrefix is not concurrency-safe.
 			fetchWithRetry := func(fetch func(*Service, model.Code) error) (err error) {
 				for attempt := 0; attempt < s.retry; attempt++ {
 					if err = s.Context().Err(); err != nil {

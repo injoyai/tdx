@@ -123,13 +123,16 @@ func TestConsistencyIncomeDateZone(t *testing.T) {
 	ks := protocol.Klines{{Time: consistencyDay(19), Close: 10}, {Time: consistencyDay(20), Close: 11}}
 	for _, loc := range []*time.Location{protocol.Location(), time.UTC} {
 		start := time.Date(2026, 10, 19, 0, 0, 0, 0, loc)
-		got := extend.DoIncomes(ks, start, 1)
+		got, err := extend.DoIncomes(ks, start, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(got) != 1 {
 			t.Errorf("start date %s: got %d results, expected 1", start, len(got))
 			continue
 		}
-		if got[0].RiseRate() != 0.1 {
-			t.Errorf("%s: %v", loc, got[0].RiseRate())
+		if rate, available := got[0].RiseRate(); !available || rate != 0.1 {
+			t.Errorf("%s: rate=%v available=%v", loc, rate, available)
 		}
 	}
 }

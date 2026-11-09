@@ -26,11 +26,8 @@ type Config struct {
 	Tracker    *update.Tracker // 增量去重库（可选，不传则使用 Store 保存更新标记）
 	Pool       tdx.ClientPool  // 标准行情(7709)连接池，由调用方关闭
 	ExPool     tdx.ClientPool  // 扩展行情(7727)连接池（可选）。期货/港股/美股 Unit 使用
-	// ListCodes provides a fixed universe once per Update; nil uses CodesStore.
-	ListCodes    func(context.Context) ([]model.Code, error) `json:"-"`
-	CodesStore   storage.CodesStore
-	GbbqStore    storage.GbbqStore
-	WorkdayStore storage.WorkdayStore
+	// ListCodes supplies standard-market discovery once per Update; explicit Codes bypass it.
+	ListCodes func(context.Context) ([]model.Code, error) `json:"-"`
 }
 
 func isNil(v any) bool {

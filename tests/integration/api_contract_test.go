@@ -23,6 +23,9 @@ func TestJSONUsesCurrentFieldNames(t *testing.T) {
 		{model.KlineMinute{}, "Amount", "AmountUnknown"},
 		{protocol.Quote{}, "Reserved0", "ReversedBytes0"},
 		{pull.Config{}, "Tracker", "Updated"},
+		{pull.Config{}, "Store", "CodesStore"},
+		{pull.Config{}, "Store", "GbbqStore"},
+		{pull.Config{}, "Store", "WorkdayStore"},
 	} {
 		data, err := json.Marshal(tc.value)
 		if err != nil {

@@ -30,6 +30,30 @@ ETF、可转债等标准报价需要价格精度元数据时，使用同一连�
 
 标准连接在 quoteMu 保护下缓存各证券的 Decimal，按交易所刷新并保留其他市场精度；不保存完整扩展代码索引。扩展证券索引另见 [`extend/metadata`](../extend/metadata/README.md)，入口为 metadata.NewCodes。核心 SDK 不导入扩展包。
 
+## 日志
+
+SDK 日志使用标准库 [log/slog](https://pkg.go.dev/log/slog)。默认使用 slog.Default，SDK 不调用 slog.SetDefault；应用负责选择输出位置、格式和级别。NewRangeDial、地址测速、HTTP 服务和定时任务也使用应用的默认 slog 日志。
+
+可为标准／扩展连接设置独立日志：
+
+```go
+logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+c := tdx.NewClient(
+    tdx.WithLogger(logger),
+    tdx.WithDebug(true),
+    tdx.WithLevel(tdx.LevelDebug),
+)
+defer c.Close()
+```
+
+WithLogger(nil) 使用 slog.Default，不影响其他连接或全局日志。通讯读写记录使用 Debug 级别，包含 prefix 和 data 字段，默认 HEX 编码；必须同时通过 WithLevel 和 slog Handler 的过滤才能输出。原 ios 的 WithHEX、WithUTF8、SetEncode 配置继续可用。
+
+WithLevel(LevelNone) 关闭通讯日志，LevelAll 允许全部通讯记录，Info／Error 过滤保留。WithDebug(false) 关闭通讯及连接事件日志；响应解析错误仍以 Error 写入该连接的 Logger，并保留错误传播和异常堆栈。自定义 slog Handler 的级别继续决定这些 Error 是否输出。
+
+项目已移除直接 logs 调用；ios 仍依赖旧日志模块，go.mod 中保留其 indirect 依赖，不修改上游代码。迁移的输出变化见 [v2 迁移指南](v2-migration.md#日志改为标准库)。
+
 ## 协议实现
 
 源码按职责集中：`client_interface.go` 定义统一接口；`client.go` 集中 `MarketClient` 门面、市场路由、统一返回模型和标准结果转换，对应测试放在 `client_test.go`。`conn_st.go` 包含标准连接、建连入口、业务请求和解码；`conn_ex.go` 对应拓展连接。内部 `conn.go` 仅负责收发、请求关联和生命周期；`query.go` 及 `conn_query.go` 保存共享业务算法及校验。内部传输不实现 `Client`，业务查询不经传输层转发到门面。

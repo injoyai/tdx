@@ -8,7 +8,7 @@ import (
 	"xorm.io/xorm"
 )
 
-// Store is one SQLite backend implementing the independent metadata and bar contracts.
+// Store combines BarStore with concrete metadata persistence methods.
 type Store struct {
 	*PullStore
 	*Metadata

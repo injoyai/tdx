@@ -4,41 +4,57 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/extend/pull"
-	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 同一份日线用于前后复权、因子和换手率计算。
 func main() {
+	if err := run(); err != nil {
+		slog.Error("示例执行失败", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	code := flag.String("code", "sh600519", "标准股票代码")
 	flag.Parse()
 	pool, err := tdx.NewPool(func() (tdx.Client, error) { return tdx.DialDefault(tdx.WithRedial(false)) }, 1)
-	logs.PanicErr(err)
+	if err != nil {
+		return err
+	}
 	defer pool.Close()
-	store, err := sqlite.New("./output/adjustments")
-	logs.PanicErr(err)
-	defer store.Close()
-	syncer, err := pull.New(&pull.Config{Pool: pool, GbbqStore: store})
-	logs.PanicErr(err)
+	syncer, err := pull.New(&pull.Config{Pool: pool})
+	if err != nil {
+		return err
+	}
 	defer syncer.Close()
-	snapshot, err := syncer.SyncGbbq(context.Background(), []string{*code})
-	logs.PanicErr(err)
+	snapshot, err := syncer.FetchGbbq(context.Background(), []string{*code})
+	if err != nil {
+		return err
+	}
 	gb, err := metadata.NewGbbq(snapshot.Rows)
-	logs.PanicErr(err)
+	if err != nil {
+		return err
+	}
 	var result *tdx.KlineResp
 	err = pool.Do(func(c tdx.Client) error { var err error; result, err = c.GetKlineDayAll(*code); return err })
-	logs.PanicErr(err)
+	if err != nil {
+		return err
+	}
 	ks, err := result.Klines()
-	logs.PanicErr(err)
+	if err != nil {
+		return err
+	}
 	if len(ks) == 0 {
-		logs.Info("没有可用日线")
-		return
+		slog.Info("没有可用日线")
+		return nil
 	}
 	qfq := gb.QFQ(*code, ks)
 	hfq := gb.HFQ(*code, ks)
@@ -50,17 +66,18 @@ func main() {
 		fmt.Printf("%s 后复权 收%.2f\n", k.Time.Format(time.DateOnly), k.Close)
 	}
 	xrxds := gb.GetXRXDs(*code)
-	logs.Debug("除权除息记录:", len(xrxds))
+	fmt.Println("除权除息记录:", len(xrxds))
 	for _, factor := range gb.GetFactors(*code, ks) {
-		logs.Debug(factor)
+		fmt.Println(factor)
 	}
 	latest := ks[len(ks)-1]
 	if equity := gb.GetEquity(*code, latest.Time); equity != nil {
-		logs.Debug("总股本:", equity.Total, "流通股本:", equity.Float)
+		fmt.Println("总股本:", equity.Total, "流通股本:", equity.Float)
 		if rate, ok := gb.Turnover(*code, latest.Time, protocol.ToShares(latest.Volume)); ok {
-			logs.Debug("换手率:", rate)
+			fmt.Println("换手率:", rate)
 		}
 	} else {
-		logs.Warn("该日期没有股本记录，未计算换手率")
+		slog.Warn("该日期没有股本记录，未计算换手率")
 	}
+	return nil
 }

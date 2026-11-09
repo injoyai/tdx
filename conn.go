@@ -13,33 +13,8 @@ import (
 	"github.com/injoyai/conv"
 	"github.com/injoyai/ios"
 	"github.com/injoyai/ios/client"
-	"github.com/injoyai/ios/module/common"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2/protocol"
 )
-
-const (
-	LevelNone  = common.LevelNone
-	LevelDebug = common.LevelDebug
-	LevelWrite = common.LevelWrite
-	LevelRead  = common.LevelRead
-	LevelInfo  = common.LevelInfo
-	LevelError = common.LevelError
-	LevelAll   = common.LevelAll
-)
-
-// WithDebug 是否打印通讯数据
-func WithDebug(b ...bool) client.Option {
-	return func(c *client.Client) {
-		c.Logger.Debug(b...)
-	}
-}
-
-func WithLevel(level int) client.Option {
-	return func(c *client.Client) {
-		c.Logger.SetLevel(level)
-	}
-}
 
 // WithRedial 断线重连
 func WithRedial(b ...bool) client.Option {
@@ -60,9 +35,7 @@ func dialWith(ctx context.Context, dial ios.DialFunc, timeout time.Duration, set
 	}
 
 	cli.Client, err = client.DialContext(ctx, cli.cancelableDial(dial), func(c *client.Client) {
-		c.Logger.Debug(true)                      //关闭日志打印
-		c.Logger.SetLevel(LevelInfo)              //设置日志级别
-		c.Logger.WithHEX()                        //以HEX显示
+		c.Logger = newConnectionLogger(nil)
 		c.SetOption(op...)                        //自定义选项
 		c.Event.OnReadFrom = protocol.ReadFrom    //分包
 		c.Event.OnDealMessage = cli.handleMessage //解析数据并处理
@@ -128,15 +101,14 @@ func (cn *conn) handleMessage(c *client.Client, msg ios.Acker) {
 
 	defer func() {
 		if e := recover(); e != nil {
-			logs.Err(e)
-			debug.PrintStack()
+			cn.logger().Error("处理响应时发生异常", "panic", e, "stack", string(debug.Stack()))
 		}
 	}()
 
 	payload := msg.Payload()
 	f, err := protocol.Decode(payload)
 	if err != nil {
-		logs.Err(err)
+		cn.logger().Error("解析响应帧失败", "err", err)
 		if len(payload) >= 16 {
 			key := conv.String(protocol.Uint32(payload[5:9]))
 			cn.waitMu.Lock()
@@ -158,7 +130,7 @@ func (cn *conn) handleMessage(c *client.Client, msg ios.Acker) {
 	resp, err := cn.decode(f, val)
 
 	if err != nil {
-		logs.Err(err)
+		cn.logger().Error("解码行情响应失败", "msg_id", f.MsgID, "err", err)
 		cn.Wait.Done(conv.String(f.MsgID), nil, err)
 		return
 	}

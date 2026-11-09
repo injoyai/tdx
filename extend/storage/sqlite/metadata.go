@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/protocol"
 	"xorm.io/xorm"
 )
 
-// Metadata implements all metadata contracts on a borrowed SQLite engine.
+// Metadata provides concrete metadata persistence on a borrowed SQLite engine.
 // Callers close the engine after finishing all I/O; this object starts no tasks.
 type Metadata struct {
 	db *xorm.Engine
@@ -341,7 +340,3 @@ func (s *Metadata) SaveWorkdays(ctx context.Context, snapshot model.WorkdaySnaps
 		return saveState(tx, metadataState{Key: state.Key, From: from, Through: through, Source: snapshot.Source, FetchedAt: snapshot.FetchedAt.UnixNano()})
 	})
 }
-
-var _ storage.CodesStore = (*Metadata)(nil)
-var _ storage.GbbqStore = (*Metadata)(nil)
-var _ storage.WorkdayStore = (*Metadata)(nil)

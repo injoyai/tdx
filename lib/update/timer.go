@@ -2,10 +2,10 @@ package update
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2/protocol"
 	"github.com/robfig/cron/v3"
 )
@@ -26,7 +26,7 @@ func StartTimer(spec string, retry int, up Updater) (stop func(), err error) {
 				return
 			}
 			if err := up.Update(); err != nil {
-				logs.Err(err)
+				slog.Error("定时更新失败", "spec", spec, "attempt", i+1, "err", err)
 				if i+1 < max(1, retry) {
 					timer := time.NewTimer(5 * time.Minute)
 					select {
