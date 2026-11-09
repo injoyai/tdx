@@ -1,11 +1,11 @@
 ### 8.1 项目概况与技术栈
 
 - **项目**：通达信(tdx)协议 Go 实现（标准行情 7709 + 盘后数据 report file + 扩展行情 exhq 7727）。
-- **技术栈**：Go 1.25+，依赖 `github.com/injoyai/conv`（类型转换）、`github.com/injoyai/logs`（日志）。
+- **技术栈**：Go 1.25+，类型转换使用 `github.com/injoyai/conv`，日志使用标准库 `log/slog`。SDK 不修改全局日志配置；ios 的通讯日志通过私有适配器接入 slog，旧 logs 仅作为 ios 的间接依赖保留。
 - **目录**：
   - 根包是 tdx SDK：client_interface.go 定义统一接口，client.go 为市场路由，conn_st.go / conn_ex.go 提供标准／扩展协议业务连接，conn.go 为内部传输，query.go 为共享查询。根包与 protocol 不导入 extend；报价精度只在连接内部保存 Decimal。
   - `protocol/`：协议帧、编解码、市场规则及行情计算。
-  - `extend/`：基于 SDK 的扩展。pull 统一同步数据；model 提供业务记录与快照；metadata 集中提供 Codes、Gbbq、Workday 内存查询；metadata/httpclient 提供显式 HTTP 刷新；storage 定义持久化接口，storage/sqlite 集中实现 SQLite/XORM。local、export、spider、httpserver 分别负责文件读写、CSV、第三方数据源和 HTTP 服务。应用负责组件组装、调度、快照发布及资源关闭，不恢复 manage。其他后端由应用实现接口，不内置 MySQL。
+  - `extend/`：基于 SDK 的扩展。pull 获取元数据快照并同步行情；model 提供业务记录与快照；metadata 集中提供 Codes、Gbbq、Workday 内存查询；metadata/httpclient 提供显式 HTTP 刷新；storage 仅定义行情 BarStore 契约，storage/sqlite 集中实现 SQLite/XORM。local、export、spider、httpserver 分别负责文件读写、CSV、第三方数据源和 HTTP 服务。应用负责组件组装、调度、快照发布及资源关闭，不恢复 manage。其他行情后端由应用实现 BarStore；元数据获取不绑定存储，持久化由应用选择，不内置 MySQL。
   - `lib/`：原始股本文件解密、update、zip 工具；北交所代码由 Client.GetCodeAll(ExchangeBJ) 获取。
   - `examples/`：独立可运行示例，见 examples/README.md；`docs/` 保存接口、架构、迁移文档，图片集中在 docs/images。目录见 docs/structure.md，数据边界见 docs/data-architecture.md。
 - **外部依赖**：真实连接通达信服务器（`Dial*`/`DialDefault`）；示例与测试大多需要联网，测试可能因行情服务器/数据源而异，失败时先排查网络与数据可用性。
