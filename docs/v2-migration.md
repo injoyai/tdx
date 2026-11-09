@@ -19,7 +19,7 @@
 
 | 入口 | 当前行为与迁移影响 |
 | --- | --- |
-| SQLite 行情路径 | 在读写前拒绝越界市场路径和不安全文件名；自定义 `A/B` 返回错误，避免覆盖 `A-B`。期货继续使用规范 `cff/IF2609` 及原布局；分钟年份限 1..9999。旧碰撞文件不自动修复 |
+| SQLite 行情路径 | 在读写前拒绝越界市场路径和不安全文件名；自定义 `A/B` 返回错误，避免覆盖 `A-B`。期货使用规范 `cff/IF2609` 输入及无大小写歧义的编码布局；旧 source-time-v1 目录拒绝打开，须使用新目录；分钟年份限 1..9999。旧碰撞文件不自动修复 |
 | httpserver.CodesSource | 改为只要求 `Snapshot() model.CodeModels`，自定义来源须提供完整独立副本；`*metadata.Codes` 可直接传入 |
 | `/codes` | 一次快照返回全部证券，包含债券／其他品种，顺序改为输入快照顺序；分类路由也只读取一次快照，空分类返回 `[]` |
 | httpclient.FetchCodes | 完整校验规范沪深北代码、重复证券和空行，非法响应返回 nil 和错误；空列表／null 仍有效 |
@@ -424,7 +424,7 @@ Go 最低版本为 1.25.0。目录由 SQLite 后端或应用配置。旧元数�
 
 标准原始协议和本地文件的 `time.Time` 保留固定东八区约定，协议日线 15:00、本地日线 00:00 为内部日期标签，不代表所有市场的成交或收盘时刻。交易日判断和内置中国市场定时任务仍使用东八区，不依赖主机 `TZ`。
 
-pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新目录标记为 `.time-format`，内容为 `source-time-v1`。旧 `.storage-timezone` 或未标记旧数据库会被拒绝，不自动迁移、覆盖或清理旧目录。
+pull 存储不兼容旧数据，需为 SQLite 后端指定新的数据目录重新拉取；新目录标记为 `.time-format`，内容为 `source-time-v2`。旧 `.storage-timezone` 或未标记旧数据库会被拒绝，不自动迁移、覆盖或清理旧目录。
 
 | 旧接口／字段 | 新接口／字段 |
 | --- | --- |
@@ -438,7 +438,7 @@ pull 存储不兼容旧数据，需使用新的 `Config.Dir` 重新拉取；新�
 
 `KlineDay` / `KlineMinute` 已移除 `TradingDate`。标准、扩展和分笔合成分钟线统一只保存源日期时分，年度文件、增量和聚合均按源时间处理。`Kline.Timestamp(loc)`、`KlineMinute.Timestamp(loc)` 和 `protocol.ParseSourceTime` 已移除；存储仅校验合法的源日期时分、年份和范围，不根据来源时区或夏令时解释钟面值。
 
-已有 `source-time-v1` 库可以继续读写，不更改时间格式标记。旧分钟表里的额外 `Unix` / `TimeZone` / `TradingDate` / `AmountUnknown` 列不再映射或使用，新表不再创建这些列；不会自动删列或清理旧数据。旧代码须删除这些字段的赋值和转换方法调用；行情 JSON 不再包含 `TimeZone` / `Unix` / `TradingDate`，pull 结果也不再包含 `AmountUnknown`。这不改变内部标准协议 `time.Time`、交易日历及缓存过期检查的既有时间处理。
+SQLite 目录标记现为 `source-time-v2`；旧 `source-time-v1` 库不能继续打开，须使用新目录，不自动迁移。源时间字段本身的格式不变。旧分钟表里的额外 `Unix` / `TimeZone` / `TradingDate` / `AmountUnknown` 列不再映射或使用，新表不再创建这些列；不会自动删列或清理旧数据。旧代码须删除这些字段的赋值和转换方法调用；行情 JSON 不再包含 `TimeZone` / `Unix` / `TradingDate`，pull 结果也不再包含 `AmountUnknown`。这不改变内部标准协议 `time.Time`、交易日历及缓存过期检查的既有时间处理。
 
 
 ### 重复逻辑收敛后的兼容边界
@@ -581,3 +581,14 @@ Client 原方法集保留；tdx.WithContext(ctx, client) 建立共享连接的�
 自定义行情市场需补充 Schedule() pull.Schedule 或 Config.Schedules 对应条目；内置市场默认边界保留。Schedule.Delay=0 表示不延迟。显式调度变化参与任务去重；原标记保留，不删除历史数据。空发现不写完成标记。自动证券池变化后，可更新 UniverseVersion 并重新构造服务以触发同窗口补拉。
 
 pull 默认不创建终端进度条；需要展示时配置 OnProgress（见 examples/pull）。回调串行执行且 Completed 包含最终失败项，应及时返回且不能同步重入 Update。Retry 是每阶段最大尝试次数；仅瞬时错误重试，RetryDelay 默认五秒、倍增至最多三十秒。自定义可重试错误实现 Temporary() bool 并返回 true。
+
+
+## 更新选项、阶段事件与公开验收
+
+`Update(true)` 仍仅表示允许提前执行。新增 `UpdateWithOptions(ctx, pull.UpdateOptions{Recheck: true})`，在收盘允许窗口内忽略完成标记，再次执行原增量检查；提前复查同时设置 `AllowEarly: true`。不会重扫已覆盖历史或清空分钟空扫描缓存。复查失败不删除旧成功标记，再试继续使用 Recheck。
+
+`OnProgress` 和 `Progress` 保留原逐证券通知契约。新增 `Config.OnEvent` 接收阶段／市场终态，状态为 skipped、no_data、success、failed。第三方 Unit 可选实现 ResultUnit，提供最后一次尝试的记录数及最新源时间；旧 Unit 仍可运行，但 Result.Known=false，不得把未知计数显示成确定的零。Config 应使用带字段名的结构字面量。详见[公开契约](public-contracts.md)。
+
+其他存储后端导入 `extend/storage/storagetest`，以独立空测试数据集运行基础契约；设置 Fixture.Fail 可验证实际事务失败回滚，无故障钩子时三个事务用例显示 SKIP。[接入说明](../extend/storage/storagetest/README.md)。BarStore 及 Unit 原方法集不变。
+
+SQLite 为修复大小写／Unicode 文件名碰撞，目录格式升级到 source-time-v2。路径段保留小写 ASCII、数字及 `-_.`，其他字节编码为 `~hh`（含大写及 `~`）；`cff/IF2609` 的文件名现为 `cff-~49~462609.db`。**旧 source-time-v1 目录拒绝打开，使用新目录重新构建数据；不兼容、不自动迁移或清理旧目录。** 曾混写的旧文件无法靠文件名恢复证券身份。

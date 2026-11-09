@@ -21,6 +21,8 @@ Amount 为可空金额：nil 写入原列的 SQL NULL，非 nil 的 0 保持真�
 
 完成标记直接由 PullStore 实现，表模型为私有类型，不再提供 NewUpdate、UpdateStore 或 Record。updated.db 和 update 表的 Key/Time 列不变。
 
-New／NewPull 使用解析符号链接后的绝对根目录作为 Identity，目录别名共享任务身份。旧相对路径完成键可能触发一次增量复查，旧标记保留。行情读写拒绝不安全的市场路径／文件名，避免越界和斜线替换碰撞；自定义 `A/B` 返回错误，`A-B` 仍可用。期货保留规范 `cff/IF2609` 及原文件布局。分钟年份限 1..9999；非法输入的 DayFile／MinuteFile 返回空字符串。不会自动迁移或修复曾混写的旧文件，完整限制见[文件说明](../../../docs/storage.md#文件与旧库)。
+New／NewPull 使用解析符号链接后的绝对根目录作为 Identity，目录别名共享任务身份。旧相对路径完成键可能触发一次增量复查，旧标记保留。行情读写拒绝不安全的市场路径／文件名，避免越界和斜线替换碰撞；自定义 `A/B` 返回错误，`A-B` 仍可用。期货保留规范 `cff/IF2609` 输入，文件名使用无大小写歧义的 `cff-~49~462609`。市场名及代码中的大写、非 ASCII 和 `~` 按 UTF-8 字节编码为 `~hh`。分钟年份限 1..9999；非法输入的 DayFile／MinuteFile 返回空字符串。不会自动迁移或修复曾混写的旧文件，完整限制见[文件说明](../../../docs/storage.md#文件与旧库)。
 
-验证：`go test -race ./extend/storage/sqlite/...`。测试仅使用临时本地数据库。
+目录标记升级为 `source-time-v2`；不兼容旧 `source-time-v1` 数据目录，须使用新目录。旧文件不迁移、不覆盖、不清理。
+
+验证：`go test -race ./extend/storage/sqlite/...`，其中 `TestBarStoreContract` 接入公开 storagetest 套件及三个实际事务故障用例。测试仅使用临时本地数据库。

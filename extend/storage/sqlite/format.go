@@ -11,7 +11,7 @@ import (
 
 // 源时间与旧 Unix 主键格式隔离，不自动迁移或修改旧库。
 func checkTimeFormat(dir string) error {
-	const format = "source-time-v1\n"
+	const format = "source-time-v2\n"
 	marker := filepath.Join(dir, ".time-format")
 	if _, err := os.Stat(filepath.Join(dir, ".storage-timezone")); err == nil {
 		return fmt.Errorf("pull: 目录使用旧 Unix 时间格式，请使用新的数据目录")
@@ -20,7 +20,7 @@ func checkTimeFormat(dir string) error {
 	}
 	if bs, err := os.ReadFile(marker); err == nil {
 		if string(bs) != format {
-			return fmt.Errorf("pull: 存储时间格式不兼容，请使用新的数据目录")
+			return fmt.Errorf("pull: 存储格式不兼容（需要 source-time-v2），请使用新的数据目录")
 		}
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {

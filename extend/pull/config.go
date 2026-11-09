@@ -36,6 +36,9 @@ type Config struct {
 	// OnProgress receives serialized per-code completion events. Nil means no terminal output.
 	// The callback must return promptly and must not synchronously reenter Service.Update.
 	OnProgress func(Progress) `json:"-"`
+	// OnEvent receives serialized market and stage results, independently of OnProgress.
+	// It must return promptly and must not synchronously reenter an update method.
+	OnEvent func(Event) `json:"-"`
 }
 
 // Progress reports completed securities, including failures after retry exhaustion.

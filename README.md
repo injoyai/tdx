@@ -6,6 +6,8 @@
 
 ---
 
+公开行为、兼容影响和适配验收见[扩展公开契约](docs/public-contracts.md)。
+
 ## 📚 参考资源
 
 - [`gotdx`](https://github.com/bensema/gotdx)

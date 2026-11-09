@@ -5,3 +5,5 @@
 行情实现可复用 model.ValidateDays、ValidateMinutes、ValidateTimeRange 校验源日期、分钟年份和查询范围；空数据不删行情的契约仍由实现入口保证。pull 与 SQLite 均直接使用 model 类型，不提供同名别名。
 
 接入示例、事务和范围语义见[存储契约](../../docs/storage.md)；整体职责见[架构说明](../../docs/data-architecture.md)。
+
+第三方后端可直接导入 [storagetest](storagetest/README.md) 运行范围、替换、空批次、金额、隔离和事务故障契约测试。公开兼容边界见[公开契约](../../docs/public-contracts.md)。

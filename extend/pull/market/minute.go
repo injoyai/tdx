@@ -23,11 +23,19 @@ type minuteTarget struct {
 // 完成指已读完服务器可提供的区间，不保证服务器保留了上市以来的全部历史。
 func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) error {
+	_, err := pullMinutesResult(s, code, now, fetch, supplement)
+	return err
+}
+
+func pullMinutesResult(s *pull.Service, code model.Code, now time.Time,
+	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) (result pull.FetchResult, err error) {
+	result = pull.FetchResult{Known: true}
 	start := s.Start()
 	now = now.In(start.Location())
 	info, known := code.Market.Info()
 	if start.After(now) && known && info.Protocol == protocol.ProtocolStandard {
-		return nil
+		result.SkipReason = pull.SkipFuture
+		return result, nil
 	}
 	var targets []minuteTarget
 	var earliest string
@@ -40,7 +48,7 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 		}
 		coverage, err := s.QueryMinuteCoverage(code, year)
 		if err != nil {
-			return err
+			return result, err
 		}
 		if historical {
 			if coverage != nil && coverage.From <= from &&
@@ -51,7 +59,7 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 			if supplement == nil {
 				empty, err := s.MinuteYearRecentlyEmpty(code, year, from, now)
 				if err != nil {
-					return err
+					return result, err
 				}
 				if empty {
 					continue
@@ -60,7 +68,7 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 		} else {
 			last, err := s.LastMinuteTime(code, year)
 			if err != nil {
-				return err
+				return result, err
 			}
 			if supplement != nil {
 				// 旧标记或未完成的当年仍需补早期历史，不能只从最新一根继续。
@@ -80,12 +88,14 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 		}
 	}
 	if len(targets) == 0 {
-		return nil
+		result.SkipReason = pull.SkipCovered
+		return result, nil
 	}
 	ks, err := fetch(earliest)
 	if err != nil {
-		return err
+		return result, err
 	}
+	result.Fetched = len(ks)
 	planned := make(map[int]bool, len(targets))
 	for _, target := range targets {
 		planned[target.year] = true
@@ -93,23 +103,24 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 	boundary := now.Format(time.DateOnly)
 	for _, k := range ks {
 		if k == nil {
-			return fmt.Errorf("pull: nil 分钟线")
+			return result, fmt.Errorf("pull: nil 分钟线")
 		}
 		at, err := time.Parse(protocol.TimeLayout, k.Time)
 		if err != nil || at.Format(protocol.TimeLayout) != k.Time {
-			return fmt.Errorf("pull: 无效源时间 %q", k.Time)
+			return result, fmt.Errorf("pull: 无效源时间 %q", k.Time)
 		}
 		// 来源时区未知时，服务器日期可能已进入下一年；按实际返回的年份落库。
 		if at.Year() > now.Year() && !planned[at.Year()] && k.Time >= start.Format(protocol.TimeLayout) {
 			from := max(fmt.Sprintf("%04d-01-01 00:00", at.Year()), start.Format(protocol.TimeLayout))
 			last, err := s.LastMinuteTime(code, at.Year())
 			if err != nil {
-				return err
+				return result, err
 			}
 			from = max(from, last)
 			targets = append(targets, minuteTarget{year: at.Year(), from: from, through: fmt.Sprintf("%04d-01-01 00:00", at.Year()+1)})
 			planned[at.Year()] = true
 		}
+		result.LatestTime = max(result.LatestTime, k.Time)
 		day := k.Time[:10]
 		if day < boundary {
 			boundary = day
@@ -168,7 +179,7 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 		if len(out) == 0 {
 			if target.historical && supplement == nil && len(ks) > 0 {
 				if err := s.SaveMinuteEmptyScan(code, target.year, target.from, now); err != nil {
-					return err
+					return result, err
 				}
 			}
 			continue
@@ -187,10 +198,12 @@ func pullMinutes(s *pull.Service, code model.Code, now time.Time,
 		}
 		if err != nil {
 			if supplement == nil {
-				return err
+				return result, err
 			}
 			saveErrors = append(saveErrors, err)
+		} else {
+			result.Saved += len(out)
 		}
 	}
-	return errors.Join(append(saveErrors, fallbackErrs...)...)
+	return result, errors.Join(append(saveErrors, fallbackErrs...)...)
 }

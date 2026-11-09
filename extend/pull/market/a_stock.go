@@ -111,13 +111,18 @@ func init() {
 // ---- FetchDay 通用实现：仅保存原始行情 ----
 
 func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
+	_, err := u.FetchDayResult(s, code)
+	return err
+}
+
+func (u *stdUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
 	pool, err := u.pool(s)
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 	last, err := s.LastDayTime(code)
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 	from := max(last, s.Start().Format(time.DateOnly))
 
@@ -129,7 +134,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 		return err
 	})
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 
 	out := make([]*model.KlineDay, 0, len(ks))
@@ -146,14 +151,19 @@ func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 
 		out = append(out, d)
 	}
-	return saveDays(s, code, from, out)
+	return saveDaysResult(s, code, from, out)
 }
 
 // FetchMinute 将全部待补年份合并为一次分页，股票/ETF 集合竞价也只拆分一次。
 func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
+	_, err := u.FetchMinuteResult(s, code)
+	return err
+}
+
+func (u *stdUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
 	pool, err := u.pool(s)
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 	var fallback *minuteFallback
 	if s.TradeFallbackEnabled() && (u.name == protocol.MarketAStock || u.name == protocol.MarketEtfLof) {
@@ -187,7 +197,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 			},
 		}
 	}
-	return pullMinutes(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
+	return pullMinutesResult(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		var ks []tdx.Kline
 		err := pool.DoContext(s.Context(), func(c tdx.Client) error {
 			c = tdx.WithContext(s.Context(), c)

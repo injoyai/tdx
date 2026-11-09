@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// validateCode 保留现有文件布局，只接收不会被路径清理或斜线替换改变身份的代码。
+// validateCode 只接收不会被路径清理或斜线替换改变身份的代码。
 func validateCode(c model.Code) error {
 	market := c.Market.String()
 	if !filepath.IsLocal(market) || filepath.ToSlash(filepath.Clean(market)) != market {
@@ -67,24 +67,49 @@ func validateMinuteCode(c model.Code, year int) error {
 }
 
 // DayFile 该代码的日线 sqlite 文件路径。
-// 布局：{dir}/{地区}/{资产}/day/{code}.db（两级目录含市场信息，文件名用原始代码）。
+// 布局：{dir}/{编码市场层级}/day/{编码代码}.db。
 func dayFile(c model.Code, dir string) string {
 	if validateCode(c) != nil {
 		return ""
 	}
-	return filepath.Join(dir, c.Market.String(), "day", strings.ReplaceAll(c.Code, "/", "-")+".db")
+	return filepath.Join(dir, marketPath(c.Market), "day", fileName(strings.ReplaceAll(c.Code, "/", "-"))+".db")
 }
 
 // MinuteFile 该代码指定年份的1分钟线 sqlite 文件路径。
-// 布局：{dir}/{地区}/{资产}/min/{code}/{code}-{year}.db（子目录与文件名均用原始代码，
-// 便于按代码单独检索/拷贝；期货代码中的 "/" 替换为 "-"）。
+// 布局：{dir}/{编码市场层级}/min/{编码代码}/{编码代码}-{year}.db。
 func minuteFile(c model.Code, dir string, year int) string {
 	if validateMinuteCode(c, year) != nil {
 		return ""
 	}
 	y := yearToString(year)
-	name := strings.ReplaceAll(c.Code, "/", "-")
-	return filepath.Join(dir, c.Market.String(), "min", name, name+"-"+y+".db")
+	name := fileName(strings.ReplaceAll(c.Code, "/", "-"))
+	return filepath.Join(dir, marketPath(c.Market), "min", name, name+"-"+y+".db")
+}
+
+func marketPath(market protocol.Market) string {
+	parts := strings.Split(market.String(), "/")
+	for i, part := range parts {
+		parts[i] = fileName(part)
+	}
+	return filepath.Join(parts...)
+}
+
+// fileName uses only lowercase ASCII. Escaping '~' itself makes the mapping
+// injective even on case-insensitive or Unicode-normalizing filesystems.
+func fileName(name string) string {
+	const hex = "0123456789abcdef"
+	var out strings.Builder
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-' || b == '_' || b == '.' {
+			out.WriteByte(b)
+		} else {
+			out.WriteByte('~')
+			out.WriteByte(hex[b>>4])
+			out.WriteByte(hex[b&15])
+		}
+	}
+	return out.String()
 }
 
 func yearToString(year int) string {

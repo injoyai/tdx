@@ -142,18 +142,23 @@ func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from str
 
 // FetchDay 增量拉日线，含最后一根以便重插修复。
 func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
+	_, err := u.FetchDayResult(s, code)
+	return err
+}
+
+func (u *exUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
 	info, ok := u.name.Info()
 	if !ok {
-		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
 	last, err := s.LastDayTime(code)
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 	from := max(last, s.Start().Format(time.DateOnly))
 	bars, err := u.bars(s, code, info.Day.Category, from)
 	if err != nil {
-		return err
+		return pull.FetchResult{Known: true}, err
 	}
 	out := make([]*model.KlineDay, 0, len(bars))
 	for _, k := range bars {
@@ -164,16 +169,21 @@ func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
 		row.Amount = k.Amount
 		out = append(out, row)
 	}
-	return saveDays(s, code, from, out)
+	return saveDaysResult(s, code, from, out)
 }
 
 // FetchMinute 多年份共用一次分页，成功扫描后才提交年度完成标记。
 func (u *exUnit) FetchMinute(s *pull.Service, code model.Code) error {
+	_, err := u.FetchMinuteResult(s, code)
+	return err
+}
+
+func (u *exUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
 	info, ok := u.name.Info()
 	if !ok {
-		return fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
-	return pullMinutes(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
+	return pullMinutesResult(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		bars, err := u.bars(s, code, info.Minute.Category, from)
 		if err != nil {
 			return nil, err

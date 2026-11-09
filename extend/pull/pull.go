@@ -237,6 +237,12 @@ func (s *Service) Update(must ...bool) error { return s.UpdateContext(context.Ba
 
 // UpdateContext performs one bounded synchronization; it never owns the injected resources.
 func (s *Service) UpdateContext(ctx context.Context, must ...bool) error {
+	return s.UpdateWithOptions(ctx, UpdateOptions{AllowEarly: len(must) > 0 && must[0]})
+}
+
+// UpdateWithOptions performs a bounded synchronization with independent early
+// execution and recheck controls. Context cancellation also applies while queued.
+func (s *Service) UpdateWithOptions(ctx context.Context, options UpdateOptions) error {
 	if ctx == nil {
 		return fmt.Errorf("pull: nil context")
 	}
@@ -259,10 +265,14 @@ func (s *Service) UpdateContext(ctx context.Context, must ...bool) error {
 	s.ctx = ctx
 	s.contextMu.Unlock()
 	defer func() { s.contextMu.Lock(); s.ctx = nil; s.contextMu.Unlock() }()
-	return s.update(time.Now(), len(must) > 0 && must[0])
+	return s.updateWithOptions(time.Now(), options)
 }
 
 func (s *Service) update(now time.Time, must bool) error {
+	return s.updateWithOptions(now, UpdateOptions{AllowEarly: must})
+}
+
+func (s *Service) updateWithOptions(now time.Time, options UpdateOptions) error {
 	if err := s.checkOpen(); err != nil {
 		return err
 	}
@@ -294,17 +304,20 @@ func (s *Service) update(now time.Time, must bool) error {
 		}
 		schedule, err := s.schedule(u)
 		if err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			return err
 		}
 		cutoff, err := schedule.boundary(now)
 		if err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
 		if now.Before(cutoff) {
-			if !must {
+			if !options.AllowEarly {
+				s.emit(Event{Market: u.Name(), Status: StatusSkipped, Reason: SkipBeforeClose})
 				continue
 			}
 			cutoff = cutoff.AddDate(0, 0, -1)
@@ -312,32 +325,40 @@ func (s *Service) update(now time.Time, must bool) error {
 		key := s.updateKey("pull:" + u.Name())
 		unix, has, err := s.store.LoadUpdate(key)
 		if err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
-		if has && unix >= cutoff.Unix() {
+		if !options.Recheck && has && unix >= cutoff.Unix() {
+			s.emit(Event{Market: u.Name(), Status: StatusSkipped, Reason: SkipCompleted})
 			continue
 		}
 		if err := s.updateUnit(u); err != nil {
 			if errors.Is(err, errEmptyUniverse) {
+				s.emit(Event{Market: u.Name(), Status: StatusSkipped, Reason: SkipEmpty})
 				continue
 			}
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
 		}
 		if err := s.Context().Err(); err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			return err
 		}
 		// Certify only the window selected at the start of this update. Finishing
 		// after a later boundary must not mark that later window as processed.
 		if err := s.store.SaveUpdate(key, cutoff.Unix()); err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
 			if firstErr == nil {
 				firstErr = err
 			}
+		} else {
+			s.emit(Event{Market: u.Name(), Status: StatusSuccess})
 		}
 	}
 	if err := s.Context().Err(); err != nil {
@@ -417,12 +438,30 @@ func (s *Service) updateUnit(u Unit) error {
 		go func() {
 			defer tasks.Done()
 			defer func() { <-limit }()
-			fetchWithRetry := func(fetch func(*Service, model.Code) error) (err error) {
+			fetchWithRetry := func(stage Stage, fetch func(*Service, model.Code) error) (err error) {
+				var result FetchResult
+				var attempts int
+				defer func() {
+					status, reason := stageStatus(result, err)
+					mu.Lock()
+					defer mu.Unlock()
+					s.emit(Event{Market: u.Name(), Code: code, Stage: stage, Status: status,
+						Reason: reason, Completed: completed, Total: len(codes), Attempts: attempts, Result: result, Err: err})
+				}()
 				for attempt := 0; attempt < s.retry; attempt++ {
 					if err = s.Context().Err(); err != nil {
 						return err
 					}
-					err = fetch(s, code)
+					attempts++
+					if unit, ok := u.(ResultUnit); ok && s.cfg.OnEvent != nil {
+						if stage == StageDay {
+							result, err = unit.FetchDayResult(s, code)
+						} else {
+							result, err = unit.FetchMinuteResult(s, code)
+						}
+					} else {
+						err = fetch(s, code)
+					}
 					if err == nil {
 						err = s.Context().Err()
 					}
@@ -440,10 +479,15 @@ func (s *Service) updateUnit(u Unit) error {
 			}
 			var err error
 			if s.day {
-				err = fetchWithRetry(u.FetchDay)
+				err = fetchWithRetry(StageDay, u.FetchDay)
 			}
 			if err == nil && s.minute {
-				err = fetchWithRetry(u.FetchMinute)
+				err = fetchWithRetry(StageMinute, u.FetchMinute)
+			} else if err != nil && s.minute {
+				mu.Lock()
+				s.emit(Event{Market: u.Name(), Code: code, Stage: StageMinute, Status: StatusSkipped,
+					Reason: SkipDayFailed, Completed: completed, Total: len(codes)})
+				mu.Unlock()
 			}
 			if err == nil {
 				atomic.AddInt64(&succCount, 1)

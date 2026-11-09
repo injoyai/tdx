@@ -14,6 +14,7 @@ type unifiedClient struct {
 	count  int
 	amount *float64
 	code   string
+	day    string
 }
 
 func (*unifiedClient) Close() error { return nil }
@@ -21,6 +22,9 @@ func (*unifiedClient) Close() error { return nil }
 func (c *unifiedClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
 	c.code = code
 	at := "2026-01-05"
+	if c.day != "" {
+		at = c.day
+	}
 	if protocol.IsIntraday(category) {
 		at += " 09:31"
 	}

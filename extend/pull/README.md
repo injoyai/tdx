@@ -153,6 +153,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | `Retry` | 每个阶段最大尝试次数，仅重试瞬时错误 | `tdx.DefaultRetry` |
 | `RetryDelay` | 初始退避，指数递增、最多 30 秒；等待可取消 | `5s` |
 | `OnProgress` | 串行逐证券完成回调 | 无，默认不打印进度 |
+| `OnEvent` | 串行日线／分钟阶段及市场终态回调 | 无 |
 | `UniverseVersion` | 自动证券池版本，变化后允许同窗口补拉 | 空 |
 | `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 内置市场使用原默认值 |
 | `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
@@ -163,7 +164,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 行情按源日期时分保存：日线 `Time="YYYY-MM-DD"`，分钟线 `Time="YYYY-MM-DD HH:MM"`，均为主键。查询、增量边界和年度分库使用源时间，不依赖主机 `TZ`。不额外保存 `TradingDate`，也不推断美股时区或期货夜盘交易日。
 
-日线和分钟线均只保存源时间字符串与已确认的交易日；分钟线的 `Unix`、`TimeZone` 字段和 `Timestamp()` 已移除。存储只校验源日期时分格式、年份和范围，不应用夏令时或来源时区规则。已有 `source-time-v1` 库可以继续读写；历史额外列不再映射或使用，也不会自动删列。
+日线和分钟线均只保存源时间字符串与已确认的交易日；分钟线的 `Unix`、`TimeZone` 字段和 `Timestamp()` 已移除。存储只校验源日期时分格式、年份和范围，不应用夏令时或来源时区规则。SQLite 使用 `source-time-v2` 目录；旧 `source-time-v1` 布局不兼容，须使用新目录，详见[存储说明](../../docs/storage.md#文件与旧库)。
 
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 
@@ -190,6 +191,20 @@ _ = calendar
 ```
 
 行情同步默认不输出进度条。Config.OnProgress 接收串行的逐证券完成事件；Completed 包括最终失败项，Err 表示该证券的执行错误。回调应及时返回，不能同步再次调用本 Service.Update。examples/pull 演示把进度写到 stderr。
+
+需要区分日线、分钟线和市场跳过时，配置 `OnEvent`；原 `OnProgress` 的频率和计数保持不变：
+
+```go
+cfg.OnEvent = func(e pull.Event) {
+    // Stage 为空为市场结果，否则为 day 或 minute 阶段结果。
+    // Result.Known=false 的第三方旧 Unit 没有记录数，不应当作返回零条。
+    fmt.Fprintf(os.Stderr, "%s %s %s %s fetched=%d saved=%d latest=%s reason=%s err=%v\n",
+        e.Market, e.Code.Code, e.Stage, e.Status,
+        e.Result.Fetched, e.Result.Saved, e.Result.LatestTime, e.Reason, e.Err)
+}
+```
+
+事件是终态结果，状态为 `skipped/no_data/success/failed`；Fetched 是最后一次尝试主扫描返回给保存流程的行数，Saved 是该尝试成功保存的行数（含覆盖），不是净新增。最新源时间保持原字符串；重试次数由 Attempts 单独提供。所有回调串行且不得同步重入更新方法。完整字段、跳过原因和自定义 `ResultUnit` 约定见[公开契约](../../docs/public-contracts.md#更新与事件)。
 
 三个 Fetch 方法只获取并校验快照，不写数据库；失败返回零值快照，成功返回的 FetchedAt 表示获取完成时间。应用可直接构造查询对象，也可先显式调用 SQLite 的 ReplaceCodes、ReplaceGbbq、SaveWorkdays 保存，再发布结果。保存失败时继续保留旧查询对象。
 
@@ -239,7 +254,7 @@ Codes: []string{
 
 拉取层直接保存统一 `tdx.Kline` 的时间、价格和成交量，不再提取 `Standard` / `Extended` 后重复换算，也不受旧 `StandardResponse()` 的 uint16 记录数限制。Client 的 `Amount=nil` 保留为 nil，SQLite 写入 SQL NULL，不额外增加状态字段。扩展原始 `Amount` 与持仓字节重叠，不能作为成交额；需要原始字段时使用 Client 记录的 `Extended`。
 
-周期合并仅在全部组成记录的 Amount 都已知时求和，任一记录为 nil 则合计为 nil；真实零仍是有效金额。聚合不修改输入金额，价格和金额都不做汇率换算。已有 `source-time-v1` 数据库可继续使用，多余的旧 `TradingDate` / `AmountUnknown` 列不再映射，新库不创建它们，不自动删列或修改历史值。旧库中既有 0 仍读为非 nil 的 0，不从历史值猜测其有效性；曾自行写入非零未知金额的旧库需由调用方核对后重拉。
+周期合并仅在全部组成记录的 Amount 都已知时求和，任一记录为 nil 则合计为 nil；真实零仍是有效金额。聚合不修改输入金额，价格和金额都不做汇率换算。SQLite 使用新 `source-time-v2` 目录，旧 `source-time-v1` 不兼容；通过显式导入保留的旧数据中，多余的旧 `TradingDate` / `AmountUnknown` 列不再映射，新库不创建它们，不自动删列或修改历史值。旧库中既有 0 仍读为非 nil 的 0，不从历史值猜测其有效性；曾自行写入非零未知金额的旧库需由调用方核对后重拉。
 
 ### 增量写入
 
@@ -279,6 +294,8 @@ Codes: []string{
 完成标记由 `Config.Store` 的 `LoadUpdate/SaveUpdate` 统一读写，按任务配置和市场隔离：只有该市场全部任务成功才记录，失败可在下次调用重试。成功后保存本轮开始时选定的更新窗口边界（Unix 秒），不使用任务结束时的墙上时钟；标记达到当前市场更新边界（含）才算完成；读取失败不拉取该市场，写入失败返回错误并允许下次重试。旧整体标记保留在库中但不再使用，避免早收盘市场挡住晚收盘市场。不再单独配置 Tracker。
 
 `Update(true)` 允许提前拉取，但仍按最近一次已到达的更新边界去重；提前拉取只认证前一窗口，即使任务跨过当天更新边界才结束，也不会阻止当天收盘后的更新。收盘后只拉一次，并不保证行情服务器已提供所有盘后记录；这些时间不会扩展数据源本身的覆盖范围。
+
+需要同窗口再次检查迟到数据时，使用 `s.UpdateWithOptions(ctx, pull.UpdateOptions{Recheck: true})`。Recheck 不放宽收盘限制；需要提前复查时同时设置 AllowEarly。它仍按原增量边界拉取，保留历史分钟覆盖和空扫描缓存，不重扫全部历史。零选项等价于普通更新；并发排队和取消行为与 UpdateContext 相同。复查失败保留旧成功标记，再试须继续设置 Recheck。
 
 自动发现返回空代码列表时不写完成标记，下次允许重新发现。应用在同一天发布不同证券池时，应更新 UniverseVersion 并重新构造 Service；相同版本继续按原规则去重。版本表示证券范围，名称变化无需更新。
 

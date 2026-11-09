@@ -13,6 +13,7 @@ tdx/
 │   ├── pull/            元数据获取与行情同步、历史分笔下载
 │   │   └── market/      内置市场适配器及注册
 │   ├── storage/         行情 BarStore 和事务契约
+│   │   ├── storagetest/ 可被外部适配器调用的契约测试
 │   │   └── sqlite/      SQLite/XORM 实现、表模型及文件布局
 │   ├── export/          CSV 导出
 │   ├── local/           通达信本地文件读写
@@ -33,7 +34,7 @@ tdx/
 
 单元测试与实现同目录；公开跨包行为放在 tests/integration，测试替身放在 internal/testutil。示例独立运行，生成数据统一写入 output。
 
-storage/sqlite 的 bars.go、coverage.go、empty_scan.go 分别负责行情、覆盖和空扫描记录，format.go 校验磁盘源时间格式。源码文件名不改变数据库表名、数据目录、旧格式隔离或资源归属。
+storage/sqlite 的 bars.go、coverage.go、empty_scan.go 分别负责行情、覆盖和空扫描记录，format.go 校验磁盘源时间格式。源码文件名不定义数据库表名或资源归属；当前磁盘布局为 source-time-v2，旧格式隔离见存储说明。
 
 lib/gbbq 保留原始股本文件下载、解密和解析，与 metadata.Gbbq 的事件查询职责不同。lib/update 只提供定时工具；行情完成标记由 storage.BarStore 定义、pull 使用，不承担统一管理或隐式启动任务。
 

@@ -72,11 +72,11 @@ Workday.Status 返回 (observedTradingDay, coveredBySource)。覆盖内未出现
 
 Service.Close 只拒绝后续操作，不关闭注入的后端或连接池。应用应先等待任务退出，再关闭服务和共享资源。sqlite.New 创建的连接由后端 Close；NewMetadata(db) 借用的引擎由调用方关闭，完成标记为 PullStore 的私有实现。HTTP 元数据服务只提供 CodesHandler，由应用管理监听和关闭。metadata/httpclient.New 不联网、不调度，FetchCodes(ctx)/FetchGbbq(ctx) 返回独立查询快照；应用安排刷新并仅在成功后发布快照。客户端复用 metadata.NewGbbq 的分组、事件代码和日期校验，失败不返回部分快照。
 
-行情 SQLite source-time-v1 目录和原始量价口径保留。新合并后端将元数据写到 metadata.db；旧独立元数据库不会自动搬迁，旧 workday 表也不会被自动重写成带市场和覆盖信息的新日历表。迁移前保留原文件，显式同步或转换到新数据集。
+行情 SQLite 使用 source-time-v2 目录，原始量价口径保留；市场和代码文件名采用字节转义，避免大小写不敏感文件系统的证券碰撞。旧 source-time-v1 目录拒绝打开，须使用新目录，不自动迁移。新合并后端将元数据写到 metadata.db；旧独立元数据库不会自动搬迁，旧 workday 表也不会被自动重写成带市场和覆盖信息的新日历表。迁移前保留原文件，显式同步或转换到新数据集。
 
 ## 同步执行策略
 
-行情同步默认不打印进度条；Config.OnProgress 可接收串行的逐证券完成事件，Completed 包含最终失败项，成功项与错误分别由 Err 区分。回调应及时返回，不得同步再次调用本 Service.Update。示例把进度写到 stderr，应用决定自己的展示方式。
+行情同步默认不打印进度条；Config.OnProgress 可接收串行的逐证券完成事件，Completed 包含最终失败项，成功项与错误分别由 Err 区分。回调应及时返回，不得同步再次调用本 Service.Update。示例把进度写到 stderr，应用决定自己的展示方式。另可配置 OnEvent 接收日线／分钟阶段和市场终态，含本次记录数、源时间及跳过原因；不改变 OnProgress 频率。详见[公开契约](public-contracts.md)。
 
 Retry 是每个阶段的最大尝试次数。仅超时、连接中断等瞬时错误及实现 Temporary() bool 且返回 true 的自定义错误重试；其他错误直接返回。RetryDelay 默认五秒，按倍数退避且最多三十秒，等待可取消。
 
