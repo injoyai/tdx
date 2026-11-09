@@ -152,7 +152,7 @@ func MinuteToSessions(ks []*model.KlineMinute, n int, sessions []TradingSession)
 			last.High, last.Low = max(last.High, k.High), min(last.Low, k.Low)
 			last.Close, last.Time = k.Close, k.Time
 			last.Volume += k.Volume
-			last.Amount += k.Amount
+			last.Amount = sumAmount(last.Amount, k.Amount)
 			if k.Source != "" {
 				last.Source = k.Source
 			}

@@ -18,10 +18,6 @@ const (
 	PrefixResp = 0xB1CB7400
 )
 
-type Message interface {
-	Bytes() types.Bytes
-}
-
 /*
 Frame 数据帧
 0c 02189300 01 0300 0300 0d00 01
@@ -98,10 +94,6 @@ func Decode(bs []byte) (*Response, error) {
 		ZipLength: Uint16(bs[12:14]),
 		Length:    Uint16(bs[14:16]),
 		Data:      bs[16:],
-	}
-
-	if resp.Control&0x10 != 0x10 {
-		//return nil, fmt.Errorf("请求失败,请检查参数")
 	}
 
 	if int(resp.ZipLength) != len(bs[16:]) {

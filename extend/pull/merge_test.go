@@ -15,7 +15,7 @@ func mkDay(value string, open, close float64, vol int64) *model.KlineDay {
 		Low:    open,
 		Close:  close,
 		Volume: vol,
-		Amount: 0,
+		Amount: testAmount(0),
 	}
 }
 
@@ -93,19 +93,19 @@ func TestMinuteToPeriod(t *testing.T) {
 func TestPeriodMergePreservesPrecisionAndInput(t *testing.T) {
 	for _, price := range []float64{0.1234, -1.2345} {
 		days := []*model.KlineDay{
-			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2},
-			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: testAmount(0.0004), Volume: 2},
+			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: testAmount(0.0005), Volume: 3},
 		}
 		got := DayToPeriod(days, 2)
-		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || got[0].Amount != days[0].Amount+days[1].Amount || got[0].Volume != 5 || got[0].Time != "2026-01-06" {
+		if len(got) != 1 || got[0].Open != days[0].Open || got[0].Close != days[1].Close || got[0].High != days[1].High || got[0].Low != days[1].Low || (got[0].Amount == nil || *got[0].Amount != *days[0].Amount+*days[1].Amount) || got[0].Volume != 5 || got[0].Time != "2026-01-06" {
 			t.Fatal("day precision/metadata lost", got)
 		}
 		minutes := []*model.KlineMinute{
-			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: 0.0004, Volume: 2, Source: model.MinuteSourceTrade},
-			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: 0.0005, Volume: 3},
+			{Time: "2026-01-05", Open: price, High: price + 0.0002, Low: price - 0.0002, Close: price, Amount: testAmount(0.0004), Volume: 2, Source: model.MinuteSourceTrade},
+			{Time: "2026-01-06", Open: price, High: price + 0.0003, Low: price - 0.0003, Close: price + 0.0001, Amount: testAmount(0.0005), Volume: 3},
 		}
 		min := MinuteToPeriod(minutes, 2)
-		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || min[0].Amount != got[0].Amount || min[0].Volume != 5 || min[0].Source != model.MinuteSourceTrade {
+		if len(min) != 1 || min[0].Open != got[0].Open || min[0].Close != got[0].Close || min[0].High != got[0].High || min[0].Low != got[0].Low || (min[0].Amount == nil || *min[0].Amount != *got[0].Amount) || min[0].Volume != 5 || min[0].Source != model.MinuteSourceTrade {
 			t.Fatal("minute precision/source lost", min)
 		}
 		if days[0].Volume != 2 || minutes[0].Volume != 2 {

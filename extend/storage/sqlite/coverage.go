@@ -7,6 +7,9 @@ import (
 
 // QueryMinuteCoverage 查询分钟覆盖记录；缺少记录时返回 nil。
 func (s *PullStore) QueryMinuteCoverage(code model.Code, year int) (*model.MinuteCoverage, error) {
+	if err := validateMinuteCode(code, year); err != nil {
+		return nil, err
+	}
 	if !s.MinuteExists(code, year) {
 		return nil, nil
 	}

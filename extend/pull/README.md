@@ -18,7 +18,7 @@ downloader.CodeName = codeCache.GetName // 可选，用于导出名称
 err := downloader.PullYear(ctx, 2025, "sz000001")
 ```
 
-`ctx` 为 `context.Context`，`Pool` 为标准行情连接池，`Workday` 为提供 RangeYear 的历史交易日历接口；缺少其中任意组件会返回错误。`CodeName` 为可选的 `func(string) string`，未提供时导出名称为空。组件由调用方维护和关闭。`PullYear` 按指定年份下载，`Pull(ctx, code)` 从 2000 年到当前年份逐年执行；使用标准行情分笔及沪深 241 分钟合成规则。
+`ctx` 为 `context.Context`，`Pool` 为标准行情连接池，`Workday` 为提供 RangeYear 的历史交易日历接口；缺少其中任意组件会返回错误。`CodeName` 为可选的 `func(string) string`，未提供时导出名称为空。组件由调用方维护和关闭。`PullYear` 按指定年份下载，`Pull(ctx, startYear, endYear, code)` 只执行明确年份范围（含两端）；使用标准行情分笔及沪深 241 分钟合成规则。
 
 输出仍按 `分时成交/1分钟/5分钟/15分钟/30分钟/60分钟/{代码}-{年份}.csv` 保存，保留原表头、UTF-8 BOM、竞价和午休边界。该入口复用 `extend/export` 编码，不创建 `Service` 或 SQLite 行情库；无需导入 `market` 注册市场。旧分笔下载包已移除，调用迁移见 [v2 迁移指南](../../docs/v2-migration.md#历史分笔下载并入-pull)。
 
@@ -35,7 +35,7 @@ pull.Service ──编排──> Unit(市场) ──拉取──> 通达信服�
 ```
 
 - **`Unit`**：一个可拉取的独立市场/品种类别。新增市场 = 新增一个实现 + `pull.Register`，无需改框架。
-- **`Service`**：负责并发调度（协程池 + 进度条）、单条重试、按市场粒度的增量去重。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
+- **`Service`**：负责并发调度（有界并发 + 可选进度回调）、单条重试、按市场粒度的增量去重。市场间顺序执行，市场内代码并发；`Update` 只执行一次，定时调度由调用方安排。
 
 ---
 
@@ -144,20 +144,20 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 | 字段 | 说明 | 默认值 |
 |---|---|---|
-| `Store` | 行情同步必填；仅同步元数据时可省略 | 无 |
+| `Store` | 行情同步必填；仅获取元数据时可省略 | 无 |
 | `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
 | `Goroutines` | 并发数 | `8` |
 | `StartAt` | 起始日期 `YYYYMMDD` | 最近两年 |
-| `Retry` | 单条失败重试次数 | `tdx.DefaultRetry` |
-| `Tracker` | `*update.Tracker` 增量去重库（`lib/update`） | 使用 Store 保存标记 |
+| `Retry` | 每个阶段最大尝试次数，仅重试瞬时错误 | `tdx.DefaultRetry` |
+| `RetryDelay` | 初始退避，指数递增、最多 30 秒；等待可取消 | `5s` |
+| `OnProgress` | 串行逐证券完成回调 | 无，默认不打印进度 |
+| `UniverseVersion` | 自动证券池版本，变化后允许同窗口补拉 | 空 |
+| `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 内置市场使用原默认值 |
 | `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
-| `CodesStore` | storage.CodesStore，代码快照同步与自动发现 | 无 |
-| `ListCodes` | 每轮行情同步只调用一次的代码列表函数；优先于 CodesStore | 无 |
-| `GbbqStore` | storage.GbbqStore，供 SyncGbbq 使用 | 无 |
-| `WorkdayStore` | storage.WorkdayStore，供 SyncWorkdays 使用 | 无 |
+| `ListCodes` | 标准证券自动发现回调，每轮只调用一次；指定 Codes 时跳过 | 无 |
 
 配置全部通过代码参数传入（本库作为第三方引用，不写配置文件）。`New` 会保存配置快照，后续修改原始 `Config` 不影响已创建的服务。
 
@@ -167,19 +167,20 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 `StartAt` 为空时使用东八区当前日期推算默认起始日期；非空值必须是合法的 `YYYYMMDD` 日期，否则创建服务会直接返回错误，不创建数据库。
 
-### 显式同步与内存查询
+### 显式获取与内存查询
 
-New 仅保存依赖并校验配置，不联网、不启动定时任务。至少传入一种存储接口；只同步元数据时无需行情 Store 或市场注册。应用显式调用：
+New 仅保存依赖并校验配置，不联网、不启动定时任务。行情同步需要 Store；仅获取元数据时使用 `pull.New(&pull.Config{Pool: pool})` 即可，无需存储或市场注册。应用显式调用：
 
 ```go
-codeSnapshot, err := s.SyncCodes(ctx) // 默认沪深北；可明确传入交易所范围
+codeSnapshot, err := s.FetchCodes(ctx) // 默认沪深北；可明确传入交易所范围
 if err != nil { return err }
-codeIndex := metadata.NewCodes(codeSnapshot.Rows)
-events, err := s.SyncGbbq(ctx, []string{"sh600000"})
+codeIndex, err := metadata.NewCodes(codeSnapshot.Rows)
+if err != nil { return err }
+events, err := s.FetchGbbq(ctx, []string{"sh600000"})
 if err != nil { return err }
 equity, err := metadata.NewGbbq(events.Rows)
 if err != nil { return err }
-calendarSnapshot, err := s.SyncWorkdays(ctx) // 当前仅从上证指数提取中国历史日期
+calendarSnapshot, err := s.FetchWorkdays(ctx) // 当前仅从上证指数提取中国历史日期
 if err != nil { return err }
 calendar, err := metadata.NewWorkday(calendarSnapshot)
 if err != nil { return err }
@@ -188,9 +189,11 @@ _ = equity
 _ = calendar
 ```
 
-三个同步方法总是执行本次显式刷新，不暗中启动定时任务；只在返回 error=nil 后发布结果。分页读取和完整性校验成功后，数据与刷新时间由后端原子提交。股本只替换明确证券，保留未请求的退市证券历史。
+行情同步默认不输出进度条。Config.OnProgress 接收串行的逐证券完成事件；Completed 包括最终失败项，Err 表示该证券的执行错误。回调应及时返回，不能同步再次调用本 Service.Update。examples/pull 演示把进度写到 stderr。
 
-行情同步使用 UpdateContext(ctx, must...)，Update 是 Background 的便捷入口。标准证券自动发现每轮只读取一次 ListCodes 或 CodesStore 的已同步快照；未同步的快照返回错误。板块从板块文件发现，扩展市场从 ExPool 发现。指定 Codes 时跳过代码发现。
+三个 Fetch 方法只获取并校验快照，不写数据库；失败返回零值快照，成功返回的 FetchedAt 表示获取完成时间。应用可直接构造查询对象，也可先显式调用 SQLite 的 ReplaceCodes、ReplaceGbbq、SaveWorkdays 保存，再发布结果。保存失败时继续保留旧查询对象。
+
+行情同步使用 UpdateContext(ctx, must...)，Update 是 Background 的便捷入口。标准证券自动发现必须提供 ListCodes(ctx)，每轮只调用一次并固定结果；回调可从应用内存、数据库或 FetchCodes 的结果生成 model.Code 列表。板块从板块文件发现，扩展市场从 ExPool 发现。指定 Codes 时跳过代码发现。
 
 日线不再回填 FloatStock、TotalStock、Turnover。历史股本与换手率由 gbbq 查询／计算，缺失股本返回不可用，不从当前数据回填历史。manage、CodeCache、Config.Gbbq 已删除，应用直接组装组件。详见[架构说明](../../docs/data-architecture.md)。
 
@@ -229,14 +232,14 @@ Codes: []string{
 |---|---|
 | 价格（Open/High/Low/Close） | 证券原币种或报价单位（float64） |
 | Volume | 直接使用统一 Client 的最小单位：股票为股，期货为张；可转债等国内默认项尚未逐接口校准 |
-| Amount | 原币种成交额；Client 未提供金额时保存 0，不能据此认定真实零成交额 |
+| Amount | *float64 原币种成交额；nil 表示未知，非 nil 的 0 表示真实零 |
 | Source（分钟线） | 空字符串=原生数据；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 
 > 与本地 `.day/.lc1/.lc5` 文件的单位不同。国内默认 ×100 不是单位校准结论，不能仅依据字段名宣称其已验证为股数；港股指数不作为成交数量输出。
 
-拉取层直接保存统一 `tdx.Kline` 的时间、价格和成交量，不再提取 `Standard` / `Extended` 后重复换算，也不受旧 `StandardResponse()` 的 uint16 记录数限制。Client 的 `Amount=nil` 保存为 0，不额外增加状态字段。扩展原始 `Amount` 与持仓字节重叠，不能作为成交额；需要原始字段时使用 Client 记录的 `Extended`。
+拉取层直接保存统一 `tdx.Kline` 的时间、价格和成交量，不再提取 `Standard` / `Extended` 后重复换算，也不受旧 `StandardResponse()` 的 uint16 记录数限制。Client 的 `Amount=nil` 保留为 nil，SQLite 写入 SQL NULL，不额外增加状态字段。扩展原始 `Amount` 与持仓字节重叠，不能作为成交额；需要原始字段时使用 Client 记录的 `Extended`。
 
-周期合并直接累加 `Amount`。含有未提供金额的记录时，合计只代表已有金额之和，不保证完整成交额；价格和金额都不做汇率换算。已有 `source-time-v1` 数据库可继续使用，多余的旧 `TradingDate` / `AmountUnknown` 列不再映射，新库不创建它们，不自动删列或修改历史值。曾自行写入非零未知金额的旧库需由调用方核对后重拉。
+周期合并仅在全部组成记录的 Amount 都已知时求和，任一记录为 nil 则合计为 nil；真实零仍是有效金额。聚合不修改输入金额，价格和金额都不做汇率换算。已有 `source-time-v1` 数据库可继续使用，多余的旧 `TradingDate` / `AmountUnknown` 列不再映射，新库不创建它们，不自动删列或修改历史值。旧库中既有 0 仍读为非 nil 的 0，不从历史值猜测其有效性；曾自行写入非零未知金额的旧库需由调用方核对后重拉。
 
 ### 增量写入
 
@@ -273,24 +276,27 @@ Codes: []string{
 
 上述时间是本项目约定的市场分组边界，不是逐品种交易时段表。普通 `Update()` 在市场当地当天的允许时间之前跳过该市场，之后首次调用才发起拉取；调用方应在相应时间之后、当地午夜之前安排调用。服务不会自行等待、休眠或启动定时任务。非交易日仍允许请求一次，不用中国交易日历过滤其他市场。
 
-完成标记仍按任务配置和市场隔离：只有该市场全部任务成功才记录，失败可在下次调用重试。取消整体完成标记的提前返回，避免早收盘市场挡住晚收盘市场。旧整体标记保留在库中但不再使用；已有市场标记仅在新的收盘延迟边界之后才算完成。外部 `Tracker` 的固定东八区边界不再控制 pull，其他使用 `IsUpdated` 的服务不受影响。
+完成标记由 `Config.Store` 的 `LoadUpdate/SaveUpdate` 统一读写，按任务配置和市场隔离：只有该市场全部任务成功才记录，失败可在下次调用重试。成功后保存本轮开始时选定的更新窗口边界（Unix 秒），不使用任务结束时的墙上时钟；标记达到当前市场更新边界（含）才算完成；读取失败不拉取该市场，写入失败返回错误并允许下次重试。旧整体标记保留在库中但不再使用，避免早收盘市场挡住晚收盘市场。不再单独配置 Tracker。
 
-`Update(true)` 允许提前拉取，但仍按最近一次已到达的更新边界去重；提前拉取的标记早于当天边界，因此不会阻止当天收盘后的更新。收盘后只拉一次，并不保证行情服务器已提供所有盘后记录；这些时间不会扩展数据源本身的覆盖范围。
+`Update(true)` 允许提前拉取，但仍按最近一次已到达的更新边界去重；提前拉取只认证前一窗口，即使任务跨过当天更新边界才结束，也不会阻止当天收盘后的更新。收盘后只拉一次，并不保证行情服务器已提供所有盘后记录；这些时间不会扩展数据源本身的覆盖范围。
+
+自动发现返回空代码列表时不写完成标记，下次允许重新发现。应用在同一天发布不同证券池时，应更新 UniverseVersion 并重新构造 Service；相同版本继续按原规则去重。版本表示证券范围，名称变化无需更新。
 
 ### 执行与资源释放
 
-同一个 `Service.Update` 中，港股、港股指数、美股和期货共享一次完整的扩展协议品种分页发现，再各自过滤市场代码；成功的空列表也仅缓存到本轮结束，失败不缓存。下一轮更新重新查询，不跨 Service 或连接池共享。在 `Update` 之外调用 `Service.GetInstruments()` 时重新查询；返回切片可修改，不影响其他市场的快照。同一个 Service 的并发 `Update` 调用顺序执行，仍按市场完成标记去重。
+同一个 `Service.Update` 中，港股、港股指数、美股和期货通过 Client.GetInstruments 共享一次完整品种发现，SDK 负责协议分页及完整性校验，再各自过滤市场代码；成功的空列表也仅缓存到本轮结束，失败不缓存。下一轮更新重新查询，不跨 Service 或连接池共享。同一轮并发发现共用在途结果，等待可响应本轮 context 取消；发现失败后后续调用可重试。状态锁不覆盖连接池等待或协议请求；独立查询捕获自己的 context，其迟到结果不会发布到后来的更新轮次。在 `Update` 之外调用 `Service.GetInstruments()` 时重新查询；返回切片可修改，不影响其他市场的快照。同一个 Service 的并发 `Update` 调用顺序执行，仍按市场完成标记去重。
 
 `Update(must ...bool)` 同步执行一次拉取，等待所有已调度任务结束后返回；不再接受 `context.Context`。
-失败按 `Retry` 配置重试，耗尽后返回错误，该市场不会标记完成。
-标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，保存统一结果中的量价和源时间；连接池直接使用 `ClientPool.Do`。
-正在进行的拉取等待底层响应或超时，不提供取消接口。
+超时、连接中断等瞬时错误按 Retry 配置重试；自定义错误可实现 Temporary() bool 并返回 true。配置、数据校验等其他错误直接返回。退避初始为 RetryDelay，默认五秒，倍增至最多三十秒；等待可取消。耗尽后返回错误，该市场不会标记完成。
+标准行情直接复用根包 `GetKlineUntil`、`GetKlineMinute241Until`，保存统一结果中的量价和源时间；行情、元数据和分笔统一通过 `ClientPool.DoContext` 借用连接。`UpdateContext(ctx, must...)` 支持取消连接等待；原生 SDK 的请求视图也会取消响应等待和后续分页、逐日查询。自定义 Client 可实现 WithContext(context.Context) tdx.Client，否则其单次请求仍须有超时。取消后不继续提交行情或完成标记。
 
-迁移调用方式：`s.Update(ctx)` → `s.Update()`，`s.Update(ctx, true)` → `s.Update(true)`。
+同一 Service 的更新仍串行执行。等待前一轮 Update 的 UpdateContext 也可被 context 取消或超时，不必等活动任务结束，且不会替换活动任务的 context。
+
+迁移调用方式：`s.Update(ctx)` → `s.UpdateContext(ctx)`，`s.Update(ctx, true)` → `s.UpdateContext(ctx, true)`；无需取消时使用 `s.Update()`。
 自定义 `Unit` 的 `Codes/FetchDay/FetchMinute` 方法也需移除首个 `context.Context` 参数，见下方接口示例。
 
-调用方应在更新结束后 `defer s.Close()`；内部行情引擎按最近使用顺序淘汰，使用中的查询/事务由引用计数保护。
-外部传入的连接池、各类 Store 与 `Tracker` 均由调用方管理，构造失败或 `Service.Close()` 时也不会关闭它们。先等待拉取结束并关闭 Service，再关闭共享组件；Service 不持有任何自建存储。
+调用方应在更新结束后 `defer s.Close()`；SQLite 后端的行情引擎按最近使用顺序淘汰，使用中的查询/事务由引用计数保护。
+外部传入的连接池和各类 Store 均由调用方管理，构造失败或 `Service.Close()` 时也不会关闭它们。先等待拉取结束并关闭 Service，再关闭共享组件；Service 不持有任何自建存储。
 
 ---
 
@@ -347,12 +353,17 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, []pull.TradingSession{
 type MyUnit struct{}
 
 func (u *MyUnit) Name() string { return "my" }
+func (u *MyUnit) Schedule() pull.Schedule {
+    return pull.Schedule{TimeZone: "America/New_York", CloseTime: "20:00", Delay: 5*time.Minute}
+}
 func (u *MyUnit) Codes(s *pull.Service) ([]model.Code, error) { /* ... */ }
 func (u *MyUnit) FetchDay(s *pull.Service, code model.Code) error { /* ... */ }
 func (u *MyUnit) FetchMinute(s *pull.Service, code model.Code) error { /* ... */ }
 
 func init() { pull.Register(&MyUnit{}) }
 ```
+
+自定义市场必须通过 Config.Schedules 或可选 Schedule() pull.Schedule 方法声明调度；缺失时 New 返回错误。Config.Schedules 优先于内置默认值及 Unit 方法。显式 Schedule.Delay=0 表示不延迟；非法时区、时间、负延迟或延迟跨入次日的配置在构造时拒绝。
 
 `Service` 提供调度、去重、查询和存储能力；Unit 负责调用协议、确定增量边界并调用 Save。
 自定义历史分钟补全可使用 `MinuteYearComplete`/`SaveMinuteComplete`，只能在完整扫描成功后写完成标记。

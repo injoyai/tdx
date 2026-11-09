@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -30,13 +29,6 @@ func KlineTime(t time.Time, category uint8) string {
 // Location 返回标准行情使用的固定东八区，不依赖运行环境的 TZ。
 // 扩展行情的钟面时间仍按原值保留，不推断证券当地时区或夜盘自然日。
 func Location() *time.Location { return location }
-
-func GetHourMinute(bs [2]byte) string {
-	n := Uint16(bs[:])
-	h := n / 60
-	m := n % 60
-	return fmt.Sprintf("%02d:%02d", h, m)
-}
 
 func GetTime(bs [4]byte, category uint8) time.Time {
 	switch category {

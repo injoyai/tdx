@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/injoyai/ios"
@@ -25,7 +24,12 @@ const stPort = "7709"
 type StConn struct {
 	*conn
 	*queries
-	quoteMu       sync.Mutex
+	*quoteState
+	requestCtx context.Context
+}
+
+type quoteState struct {
+	quoteGate     chan struct{}
 	quoteDecimals map[string]int8
 }
 
@@ -109,8 +113,19 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 
 // standardQuotes 在需要价格精度校准时取元数据，避免额外数据库/连接。
 func (c *StConn) standardQuotes(codes []string) (protocol.QuotesResp, error) {
-	c.quoteMu.Lock()
-	defer c.quoteMu.Unlock()
+	ctx := c.requestContext()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case c.quoteGate <- struct{}{}:
+		defer func() { <-c.quoteGate }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	loaded := map[protocol.Exchange]bool{}
 	for _, code := range codes {
 		_, cached := c.quoteDecimals[code]
@@ -869,11 +884,15 @@ func (*StConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newStConn(core *conn) *StConn {
-	c := &StConn{conn: core, quoteDecimals: make(map[string]int8)}
+	c := &StConn{conn: core, quoteState: &quoteState{quoteGate: make(chan struct{}, 1), quoteDecimals: make(map[string]int8)}}
 	c.queries = &queries{source: c}
 	return c
 }
 func (*StConn) protocol() protocol.MarketProtocol { return protocol.ProtocolStandard }
+
+func (*StConn) GetInstruments() ([]protocol.ExInstrument, error) {
+	return nil, errors.New("全局品种列表需要扩展连接")
+}
 
 func (*StConn) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
 	return nil, errors.New("市场行情列表需要扩展连接")
@@ -911,8 +930,12 @@ func DialWith(dial ios.DialFunc, op ...client.Option) (*StConn, error) {
 }
 
 func dialSt(ctx context.Context, dial ios.DialFunc, op ...client.Option) (*StConn, error) {
+	return dialStContexts(ctx, ctx, dial, op...)
+}
+
+func dialStContexts(lifecycle, initial context.Context, dial ios.DialFunc, op ...client.Option) (*StConn, error) {
 	c := newStConn(nil)
-	core, err := dialWith(ctx, dial, 2*time.Second, protocol.MConnect.Frame, protocol.MHeart.Frame, c.decode, op...)
+	core, err := dialWithContexts(lifecycle, initial, dial, 2*time.Second, protocol.MConnect.Frame, protocol.MHeart.Frame, c.decode, op...)
 	if err != nil {
 		return nil, err
 	}

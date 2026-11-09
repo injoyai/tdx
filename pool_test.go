@@ -49,7 +49,7 @@ func poolTestClient(closed *atomic.Int32) *StConn {
 	c := client.New(nil)
 	c.Closer.Reset()
 	c.SetCloseFunc(func(error) error { closed.Add(1); return nil })
-	return newStConn(&conn{Client: c})
+	return newStConn(&conn{native: c})
 }
 
 func TestPoolCloseAndReturn(t *testing.T) {

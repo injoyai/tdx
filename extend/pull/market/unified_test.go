@@ -91,10 +91,10 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 			if err != nil || len(days) != 1 {
 				t.Fatal(days, err)
 			}
-			if k := days[0]; k.Time != "2026-01-05" || k.Open != 10.12345 || k.Low != -1.25 || k.Close != 11.23456 || k.Volume != 12345 || k.Amount != amount {
+			if k := days[0]; k.Time != "2026-01-05" || k.Open != 10.12345 || k.Low != -1.25 || k.Close != 11.23456 || k.Volume != 12345 || (k.Amount == nil || *k.Amount != amount) {
 				t.Fatalf("normalized day changed: %+v", k)
 			}
-			// 无金额时保存零值，不能把扩展记录的持仓字节当作金额。
+			// 无金额时保留未知状态，不能把扩展记录的持仓字节当作金额。
 			c.amount = nil
 			if err := u.FetchMinute(s, code); err != nil {
 				t.Fatal(err)
@@ -106,7 +106,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 			if err != nil || len(rows) != 1 {
 				t.Fatal(rows, err)
 			}
-			if k := rows[0]; k.Time != "2026-01-05 09:31" || k.Open != 10.12345 || k.Low != -1.25 || k.Close != 11.23456 || k.Volume != 12345 || k.Amount != 0 {
+			if k := rows[0]; k.Time != "2026-01-05 09:31" || k.Open != 10.12345 || k.Low != -1.25 || k.Close != 11.23456 || k.Volume != 12345 || k.Amount != nil {
 				t.Fatalf("normalized minute changed: %+v", k)
 			}
 		})

@@ -138,6 +138,9 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 	var out *KlineResp
 	var last *protocol.Kline
 	for start := 0; start <= 65535; start += 800 {
+		if err := q.context().Err(); err != nil {
+			return nil, err
+		}
 		r, err := q.source.GetKline(category, code, uint16(start), 800)
 		if err != nil {
 			return nil, err
@@ -255,6 +258,9 @@ func (q *queries) tradeAll(date, code string, checkDay bool) (*TradeResp, error)
 	}
 	var out *TradeResp
 	for start := 0; start <= 65535; start += size {
+		if err := q.context().Err(); err != nil {
+			return nil, err
+		}
 		r, err := q.getTrade(date, code, uint16(start), uint16(size), checkDay && start == 0)
 		if err != nil {
 			return nil, err
@@ -317,6 +323,9 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 		dates[strings.ReplaceAll(date, "-", "")] = true
 	}
 	calendar.Range(start, before, func(day time.Time) bool {
+		if err = q.context().Err(); err != nil {
+			return false
+		}
 		date := day.Format("20060102")
 		if !dates[date] {
 			return true
@@ -358,6 +367,9 @@ func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*K
 	}
 	ks := []Kline{}
 	for _, record := range resp.List {
+		if err := q.context().Err(); err != nil {
+			return nil, err
+		}
 		v := record.Standard
 		if v.Time.Format(time.TimeOnly) == "09:31:00" {
 			var tr *TradeResp

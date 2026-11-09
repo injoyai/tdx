@@ -69,8 +69,8 @@ func TestNativeClientConcurrentWrites(t *testing.T) {
 				}()
 			}
 			wg.Wait()
-			if c.Info.WriteCount != 33 { // 握手 + 32 个请求。
-				t.Fatalf("write count=%d, want 33", c.Info.WriteCount)
+			if c.native.Info.WriteCount != 33 { // 握手 + 32 个请求。
+				t.Fatalf("write count=%d, want 33", c.native.Info.WriteCount)
 			}
 		})
 	}
@@ -158,7 +158,7 @@ func TestFrameDecodeErrorReachesRequester(t *testing.T) {
 	if _, err := c.SendFrame(f, "cached request"); err == nil || err.Error() == "超时" {
 		t.Fatalf("expected frame decode error, got %v", err)
 	}
-	if c.Wait.IsWait("1") {
+	if c.wait.IsWait("1") {
 		t.Fatal("failed request callback leaked")
 	}
 	if _, ok := c.m.Get("1"); ok {
@@ -300,7 +300,7 @@ func TestCloseAllStopsReconnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-c.Runner2.Done():
+	case <-c.native.Runner2.Done():
 	case <-time.After(2 * time.Second):
 		t.Fatal("read loop kept retrying after CloseAll")
 	}
@@ -396,9 +396,9 @@ func (w frameTestWriter) Write(data []byte) (int, error) { return w(data) }
 func TestSendFrameLifecycle(t *testing.T) {
 	for _, mode := range []string{"immediate", "timeout", "write failure", "short write"} {
 		t.Run(mode, func(t *testing.T) {
-			c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+			c := &conn{native: client.New(nil), wait: wait.New(time.Second), m: maps.NewSafe()}
 			c.SetTimeout(10 * time.Millisecond)
-			c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
+			c.native.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
 				if mode == "write failure" {
 					return 0, io.ErrClosedPipe
 				}
@@ -408,12 +408,12 @@ func TestSendFrameLifecycle(t *testing.T) {
 				if mode == "immediate" {
 					key := conv.String(binary.LittleEndian.Uint32(data[1:5]))
 					c.waitMu.Lock()
-					c.Wait.Done(key, "ok")
+					c.wait.Done(key, "ok")
 					c.waitMu.Unlock()
 				}
 				return len(data), nil
 			}))
-			c.wrapWriter(c.Client)
+			c.wrapWriter(c.native)
 			f := &protocol.Frame{Type: protocol.TypeTrade}
 			value, err := c.SendFrame(f, "cached request")
 			switch mode {
@@ -435,7 +435,7 @@ func TestSendFrameLifecycle(t *testing.T) {
 				}
 			}
 			key := conv.String(f.MsgID)
-			if c.Wait.IsWait(key) {
+			if c.wait.IsWait(key) {
 				t.Fatal("request callback leaked")
 			}
 			if _, ok := c.m.Get(key); ok {
@@ -446,18 +446,18 @@ func TestSendFrameLifecycle(t *testing.T) {
 }
 
 func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
-	c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+	c := &conn{native: client.New(nil), wait: wait.New(time.Second), m: maps.NewSafe()}
 	c.SetTimeout(time.Second)
 	writer := ios.NewMoreWrite(frameTestWriter(func(data []byte) (int, error) {
 		id := binary.LittleEndian.Uint32(data[1:5])
 		c.waitMu.Lock()
-		c.Wait.Done(conv.String(id), id)
+		c.wait.Done(conv.String(id), id)
 		c.waitMu.Unlock()
 		return len(data), nil
 	}))
 	writer.OnWrite = func(write func() error) error { return write() }
-	c.Client.MoreWriter = writer
-	c.wrapWriter(c.Client)
+	c.native.MoreWriter = writer
+	c.wrapWriter(c.native)
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
 		wg.Add(1)
@@ -474,18 +474,18 @@ func TestSendFrameConcurrentImmediateResponses(t *testing.T) {
 }
 
 func TestSendFrameTimeoutWithBlockedWriter(t *testing.T) {
-	c := &conn{Client: client.New(nil), Wait: wait.New(time.Second), m: maps.NewSafe()}
+	c := &conn{native: client.New(nil), wait: wait.New(time.Second), m: maps.NewSafe()}
 	c.SetTimeout(20 * time.Millisecond)
 	release := make(chan struct{})
 	started := make(chan struct{})
 	finished := make(chan struct{})
-	c.Client.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(bs []byte) (int, error) {
+	c.native.MoreWriter = ios.NewMoreWrite(frameTestWriter(func(bs []byte) (int, error) {
 		close(started)
 		<-release
 		defer close(finished)
 		return len(bs), nil
 	}))
-	c.wrapWriter(c.Client)
+	c.wrapWriter(c.native)
 	t.Cleanup(func() {
 		close(release)
 		<-finished
@@ -503,7 +503,7 @@ func TestSendFrameTimeoutWithBlockedWriter(t *testing.T) {
 		t.Fatal("blocked writer prevented timeout")
 	}
 	key := conv.String(f.MsgID)
-	if c.Wait.IsWait(key) {
+	if c.wait.IsWait(key) {
 		t.Fatal("timed-out request callback leaked")
 	}
 	if _, ok := c.m.Get(key); ok {

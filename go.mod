@@ -4,11 +4,9 @@ go 1.25.0
 
 require (
 	github.com/glebarez/go-sqlite v1.22.0
-	github.com/injoyai/bar v0.0.12
 	github.com/injoyai/base v1.2.23
 	github.com/injoyai/conv v1.2.8
 	github.com/injoyai/ios v1.2.6
-	github.com/injoyai/logs v1.0.12
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/text v0.34.0
 	xorm.io/xorm v1.3.9
@@ -21,6 +19,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/grafov/m3u8 v0.12.1 // indirect
+	github.com/injoyai/logs v1.0.12 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect

@@ -1,21 +1,38 @@
 package httpclient
 
 import (
-	"reflect"
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-type recordClient struct {
-	tdx.Client
-	records map[string][]*protocol.Gbbq
+func fetchTestGbbq(t *testing.T, records []*protocol.Gbbq) *metadata.Gbbq {
+	t.Helper()
+	groups := map[string][]*protocol.Gbbq{}
+	for _, row := range records {
+		groups[row.Code] = append(groups[row.Code], row)
+	}
+	body, err := json.Marshal(groups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New("http://offline.invalid", &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
+	})})
+	snapshot, err := c.FetchGbbq(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
 }
-
-func (c *recordClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) { return c.records, nil }
 
 type gbbqQuery interface {
 	GetEquity(string, time.Time) *protocol.Equity
@@ -39,7 +56,7 @@ func TestGbbqQueryEffectiveDate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote := &GbbqHTTP{snapshot: local}
+	remote := fetchTestGbbq(t, flat)
 	for _, tc := range []struct {
 		at   time.Time
 		want int64
@@ -61,10 +78,22 @@ func TestGbbqQueryEffectiveDate(t *testing.T) {
 		}
 	}
 	ks := protocol.Klines{{Time: day.AddDate(0, 0, -1), Open: 10, High: 10, Low: 10, Close: 10}, {Time: day, Open: 9, High: 9, Low: 9, Close: 9}}
-	if !reflect.DeepEqual(local.GetXRXDs("000001"), remote.GetXRXDs("sz000001")) || len(local.GetXRXDs("000001")) != 1 {
+	// HTTP 保留时间及偏移，不保留 time.Location 的内存身份和名字。
+	sameJSON := func(a, b any) bool {
+		x, err := json.Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		y, err := json.Marshal(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.Equal(x, y)
+	}
+	if !sameJSON(local.GetXRXDs("000001"), remote.GetXRXDs("sz000001")) || len(local.GetXRXDs("000001")) != 1 {
 		t.Fatal("XRXD queries differ")
 	}
-	if !reflect.DeepEqual(local.GetFactors("000001", ks), remote.GetFactors("000001", ks)) {
+	if !sameJSON(local.GetFactors("000001", ks), remote.GetFactors("000001", ks)) {
 		t.Fatal("factor queries differ")
 	}
 	for _, source := range []gbbqQuery{local, remote} {

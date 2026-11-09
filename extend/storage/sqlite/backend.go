@@ -8,7 +8,7 @@ import (
 	"xorm.io/xorm"
 )
 
-// Store is one SQLite backend implementing the independent metadata and bar contracts.
+// Store combines BarStore with concrete metadata persistence methods.
 type Store struct {
 	*PullStore
 	*Metadata
@@ -24,7 +24,7 @@ func New(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := Open(filepath.Join(dir, "metadata.db"))
+	db, err := Open(filepath.Join(bars.dir, "metadata.db"))
 	if err != nil {
 		return nil, errors.Join(err, bars.Close())
 	}

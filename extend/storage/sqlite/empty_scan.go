@@ -19,6 +19,9 @@ func emptyScanKey(code model.Code, year int) string {
 }
 
 func (s *PullStore) LoadMinuteEmptyScan(code model.Code, year int) (*model.MinuteEmptyScan, error) {
+	if err := validateMinuteCode(code, year); err != nil {
+		return nil, err
+	}
 	file := filepath.Join(s.dir, "minute-scans.db")
 	if !exists(file) {
 		return nil, nil
@@ -37,6 +40,9 @@ func (s *PullStore) LoadMinuteEmptyScan(code model.Code, year int) (*model.Minut
 }
 
 func (s *PullStore) SaveMinuteEmptyScan(code model.Code, year int, scan model.MinuteEmptyScan) error {
+	if err := validateMinuteCode(code, year); err != nil {
+		return err
+	}
 	db, release, err := s.engine(filepath.Join(s.dir, "minute-scans.db"), new(emptyMinuteScan))
 	if err != nil {
 		return err

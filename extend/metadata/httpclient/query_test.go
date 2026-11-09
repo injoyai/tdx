@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -12,11 +11,7 @@ func TestGbbqHTTPEffectiveDay(t *testing.T) {
 	day := time.Date(2026, 10, 12, 0, 0, 0, 0, time.Local)
 	old := &protocol.Gbbq{Code: "sz000001", Time: day.Add(-9 * time.Hour), Category: 5, C3: 100, C4: 200}
 	current := &protocol.Gbbq{Code: "sz000001", Time: day.Add(15 * time.Hour), Category: 5, C3: 300, C4: 400}
-	snapshot, err := metadata.NewGbbq([]*protocol.Gbbq{old, current})
-	if err != nil {
-		t.Fatal(err)
-	}
-	g := &GbbqHTTP{snapshot: snapshot}
+	g := fetchTestGbbq(t, []*protocol.Gbbq{old, current})
 	for _, tc := range []struct {
 		at   time.Time
 		want int64
@@ -31,11 +26,7 @@ func TestGbbqHTTPEffectiveDay(t *testing.T) {
 
 func TestGbbqHTTPCodeForms(t *testing.T) {
 	at := time.Date(2026, 10, 19, 0, 0, 0, 0, protocol.Location())
-	snapshot, err := metadata.NewGbbq([]*protocol.Gbbq{{Code: "sz000001", Time: at, Category: 5, C3: 100, C4: 200}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	g := &GbbqHTTP{snapshot: snapshot}
+	g := fetchTestGbbq(t, []*protocol.Gbbq{{Code: "sz000001", Time: at, Category: 5, C3: 100, C4: 200}})
 	for _, code := range []string{"sz000001", "SZ000001", "sz.000001", "000001.SZ", "000001"} {
 		if got := g.GetEquity(code, at); got == nil || got.Float != 100 {
 			t.Fatalf("%s: %+v", code, got)

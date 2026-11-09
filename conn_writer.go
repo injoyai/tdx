@@ -20,6 +20,17 @@ type frameWriter struct {
 	gate   chan struct{}
 }
 
+// Write 经握手门控和请求超时写入完整字节，重连后仍使用同一入口。
+func (cn *conn) Write(p []byte) (int, error) { return cn.output.Write(p) }
+
+func (cn *conn) WriteString(s string) (int, error) { return cn.output.WriteString(s) }
+func (cn *conn) WriteByte(b byte) error            { return cn.output.WriteByte(b) }
+func (cn *conn) WriteBase64(s string) error        { return cn.output.WriteBase64(s) }
+func (cn *conn) WriteHEX(s string) error           { return cn.output.WriteHEX(s) }
+func (cn *conn) WriteJson(v any) error             { return cn.output.WriteJson(v) }
+func (cn *conn) WriteAny(v any) error              { return cn.output.WriteAny(v) }
+func (cn *conn) WriteChan(ch chan any) error       { return cn.output.WriteChan(ch) }
+
 // TCP 重复 Close 会报错，底层库因此跳过断开回调和读缓存清理。
 type closeOnceConn struct {
 	net.Conn
@@ -74,7 +85,7 @@ func (cn *conn) wrapWriter(native *client.Client) *frameWriter {
 	}
 	w := &frameWriter{writer: native.MoreWriter, conn: native.Origin(), gate: cn.writeGate}
 	cn.writer = w
-	if cn.MoreWriter == nil {
+	if cn.output == nil {
 		outer := ios.NewMoreWrite(ios.WriteFunc(func(bs []byte) (int, error) {
 			cn.waitMu.Lock()
 			timeout := cn.waitTimeout
@@ -85,7 +96,7 @@ func (cn *conn) wrapWriter(native *client.Client) *frameWriter {
 			return w.write(ctx, bs)
 		}))
 		outer.OnWrite = func(write func() error) error { return write() }
-		cn.MoreWriter = outer
+		cn.output = outer
 	}
 	cn.waitMu.Unlock()
 	return w

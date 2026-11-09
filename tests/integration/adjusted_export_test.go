@@ -46,7 +46,13 @@ func TestAdjustedIndexExportsAndIndicatorsUseLots(t *testing.T) {
 			t.Fatal("index units changed", ks[0], raw, ks.VWAP())
 		}
 		path := filepath.Join(t.TempDir(), "index.csv")
-		if err := export.KlinesToCSV(path, "sh000001", "index", ks); err != nil {
+		rowsToExport := make([]tdx.Kline, 0, len(ks))
+		for _, k := range ks {
+			amount := k.Amount
+			rowsToExport = append(rowsToExport, tdx.Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open,
+				High: k.High, Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume), Amount: &amount})
+		}
+		if err := export.KlinesToCSV(path, "sh000001", "index", rowsToExport); err != nil {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(path)

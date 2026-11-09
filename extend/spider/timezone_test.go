@@ -12,9 +12,10 @@ import (
 )
 
 type timezoneDailyClient struct {
-	tdx.Client
 	k *protocol.Kline
 }
+
+var _ DaySource = (*timezoneDailyClient)(nil)
 
 func (c *timezoneDailyClient) GetKlineDayAll(string) (*tdx.KlineResp, error) {
 	return &tdx.KlineResp{Count: 1, List: []tdx.Kline{{Time: c.k.Time.Format(time.DateOnly), Volume: protocol.ToShares(c.k.Volume), Standard: c.k}}}, nil

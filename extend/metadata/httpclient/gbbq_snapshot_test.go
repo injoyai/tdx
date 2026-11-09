@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -21,14 +22,12 @@ func TestGbbqHTTPValidatedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := string(body)
-	previous := dataHTTPClient
-	t.Cleanup(func() { dataHTTPClient = previous })
-	dataHTTPClient = &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
+	transport := &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(payload))}, nil
 	})}
-	g := &GbbqHTTP{address: "http://offline.invalid", httpUpdates: newHTTPUpdates()}
-	defer g.Close()
-	if err := g.Update(); err != nil {
+	client := New("http://offline.invalid", transport)
+	g, err := client.FetchGbbq(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -47,7 +46,7 @@ func TestGbbqHTTPValidatedSnapshot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			payload = tc.body
-			if err := g.Update(); err == nil {
+			if invalid, err := client.FetchGbbq(context.Background()); err == nil || invalid != nil {
 				t.Fatal("invalid response accepted")
 			}
 			if eq := g.GetEquity("sz000001", day); eq == nil || eq.Float != 300 {
@@ -72,7 +71,7 @@ func TestGbbqHTTPValidatedSnapshot(t *testing.T) {
 		}()
 	}
 	for i := 0; i < 20; i++ {
-		if err := g.Update(); err != nil {
+		if _, err := client.FetchGbbq(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 	}

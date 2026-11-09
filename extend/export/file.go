@@ -1,59 +1,32 @@
 package export
 
 import (
-	"bytes"
 	"encoding/csv"
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
 
 	"github.com/injoyai/conv"
 )
 
-func toCSV(data [][]interface{}) (*bytes.Buffer, error) {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteString("\xEF\xBB\xBF")
-	w := csv.NewWriter(buf)
-	for _, rows := range data {
-		if err := w.Write(conv.Strings(rows)); err != nil {
-			return nil, err
-		}
-	}
-	w.Flush()
-	return buf, nil
-}
-
-// writeFile 新建文件,会覆盖
-func writeFile(filename string, v ...interface{}) error {
-	if len(v) == 0 {
-		return os.MkdirAll(filename, 0777)
-	}
-	dir, name := filepath.Split(filename)
-	if len(dir) > 0 {
-		if err := os.MkdirAll(dir, 0777); err != nil {
-			return err
-		}
-	}
-	if len(name) == 0 {
-		return nil
+func writeCSV(filename string, rows [][]any) (err error) {
+	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+		return err
 	}
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	for _, k := range v {
-		switch r := k.(type) {
-		case nil:
-		case io.Reader:
-			if _, err = io.Copy(f, r); err != nil {
-				return err
-			}
-		default:
-			if _, err = f.Write(conv.Bytes(r)); err != nil {
-				return err
-			}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	if _, err := f.WriteString("\xEF\xBB\xBF"); err != nil {
+		return err
+	}
+	w := csv.NewWriter(f)
+	for _, row := range rows {
+		if err := w.Write(conv.Strings(row)); err != nil {
+			return err
 		}
 	}
-	return nil
+	w.Flush()
+	return w.Error()
 }

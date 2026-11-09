@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -45,7 +46,7 @@ func TestUpdateMarketsAfterClose(t *testing.T) {
 	us := &scheduledTestUnit{market: protocol.MarketUS}
 	s.units = []Unit{cn, hk, us}
 	// 旧整体标记不能挡住晚收盘市场。
-	if err := s.updated.Mark(s.updateKey("pull")); err != nil {
+	if err := s.store.SaveUpdate(s.updateKey("pull"), time.Now().Unix()); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -63,7 +64,6 @@ func TestUpdateMarketsAfterClose(t *testing.T) {
 		{"2026-01-17T15:35:00+08:00", [3]int{3, 1, 1}}, // 周六也允许一次请求。
 	} {
 		now, _ := time.Parse(time.RFC3339, tc.at)
-		before := [3]int{cn.dayCalls, hk.dayCalls, us.dayCalls}
 		if err := s.update(now, false); err != nil {
 			t.Fatal(err)
 		}
@@ -71,17 +71,104 @@ func TestUpdateMarketsAfterClose(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("%s: calls=%v want=%v", tc.at, got, tc.want)
 		}
-		for i, u := range []*scheduledTestUnit{cn, hk, us} {
+		for _, u := range []*scheduledTestUnit{cn, hk, us} {
 			if u.dayCalls != u.minCalls {
 				t.Fatal("period calls differ", u.Name())
 			}
-			if got[i] != before[i] {
-				// Mark 使用真实时钟；将持久化完成时间对齐本测试的模拟时钟。
-				if err := s.store.SaveUpdate(s.updateKey("pull:"+u.Name()), now.Unix()); err != nil {
+		}
+	}
+}
+
+func TestUpdateCompletionBoundary(t *testing.T) {
+	now := time.Date(2026, 1, 15, 15, 35, 0, 0, protocol.Location())
+	for _, tc := range []struct {
+		name   string
+		has    bool
+		offset int64
+		calls  int
+	}{
+		{"missing", false, 0, 1},
+		{"before", true, -1, 1},
+		{"exact", true, 0, 0},
+		{"after", true, 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testService(t)
+			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			s.units, s.goro = []Unit{u}, 1
+			key := s.updateKey("pull:" + u.Name())
+			if tc.has {
+				if err := s.store.SaveUpdate(key, now.Unix()+tc.offset); err != nil {
 					t.Fatal(err)
 				}
 			}
-		}
+			if err := s.update(now, false); err != nil {
+				t.Fatal(err)
+			}
+			if u.dayCalls != tc.calls || u.minCalls != tc.calls {
+				t.Fatal("completion boundary changed", u.dayCalls, u.minCalls)
+			}
+		})
+	}
+}
+
+type markerErrorStore struct {
+	storage.BarStore
+	loadErr, saveErr error
+}
+
+func (s *markerErrorStore) LoadUpdate(key string) (int64, bool, error) {
+	if s.loadErr != nil {
+		return 0, false, s.loadErr
+	}
+	return s.BarStore.LoadUpdate(key)
+}
+
+func (s *markerErrorStore) SaveUpdate(key string, unix int64) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	return s.BarStore.SaveUpdate(key, unix)
+}
+
+func TestUpdateMarkerErrorsRemainRetryable(t *testing.T) {
+	for _, stage := range []string{"load", "save"} {
+		t.Run(stage, func(t *testing.T) {
+			s := testService(t)
+			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			s.units, s.goro = []Unit{u}, 1
+			want := errors.New("marker " + stage + " failed")
+			store := &markerErrorStore{BarStore: s.store}
+			s.store = store
+			calls := 0
+			if stage == "load" {
+				store.loadErr = want
+			} else {
+				store.saveErr = want
+				calls = 1
+			}
+			now := time.Date(2026, 1, 15, 15, 35, 0, 0, protocol.Location())
+			if err := s.update(now, false); !errors.Is(err, want) {
+				t.Fatal("marker error swallowed", err)
+			}
+			if u.dayCalls != calls || u.minCalls != calls {
+				t.Fatal("unexpected fetch on marker error", u.dayCalls, u.minCalls)
+			}
+			key := s.updateKey("pull:" + u.Name())
+			if _, has, err := store.BarStore.LoadUpdate(key); err != nil || has {
+				t.Fatal("failed marker operation published completion", has, err)
+			}
+			store.loadErr, store.saveErr = nil, nil
+			if err := s.update(now, false); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.update(now, false); err != nil {
+				t.Fatal(err)
+			}
+			if u.dayCalls != calls+1 || u.minCalls != calls+1 {
+				t.Fatal("retry or deduplication failed", u.dayCalls, u.minCalls)
+			}
+		})
 	}
 }
 
@@ -121,14 +208,33 @@ func TestEarlyUpdateDoesNotSuppressAfterClose(t *testing.T) {
 		if u.dayCalls != i+1 {
 			t.Fatal("early mark suppressed after-close update", u.dayCalls)
 		}
-		if err := s.store.SaveUpdate(s.updateKey("pull:"+u.Name()), now.Unix()); err != nil {
-			t.Fatal(err)
-		}
 		if err := s.update(now, true); err != nil {
 			t.Fatal(err)
 		}
 		if u.dayCalls != i+1 {
 			t.Fatal("forced call ignored market deduplication")
 		}
+	}
+}
+
+func TestUpdateMarksOnlyItsSelectedWindow(t *testing.T) {
+	for _, tc := range []struct{ name, at, want string }{
+		{"before-close", "2026-01-15T15:34:59+08:00", "2026-01-14T15:35:00+08:00"},
+		{"after-close", "2026-01-15T20:00:00+08:00", "2026-01-15T15:35:00+08:00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testService(t)
+			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			s.units = []Unit{u}
+			now, _ := time.Parse(time.RFC3339, tc.at)
+			want, _ := time.Parse(time.RFC3339, tc.want)
+			if err := s.update(now, true); err != nil {
+				t.Fatal(err)
+			}
+			unix, has, err := s.store.LoadUpdate(s.updateKey("pull:" + u.Name()))
+			if err != nil || !has || unix != want.Unix() {
+				t.Fatal("completion certified the wrong window", unix, want.Unix(), has, err)
+			}
+		})
 	}
 }

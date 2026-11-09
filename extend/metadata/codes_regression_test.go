@@ -8,17 +8,26 @@ import (
 )
 
 func TestCodesSnapshotRace(t *testing.T) {
-	cs := NewCodes(nil)
+	cs, err := NewCodes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	a := []*model.CodeModel{{Exchange: "sh", Code: "600000"}}
 	b := []*model.CodeModel{{Exchange: "sz", Code: "000001"}}
-	cs.Update(a)
+	if err := cs.Update(a); err != nil {
+		t.Error(err)
+	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 1000; i++ {
-			cs.Update(a)
-			cs.Update(b)
+			if err := cs.Update(a); err != nil {
+				t.Error(err)
+			}
+			if err := cs.Update(b); err != nil {
+				t.Error(err)
+			}
 		}
 	}()
 	go func() {

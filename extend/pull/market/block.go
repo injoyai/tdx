@@ -27,7 +27,8 @@ func (u *Block) Codes(s *pull.Service) ([]model.Code, error) {
 		return nil, err
 	}
 	var blocks []*protocol.Block
-	err = pool.Do(func(c tdx.Client) error {
+	err = pool.DoContext(s.Context(), func(c tdx.Client) error {
+		c = tdx.WithContext(s.Context(), c)
 		var err error
 		blocks, err = c.GetBlockDataWithIndex(protocol.BlockFileZS)
 		return err

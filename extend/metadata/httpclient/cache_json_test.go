@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -24,8 +25,6 @@ type failedBody struct{}
 func (failedBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
 func TestHTTPCacheJSONValidation(t *testing.T) {
-	previous := dataHTTPClient
-	t.Cleanup(func() { dataHTTPClient = previous })
 	for _, kind := range []string{"codes", "gbbq"} {
 		for _, mode := range []string{"valid", "empty", "null", "malformed", "trailing", "status", "read error"} {
 			t.Run(kind+"/"+mode, func(t *testing.T) {
@@ -50,7 +49,7 @@ func TestHTTPCacheJSONValidation(t *testing.T) {
 					payload += ` {}`
 				}
 				closed := false
-				dataHTTPClient = &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
+				transport := &http.Client{Transport: dataRoundTrip(func(*http.Request) (*http.Response, error) {
 					status := 200
 					if mode == "status" {
 						status = 503
@@ -62,10 +61,15 @@ func TestHTTPCacheJSONValidation(t *testing.T) {
 					return &http.Response{StatusCode: status, Body: trackedBody{reader, &closed}}, nil
 				})}
 				if kind == "codes" {
-					c := &CodesHTTP{Codes: metadata.NewCodes(nil), address: "http://offline.invalid", httpUpdates: newHTTPUpdates()}
-					defer c.Close()
-					c.Codes.Update(model.CodeModels{{Exchange: "sz", Code: "000001", Name: "old"}})
-					err := c.Update()
+					client := New("http://offline.invalid", transport)
+					c, err := metadata.NewCodes(model.CodeModels{{Exchange: "sz", Code: "000001", Name: "old"}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					fresh, err := client.FetchCodes(context.Background())
+					if err == nil {
+						c = fresh
+					}
 					if (err == nil) != ok {
 						t.Fatal(err)
 					}
@@ -85,9 +89,13 @@ func TestHTTPCacheJSONValidation(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					c := &GbbqHTTP{address: "http://offline.invalid", httpUpdates: newHTTPUpdates(), snapshot: snapshot}
-					defer c.Close()
-					err = c.Update()
+					client := New("http://offline.invalid", transport)
+					c := snapshot
+					fresh, fetchErr := client.FetchGbbq(context.Background())
+					err = fetchErr
+					if err == nil {
+						c = fresh
+					}
 					if (err == nil) != ok {
 						t.Fatal(err)
 					}

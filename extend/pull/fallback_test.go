@@ -12,7 +12,7 @@ func TestMinuteFallbackSchemaAndSource(t *testing.T) {
 	s := testService(t)
 	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
 	day := time.Date(2025, 1, 6, 0, 0, 0, 0, time.Local)
-	if err := s.SaveMinuteComplete(c, 2025, day.Format("2006-01-02 15:04"), []*model.KlineMinute{{Time: day.Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 100, Amount: 100}}); err != nil {
+	if err := s.SaveMinuteComplete(c, 2025, day.Format("2006-01-02 15:04"), []*model.KlineMinute{{Time: day.Format("2006-01-02 15:04"), Open: 1, High: 1, Low: 1, Close: 1, Volume: 100, Amount: testAmount(100)}}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.QueryMinute(c, day.Format("2006-01-02 15:04"), day.AddDate(0, 0, 1).Format("2006-01-02 15:04"))

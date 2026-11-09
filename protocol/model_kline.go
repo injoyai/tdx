@@ -9,26 +9,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/injoyai/base/types"
 	"github.com/injoyai/conv"
 )
-
-type KlineReq struct {
-	Exchange Exchange
-	Code     string
-	Start    uint16
-	Count    uint16
-}
-
-func (r *KlineReq) Bytes(category uint8) (types.Bytes, error) {
-	if r.Count > 800 {
-		return nil, errors.New("单次数量不能超过800")
-	}
-	if len(r.Code) != 6 {
-		return nil, errors.New("股票代码长度错误")
-	}
-	return klineData(r.Exchange, r.Code, r.Start, r.Count, category), nil
-}
 
 func klineData(exchange Exchange, code string, start, count uint16, category uint8) []byte {
 	data := make([]byte, 20+len(code))
@@ -63,18 +45,21 @@ type Kline struct {
 }
 
 func (k *Kline) String() string {
-	return fmt.Sprintf("%s 昨收盘：%.3f 开盘价：%.3f 最高价：%.3f 最低价：%.3f 收盘价：%.3f 涨跌：%.3f 涨跌幅：%0.2f 成交量：%s 成交额：%s 涨跌数: %d/%d",
+	rise := "不可计算"
+	if rate, available := k.RiseRate(); available {
+		if percent := rate * 100; math.IsInf(percent, 0) {
+			rise = "超出显示范围"
+		} else {
+			rise = fmt.Sprintf("%.2f", percent)
+		}
+	}
+	return fmt.Sprintf("%s 昨收盘：%.3f 开盘价：%.3f 最高价：%.3f 最低价：%.3f 收盘价：%.3f 涨跌：%.3f 涨跌幅：%s 成交量：%s 成交额：%s 涨跌数: %d/%d",
 		k.Time.Format("2006-01-02 15:04:05"),
 		k.Last, k.Open, k.High, k.Low, k.Close,
-		k.RisePrice(), k.RiseRate(),
+		k.RisePrice(), rise,
 		Int64UnitString(k.Volume), FloatUnitString(k.Amount),
 		k.UpCount, k.DownCount,
 	)
-}
-
-// Amplitude 返回最高价与最低价之差，单位与价格相同（元/指数点），不是百分比。
-func (k *Kline) Amplitude() float64 {
-	return k.High - k.Low
 }
 
 // MaxDifference 返回最高价与最低价之差，单位与价格相同（元/指数点）。
@@ -92,12 +77,23 @@ func (k *Kline) RisePrice() float64 {
 
 }
 
-// RiseRate 返回涨跌幅百分数（1 表示 1%）；无昨收时相对开盘价计算。
-func (k *Kline) RiseRate() float64 {
-	if k.Last == 0 {
-		return (k.Close - k.Open) / k.Open * 100
+// RiseRate 返回涨跌比例及可用性（0.01 表示 1%）；无昨收时相对开盘价计算。
+func (k *Kline) RiseRate() (float64, bool) {
+	if k == nil {
+		return 0, false
 	}
-	return (k.Close - k.Last) / k.Last * 100
+	base := k.Last
+	if base == 0 {
+		base = k.Open
+	}
+	if base == 0 {
+		return 0, false
+	}
+	rate := (k.Close - base) / base
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return 0, false
+	}
+	return rate, true
 }
 
 type kline struct{}

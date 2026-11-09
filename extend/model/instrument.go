@@ -10,8 +10,8 @@ type Code struct {
 }
 
 // Key 返回带完整市场前缀的唯一键，如 sh600000 / HK00700 / US.AAPL /
-// future.cff/IF2609 / hk/index.HSI。用于日志/进度条显示，天然避免跨市场撞名；
-// 注意存储文件名不用它（见 FileName，目录已含市场信息，文件名用原始代码）。
+// cn/future.cff/IF2609 / hk/index.HSI。用于日志/进度条显示，天然避免跨市场撞名；
+// 存储文件名由 storage/sqlite 决定，目录已含市场信息，文件名用原始代码。
 func (c Code) Key() string {
 	switch c.Market {
 	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther:

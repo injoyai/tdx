@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -21,7 +22,7 @@ func marketTestClient(t *testing.T, std, ex func([]byte, []byte) []byte) *Market
 	c := newMarketClient()
 	for j, serve := range []func([]byte, []byte) []byte{std, ex} {
 		index, respond := j, serve
-		c.dial[index] = func() (protocolClient, error) {
+		c.dial[index] = func(_ context.Context) (protocolClient, error) {
 			if respond == nil {
 				t.Error("unexpected connection")
 				return nil, errors.New("unexpected connection")
@@ -322,8 +323,8 @@ func TestMarketClientLazyLifecycleAndFailures(t *testing.T) {
 	c := newMarketClient()
 	var dials atomic.Int32
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{5, 0} })
-	c.dial[0] = func() (protocolClient, error) { dials.Add(1); return std, nil }
-	c.dial[1] = func() (protocolClient, error) {
+	c.dial[0] = func(_ context.Context) (protocolClient, error) { dials.Add(1); return std, nil }
+	c.dial[1] = func(_ context.Context) (protocolClient, error) {
 		t.Error("unused extended protocol was connected")
 		return nil, io.ErrClosedPipe
 	}
@@ -418,8 +419,8 @@ func TestMarketClientMinuteCategories(t *testing.T) {
 func TestMarketClientDialFailureDoesNotPoisonOtherProtocol(t *testing.T) {
 	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
-	c.dial[0] = func() (protocolClient, error) { return std, nil }
-	c.dial[1] = func() (protocolClient, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func(_ context.Context) (protocolClient, error) { return std, nil }
+	c.dial[1] = func(_ context.Context) (protocolClient, error) { return nil, io.ErrClosedPipe }
 	defer c.Close()
 	if _, err := c.GetKlineDay("hk00700", 0, 1); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal(err)
@@ -475,13 +476,13 @@ func TestMarketClientKlinePagination(t *testing.T) {
 func TestMarketClientSlowDialKeepsOtherProtocolUsable(t *testing.T) {
 	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
-	c.dial[0] = func() (protocolClient, error) { return std, nil }
+	c.dial[0] = func(_ context.Context) (protocolClient, error) { return std, nil }
 	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
 	dialDone := make(chan error, 1)
-	c.dial[1] = func() (protocolClient, error) {
+	c.dial[1] = func(_ context.Context) (protocolClient, error) {
 		close(started)
 		<-release
 		return nil, io.ErrClosedPipe
@@ -512,13 +513,13 @@ func TestMarketClientCloseDuringDialDiscardsLateConnection(t *testing.T) {
 	c := newMarketClient()
 	std := respondingTestClient(t, false, func(_, _ []byte) []byte { return []byte{2, 0} })
 	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
-	c.dial[0] = func() (protocolClient, error) { return std, nil }
+	c.dial[0] = func(_ context.Context) (protocolClient, error) { return std, nil }
 	if _, err := c.GetCount(protocol.ExchangeSZ); err != nil {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
 	dialDone := make(chan error, 1)
-	c.dial[1] = func() (protocolClient, error) { close(started); <-release; return ex, nil }
+	c.dial[1] = func(_ context.Context) (protocolClient, error) { close(started); <-release; return ex, nil }
 	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
 	<-started
 	closeDone := make(chan error, 1)
@@ -557,7 +558,7 @@ func TestMarketClientTimeoutChangedDuringDial(t *testing.T) {
 	c := newMarketClient()
 	ex := respondingTestClient(t, true, func(_, _ []byte) []byte { return make([]byte, 20) })
 	started, release := make(chan struct{}), make(chan struct{})
-	c.dial[1] = func() (protocolClient, error) { close(started); <-release; return ex, nil }
+	c.dial[1] = func(_ context.Context) (protocolClient, error) { close(started); <-release; return ex, nil }
 	dialDone := make(chan error, 1)
 	go func() { _, err := c.connection(protocol.ExchangeHK); dialDone <- err }()
 	<-started
@@ -583,7 +584,7 @@ func TestMarketClientTimeoutChangedDuringDial(t *testing.T) {
 func TestMarketClientCloseDuringTypedNilDial(t *testing.T) {
 	c := newMarketClient()
 	started, release := make(chan struct{}), make(chan struct{})
-	c.dial[0] = func() (protocolClient, error) {
+	c.dial[0] = func(_ context.Context) (protocolClient, error) {
 		close(started)
 		<-release
 		return (*StConn)(nil), nil
@@ -629,7 +630,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 	}
 	t.Cleanup(func() { api.Close() })
 	var std, ex atomic.Int32
-	m.dial[0] = func() (protocolClient, error) {
+	m.dial[0] = func(_ context.Context) (protocolClient, error) {
 		return respondingTestClient(t, false, func(h, b []byte) []byte {
 			std.Add(1)
 			switch binary.LittleEndian.Uint16(h[10:]) {
@@ -668,7 +669,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 			}
 		}), nil
 	}
-	m.dial[1] = func() (protocolClient, error) {
+	m.dial[1] = func(_ context.Context) (protocolClient, error) {
 		return respondingTestClient(t, true, func(h, b []byte) []byte {
 			ex.Add(1)
 			if binary.LittleEndian.Uint16(h[10:]) != protocol.TypeExQuote {
@@ -759,7 +760,7 @@ func TestClientInterfaceRejectsUnsupportedCapabilities(t *testing.T) {
 	defer unified.Close()
 	m := unified.(*MarketClient)
 	var dials atomic.Int32
-	m.dial[0] = func() (protocolClient, error) { dials.Add(1); return nil, io.ErrClosedPipe }
+	m.dial[0] = func(_ context.Context) (protocolClient, error) { dials.Add(1); return nil, io.ErrClosedPipe }
 	if _, err := unified.GetFinanceInfo(protocol.ExchangeHK, "00700"); err == nil {
 		t.Fatal("HK finance accepted")
 	}
@@ -815,7 +816,7 @@ func TestClientInterfaceCloseStopsReconnection(t *testing.T) {
 		}
 	}
 	select {
-	case <-native.Runner2.Done():
+	case <-native.native.Runner2.Done():
 	default:
 		t.Fatal("Close left reconnect loop running")
 	}
@@ -850,7 +851,7 @@ func TestMarketClientRejectsWrongDialProtocol(t *testing.T) {
 		m := newMarketClient()
 		t.Cleanup(func() { m.Close() })
 		wrong := respondingTestClient(t, true, func(_, _ []byte) []byte { return nil })
-		m.dial[0] = func() (protocolClient, error) {
+		m.dial[0] = func(_ context.Context) (protocolClient, error) {
 			if empty {
 				return nil, nil
 			}
@@ -901,7 +902,7 @@ func TestUnifiedMarketDiscovery(t *testing.T) {
 	}
 	failed := newMarketClient()
 	t.Cleanup(func() { failed.Close() })
-	failed.dial[1] = func() (protocolClient, error) { return nil, io.ErrUnexpectedEOF }
+	failed.dial[1] = func(_ context.Context) (protocolClient, error) { return nil, io.ErrUnexpectedEOF }
 	if r, err = failed.GetMarkets(); !errors.Is(err, io.ErrUnexpectedEOF) || r != nil {
 		t.Fatal("returned incomplete discovery", r, err)
 	}

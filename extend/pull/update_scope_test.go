@@ -103,10 +103,7 @@ func TestUpdateIgnoresLegacyUnscopedMarkers(t *testing.T) {
 	u := &scopeTestUnit{mockUnit: mockUnit{name: "test"}}
 	s.units = []Unit{u}
 	for _, key := range []string{"pull", "pull:test"} {
-		if _, err := s.updated.IsUpdated(key); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.updated.Mark(key); err != nil {
+		if err := s.store.SaveUpdate(key, time.Now().Unix()); err != nil {
 			t.Fatal(err)
 		}
 	}

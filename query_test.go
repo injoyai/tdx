@@ -1,6 +1,7 @@
 package tdx
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -502,7 +503,7 @@ func TestUnifiedTradePaging(t *testing.T) {
 	}
 	c := newMarketClient()
 	defer c.Close()
-	c.dial[0] = func() (protocolClient, error) { return nil, io.ErrClosedPipe }
+	c.dial[0] = func(context.Context) (protocolClient, error) { return nil, io.ErrClosedPipe }
 	if r, err := c.GetTradeAll("sz000001"); r != nil || !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatal("partial result returned", r, err)
 	}
@@ -591,9 +592,9 @@ func TestUnifiedAuctionMinute(t *testing.T) {
 	if r.List[0].Standard.Amount != 1000 || *r.List[0].Amount != 1000 {
 		t.Fatal("auction amount units changed", r)
 	}
-	before := c.Info.WriteCount
+	before := c.native.Info.WriteCount
 	for _, code := range []string{"hk00700", "sh000001", "sz123126"} {
-		if _, err = c.GetKlineMinute241Until(code, func(Kline) bool { return false }); err == nil || c.Info.WriteCount != before {
+		if _, err = c.GetKlineMinute241Until(code, func(Kline) bool { return false }); err == nil || c.native.Info.WriteCount != before {
 			t.Fatal("unsupported auction sent request", code, err)
 		}
 	}

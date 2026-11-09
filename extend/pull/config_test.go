@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -19,8 +21,7 @@ func TestServiceRejectsTypedNilDependencies(t *testing.T) {
 	}{
 		{"Pool", func(c *Config) { c.Pool = (*tdx.Pool)(nil) }},
 		{"ExPool", func(c *Config) { c.ExPool = (*tdx.Pool)(nil) }},
-		{"CodesStore", func(c *Config) { c.CodesStore = (*sqlite.Metadata)(nil) }},
-		{"GbbqStore", func(c *Config) { c.GbbqStore = (*sqlite.Metadata)(nil) }},
+		{"Store", func(c *Config) { c.Store = (*sqlite.PullStore)(nil) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), "data")
@@ -36,7 +37,7 @@ func TestServiceRejectsTypedNilDependencies(t *testing.T) {
 	}
 }
 
-func TestMetadataStoresDoNotChangeBarScope(t *testing.T) {
+func TestListCodesDoesNotChangeBarScope(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	for _, day := range []bool{false, true} {
 		cfg := Config{Store: testStore(t.TempDir()), Codes: []string{"test.one"}, Day: day, Minute: true}
@@ -45,7 +46,7 @@ func TestMetadataStoresDoNotChangeBarScope(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer plain.Close()
-		cfg.GbbqStore = &sqlite.Metadata{}
+		cfg.ListCodes = func(ctx context.Context) ([]model.Code, error) { return nil, ctx.Err() }
 		enriched, err := New(&cfg)
 		if err != nil {
 			t.Fatal(err)

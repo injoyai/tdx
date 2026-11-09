@@ -58,7 +58,6 @@ func (code) Decode(bs []byte) (*CodeResp, error) {
 			Decimal:   int8(bs[20]),
 			LastPrice: float32Value(Uint32(bs[21:25])),
 		}
-		//logs.Debug(bs[25:29]) //26和28字节 好像是枚举(基本是44,45和34,35)
 		bs = bs[29:]
 		resp.List = append(resp.List, sec)
 	}

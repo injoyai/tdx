@@ -12,7 +12,7 @@ import (
 
 // querySource 提供分页与历史查询依赖的基本操作。
 type querySource interface {
-	GetKline(category uint8, code string, start, count uint16) (*KlineResp, error)
+	KlineReader
 	minutePage(date, code string) (*MinuteResp, error)
 	tradePage(date, code string, start, count uint16) (*TradeResp, error)
 }

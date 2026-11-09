@@ -4,9 +4,11 @@
 
 ## 独立代码与股本服务
 
-`ListenCodesHTTP(port, ...codes.Option)` 启动独立代码表服务，提供 `/codes`、`/stocks`、`/etfs`、`/indexes`。`ListenCodesAndGbbqHTTP(port, []codes.Option, []gbbq.Option)` 额外提供 `/gbbqs`。这两个入口返回原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不向 `New` 创建的行情服务自动注册路由。
+`CodesHandler(index, equity)` 接收现成查询快照，提供 `/codes`、`/stocks`、`/etfs`、`/indexes`；equity 非 nil 时额外提供 `/gbbqs`。应用将 Handler 挂载到自己的 http.Server，并管理监听和关闭。返回格式保持原始 JSON 列表或映射，不使用下文行情服务的 `code/msg/data` 包装，也不自动注册到行情服务。原 ListenCodesHTTP、ListenCodesAndGbbqHTTP 已删除。
 
-客户端使用 `extend/metadata/httpclient` 的 `DialCodesHTTP(address, spec...)` 或 `DialGbbqHTTP(address, spec...)`，使用后调用 `Close()` 停止刷新和取消在途请求。服务端接收调用方提供的查询快照，不创建缓存；快照发布和资源关闭由调用方负责，路由按路径匹配，允许携带查询参数。实现见 [服务端入口](metadata.go) 和 [元数据客户端](../metadata/httpclient/cache.go)。
+代码来源只需实现 `Snapshot() model.CodeModels`，可直接传入 `*metadata.Codes`。每次代码请求只读取一次独立快照；`/codes` 保留快照顺序并返回全部证券，包括债券和未归入股票／ETF／指数的品种。分类路由在同一次快照上筛选，空结果为 `[]`。自定义来源须保证返回记录由请求独立持有。
+
+客户端使用 `httpclient.New(address, client)`，再显式调用 `FetchCodes(ctx)` 或 `FetchGbbq(ctx)`。应用安排刷新、发布查询快照，取消通过请求 context 传播。路由按路径匹配，允许携带查询参数。实现见 [服务端入口](metadata.go) 和 [元数据客户端](../metadata/httpclient/client.go)。
 
 ## 快速开始
 
@@ -62,7 +64,7 @@ func main() {
 
 使用完成后调用 `s.Close()`，同时关闭 HTTP 服务及其标准、扩展行情连接池。初始化失败会释放已创建的连接池。启动时只创建配置的连接池，不再初始化全局 `全局代码缓存`、元数据数据库或额外定时任务；报价所需的精度元数据由标准连接按需获取。
 
-客户端断开或取消请求后，会退出连接池等待，不会继续占用排队名额。已经开始的上游查询仍受通达信客户端请求超时约束。
+客户端断开或取消请求后，会退出连接池等待，并取消原生客户端的响应等待与后续分页。等待响应时取消保留共享连接；发送中断可能留下半帧时关闭当次传输。
 
 ## 响应格式
 
@@ -262,7 +264,7 @@ curl "http://localhost:8080/quote?codes=hk00700,cffIF2609"
 | `/minute/*` | `tdx.MinuteResp` |
 | `/trade/*` | `tdx.TradeResp`；扩展价格尺度未确认时 `Price=null` |
 
-单代码查询按证券前缀选择标准或扩展连接池；混合报价保持输入顺序与重复项，任一查询失败返回错误，不返回部分结果。取消请求会退出连接池等待。扩展池未配置时拒绝扩展品种查询。
+单代码查询按证券前缀选择标准或扩展连接池；混合报价保持输入顺序与重复项，任一查询失败返回错误，不返回部分结果。取消请求会退出连接池等待，并取消原生客户端的响应等待与后续分页。扩展池未配置时拒绝扩展品种查询。
 
 `/code` 的 `count` 必填且为 1..1000，`start` 为 uint32，表示指定交易所内的偏移。`/count`、`/code` 与原始 `/ex/count`、`/ex/instruments` 的全市场语义不同，后两者是独立的协议发现能力。
 

@@ -1,13 +1,14 @@
 # 元数据内存查询
 
-本包集中提供证券索引、历史股本与复权查询、中国市场历史日历。三个对象独立构造，按需使用；不联网、不读写数据库、不启动后台任务，无需 Close。数据获取使用 Client 或 pull，同步与持久化契约见[数据架构](../../docs/data-architecture.md)和[存储接口](../../docs/storage.md)。
+本包集中提供证券索引、历史股本与复权查询、中国市场历史日历。三个对象独立构造，按需使用；不联网、不读写数据库、不启动后台任务，无需 Close。数据获取使用 Client 或 pull.Fetch*，持久化由应用选择；数据边界见[数据架构](../../docs/data-architecture.md)和[存储接口](../../docs/storage.md)。
 
-需要从 HTTP 服务刷新数据时，显式导入独立子包 [httpclient](httpclient/README.md)；该子包持有请求与定时任务，需 Close。导入本包不会自动引入 HTTP 客户端。
+需要从 HTTP 服务获取数据时，显式导入独立子包 [httpclient](httpclient/README.md)，通过 FetchCodes(ctx)/FetchGbbq(ctx) 获得完整查询快照。刷新调度和快照发布由应用负责，客户端不需要 Close。导入本包不会自动引入 HTTP 客户端。
 
 ```go
 import "github.com/injoyai/tdx/v2/extend/metadata"
 
-index := metadata.NewCodes(codeSnapshot.Rows)
+index, err := metadata.NewCodes(codeSnapshot.Rows)
+if err != nil { return err }
 name := index.GetName("sh600000")
 
 equity, err := metadata.NewGbbq(eventSnapshot.Rows)
@@ -22,6 +23,8 @@ observed, covered := calendar.Status(at)
 ## 证券代码
 
 Codes 提供 Get、GetName、Iter、GetStocks、GetETFs、GetIndexes 及对应代码列表查询。记录直接使用 model.CodeModel；NewCodes(nil) 创建空索引。HTTP 客户端复用该实现。
+
+Snapshot 在一次加锁内复制完整列表，保留输入顺序，包含债券和其他未分类品种；返回切片与记录可由调用方修改。NewCodes 返回 (*Codes, error)，Update 返回 error；两者均先完整校验，再构造或原子替换内存索引。空行、非规范代码及重复证券返回错误，Update 失败保留旧快照。查询输入仍支持标准证券别名。pull、HTTP 客户端和 SQLite 快照入口复用同一校验规则。
 
 构造、Update 和读取均复制记录。Update 只替换内存快照，不触发数据同步；并发读取与更新受保护。代码输入的标准市场规范化复用 model.StandardCode。当前代码表不等于完整历史证券池。
 

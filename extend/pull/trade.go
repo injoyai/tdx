@@ -3,11 +3,11 @@ package pull
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"time"
 
 	"github.com/injoyai/conv"
-	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/export"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -30,8 +30,15 @@ type Trade struct {
 	CodeName func(string) string // 可选，仅用于导出证券名称
 }
 
-func (p *Trade) Pull(ctx context.Context, code string) error {
-	for i := 2000; i <= time.Now().Year(); i++ {
+// Pull 下载明确年份范围（含两端）。
+func (p *Trade) Pull(ctx context.Context, startYear, endYear int, code string) error {
+	if ctx == nil {
+		return fmt.Errorf("pull: nil context")
+	}
+	if startYear < 1 || endYear > 9999 || startYear > endYear {
+		return fmt.Errorf("pull: 无效年份范围 %d..%d", startYear, endYear)
+	}
+	for i := startYear; i <= endYear; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -45,14 +52,23 @@ func (p *Trade) Pull(ctx context.Context, code string) error {
 }
 
 func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error) {
+	if ctx == nil {
+		return fmt.Errorf("pull: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if year < 1 || year > 9999 {
+		return fmt.Errorf("pull: 无效年份 %d", year)
+	}
 	if isNil(p.Pool) {
 		return fmt.Errorf("pull: 历史分笔下载需要配置 Pool")
 	}
-	if p.Workday == nil {
+	if isNil(p.Workday) {
 		return fmt.Errorf("pull: 历史分笔下载需要配置 Workday")
 	}
 
-	tss := protocol.Trades{}
+	tss := []tdx.Trade{}
 	kss1 := protocol.Klines(nil)
 
 	p.Workday.RangeYear(year, func(t time.Time) bool {
@@ -66,24 +82,33 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 
 		date := t.Format("20060102")
 
-		var resp *protocol.TradeResp
-		err = p.Pool.Do(func(c tdx.Client) error {
+		var resp *tdx.TradeResp
+		err = p.Pool.DoContext(ctx, func(c tdx.Client) error {
+			c = tdx.WithContext(ctx, c)
 			r, err := c.GetHistoryTradeDay(date, code)
 			if err != nil {
 				return err
 			}
-			resp, err = r.StandardResponse()
-			return err
+			resp = r
+			return nil
 		})
+		if err == nil {
+			err = ctx.Err()
+		}
 		if err != nil {
-			logs.Err(err)
+			slog.Error("拉取历史分笔失败", "code", code, "date", date, "err", err)
 			return false
 		}
 
 		tss = append(tss, resp.List...)
 
-		//转成分时K线
-		ks := resp.List.Klines()
+		// 竞价／午休合成继续复用标准算法，CSV 使用统一业务字段。
+		raw, rawErr := resp.StandardResponse()
+		if rawErr != nil {
+			err = rawErr
+			return false
+		}
+		ks := raw.List.Klines()
 
 		kss1 = append(kss1, ks...)
 
@@ -92,6 +117,9 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 
 	if err != nil {
 		return
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	filename := code + "-" + conv.String(year) + ".csv"
@@ -110,7 +138,13 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 		if period > 1 {
 			ks = kss1.Merge241(period)
 		}
-		if err := export.KlinesToCSV(filepath.Join(p.Dir, conv.String(period)+"分钟", filename), code, name, ks); err != nil {
+		rows := make([]tdx.Kline, 0, len(ks))
+		for _, k := range ks {
+			amount := k.Amount
+			rows = append(rows, tdx.Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,
+				Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume), Amount: &amount})
+		}
+		if err := export.KlinesToCSV(filepath.Join(p.Dir, conv.String(period)+"分钟", filename), code, name, rows); err != nil {
 			return err
 		}
 	}

@@ -18,6 +18,7 @@ import (
 type ExConn struct {
 	*conn
 	*queries
+	requestCtx context.Context
 }
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
@@ -109,11 +110,28 @@ func (c *ExConn) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 	if err := protocolExchange(ex, true); err != nil {
 		return nil, err
 	}
-	total, err := c.getExtendedCount()
+	items, err := c.GetInstruments()
 	if err != nil {
 		return nil, err
 	}
 	out := &CodeResp{List: []Code{}}
+	for j := range items {
+		k := &items[j]
+		if k.Market == ex.Uint8() {
+			out.List = append(out.List, Code{Instrument: protocol.Instrument{Exchange: ex, Code: k.Code}, Name: k.Name, Extended: k})
+		}
+	}
+	out.Count = len(out.List)
+	return out, nil
+}
+
+// GetInstruments 读取全局品种表；先取总数，拒绝缺页，不增加跨查询缓存。
+func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
+	total, err := c.getExtendedCount()
+	if err != nil {
+		return nil, err
+	}
+	out := []protocol.ExInstrument{}
 	for start := 0; start < total; {
 		count := min(800, total-start)
 		items, err := c.getExtendedInstruments(uint32(start), uint16(count))
@@ -123,15 +141,9 @@ func (c *ExConn) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 		if len(items) == 0 || len(items) > count {
 			return nil, fmt.Errorf("扩展品种分页 %d 不完整: %w", start, io.ErrUnexpectedEOF)
 		}
-		for j := range items {
-			k := &items[j]
-			if k.Market == ex.Uint8() {
-				out.List = append(out.List, Code{Instrument: protocol.Instrument{Exchange: ex, Code: k.Code}, Name: k.Name, Extended: k})
-			}
-		}
+		out = append(out, items...)
 		start += len(items)
 	}
-	out.Count = len(out.List)
 	return out, nil
 }
 
@@ -523,8 +535,12 @@ func dialExWith(dial ios.DialFunc, op ...client.Option) (cli *ExConn, err error)
 }
 
 func dialEx(ctx context.Context, dial ios.DialFunc, op ...client.Option) (*ExConn, error) {
+	return dialExContexts(ctx, ctx, dial, op...)
+}
+
+func dialExContexts(lifecycle, initial context.Context, dial ios.DialFunc, op ...client.Option) (*ExConn, error) {
 	c := newExConn(nil)
-	core, err := dialWith(ctx, dial, 10*time.Second, protocol.MEx.FrameSetup, protocol.MEx.FrameCount, c.decode, op...)
+	core, err := dialWithContexts(lifecycle, initial, dial, 10*time.Second, protocol.MEx.FrameSetup, protocol.MEx.FrameCount, c.decode, op...)
 	if err != nil {
 		return nil, err
 	}

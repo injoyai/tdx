@@ -8,15 +8,10 @@ import (
 	"github.com/injoyai/base/safe"
 )
 
-type (
-	ClientPool interface {
-		Get() (Client, error)
-		Put(c Client)
-		Do(fn func(c Client) error) error
-		Go(fn func(c Client)) error
-	}
-	DialPoolFunc = func() (ClientPool, error)
-)
+type ClientPool interface {
+	// DoContext 取消连接等待；原生客户端的请求视图也支持取消，不关闭共享生命周期。
+	DoContext(context.Context, func(Client) error) error
+}
 
 // NewPool 简易版本的连接池
 func NewPool(dial func() (Client, error), number int) (*Pool, error) {
@@ -112,7 +107,7 @@ func (p *Pool) Do(fn func(c Client) error) error {
 	return p.DoContext(context.Background(), fn)
 }
 
-// DoContext 支持取消连接等待；已经开始的 fn 仍由其自身超时控制。
+// DoContext passes a request view to fn; the original connection is returned to the pool.
 func (p *Pool) DoContext(ctx context.Context, fn func(c Client) error) error {
 	c, err := p.GetContext(ctx)
 	if err != nil {
@@ -122,7 +117,7 @@ func (p *Pool) DoContext(ctx context.Context, fn func(c Client) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return fn(c)
+	return fn(WithContext(ctx, c))
 }
 
 func (p *Pool) Go(fn func(c Client)) error {

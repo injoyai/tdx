@@ -18,8 +18,13 @@ type metadataPool struct {
 	closed bool
 }
 
-func (p *metadataPool) Do(f func(tdx.Client) error) error { return f(p.c) }
-func (p *metadataPool) Close() error                      { p.closed = true; return nil }
+func (p *metadataPool) DoContext(ctx context.Context, f func(tdx.Client) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f(p.c)
+}
+func (p *metadataPool) Close() error { p.closed = true; return nil }
 
 type metadataCodes struct {
 	*metadata.Codes
@@ -39,14 +44,20 @@ func (*metadataClient) GetKlineUntil(uint8, string, func(tdx.Kline) bool) (*tdx.
 
 func TestDirectMetadataDependencies(t *testing.T) {
 	pool := &metadataPool{c: &metadataClient{}}
-	cache := &metadataCodes{Codes: metadata.NewCodes(nil)}
-	cache.Update([]*model.CodeModel{
+	index, err := metadata.NewCodes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := &metadataCodes{Codes: index}
+	if err := cache.Update([]*model.CodeModel{
 		{Exchange: "sz", Code: "000001", Name: "股票"},
 		{Exchange: "sh", Code: "000001", Name: "指数"},
 		{Exchange: "sh", Code: "510300", Name: "基金"},
 		{Exchange: "sh", Code: "110075", Name: "可转债"},
 		{Exchange: "sh", Code: "019001", Name: "其他债券"},
-	})
+	}); err != nil {
+		t.Error(err)
+	}
 	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101",
 		Pool: pool, ListCodes: func(context.Context) ([]model.Code, error) {
 			list := []model.Code{}
@@ -92,7 +103,9 @@ func TestDirectMetadataDependencies(t *testing.T) {
 	}
 
 	// 下一轮读取同一个缓存的新快照，不复制成永久不变的代码表。
-	cache.Update([]*model.CodeModel{{Exchange: "sh", Code: "600000", Name: "新股票"}})
+	if err := cache.Update([]*model.CodeModel{{Exchange: "sh", Code: "600000", Name: "新股票"}}); err != nil {
+		t.Error(err)
+	}
 	u, _ := pull.Get(protocol.MarketAStock.String())
 	list, err := u.Codes(s)
 	if err != nil || len(list) != 1 || list[0].Code != "sh600000" {
@@ -115,7 +128,7 @@ func TestMissingStandardDependencies(t *testing.T) {
 	for _, market := range []protocol.Market{protocol.MarketAStock, protocol.MarketIndex,
 		protocol.MarketEtfLof, protocol.MarketBond, protocol.MarketOther} {
 		u, _ := pull.Get(market.String())
-		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "CodesStore") {
+		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "ListCodes") {
 			t.Fatalf("missing cache %s: %v", market, err)
 		}
 	}

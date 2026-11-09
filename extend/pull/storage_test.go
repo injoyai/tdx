@@ -150,7 +150,7 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 	if empty, err := s.MinuteYearRecentlyEmpty(c, 2024, "2024-01-01 00:00", now); err != nil || !empty {
 		t.Fatal(empty, err)
 	}
-	if err := s.updated.Mark(s.updateKey("pull:test")); err != nil {
+	if err := s.Update(true); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.marks) != 1 {

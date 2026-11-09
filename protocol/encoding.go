@@ -9,11 +9,6 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-// String 字节先转小端,再转字符
-func String(bs []byte) string {
-	return string(Reverse(bs))
-}
-
 // Bytes 任意类型转小端字节
 func Bytes(n any) []byte {
 	return Reverse(conv.Bytes(n))

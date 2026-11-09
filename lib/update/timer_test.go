@@ -10,8 +10,6 @@ import (
 
 type updateFunc func() error
 
-func (f updateFunc) Update() error { return f() }
-
 func TestStartTimerStop(t *testing.T) {
 	for _, retry := range []bool{false, true} {
 		t.Run(map[bool]string{false: "in-flight", true: "retry-wait"}[retry], func(t *testing.T) {
@@ -71,6 +69,9 @@ func TestStartTimerStop(t *testing.T) {
 }
 
 func TestStartTimerStartupFailure(t *testing.T) {
+	if stop, err := StartTimer("@every 1s", 3, nil); stop != nil || err == nil {
+		t.Fatal("nil callback accepted", err)
+	}
 	want := errors.New("initial update failed")
 	if stop, err := StartTimer("@every 1s", 3, updateFunc(func() error { return want })); stop != nil || !errors.Is(err, want) {
 		t.Fatal("lost initial error", err)

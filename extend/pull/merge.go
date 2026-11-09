@@ -2,6 +2,15 @@ package pull
 
 import "github.com/injoyai/tdx/v2/extend/model"
 
+// 任一组成记录金额未知时，合计仍未知；不改写输入指针。
+func sumAmount(a, b *float64) *float64 {
+	if a == nil || b == nil {
+		return nil
+	}
+	v := *a + *b
+	return &v
+}
+
 // 周期合并只计算原始浮点字段，避免经过整数厘损失港美股等市场的价格精度。
 
 // DayToPeriod 将日线按固定 N 根分块合并（非日历对齐）；n<=1 原样返回。
@@ -20,7 +29,7 @@ func DayToPeriod(ks []*model.KlineDay, n int) []*model.KlineDay {
 			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
 			k.Time, k.Close = v.Time, v.Close
 			k.Volume += v.Volume
-			k.Amount += v.Amount
+			k.Amount = sumAmount(k.Amount, v.Amount)
 		}
 		out = append(out, &k)
 		start = end
@@ -45,7 +54,7 @@ func MinuteToPeriod(ks []*model.KlineMinute, n int) []*model.KlineMinute {
 			k.High, k.Low = max(k.High, v.High), min(k.Low, v.Low)
 			k.Time, k.Close = v.Time, v.Close
 			k.Volume += v.Volume
-			k.Amount += v.Amount
+			k.Amount = sumAmount(k.Amount, v.Amount)
 			if v.Source != "" {
 				k.Source = v.Source
 			}

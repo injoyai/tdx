@@ -8,12 +8,17 @@ import (
 )
 
 func TestCodeFilters(t *testing.T) {
-	c := NewCodes(nil)
-	c.Update(model.CodeModels{
+	c, err := NewCodes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Update(model.CodeModels{
 		{Exchange: "sh", Code: "000001"}, {Exchange: "sz", Code: "000001"},
 		{Exchange: "sh", Code: "510300"}, {Exchange: "bj", Code: "920001"},
 		{Exchange: "sh", Code: "880001"}, {Exchange: "sz", Code: "159001"},
-	})
+	}); err != nil {
+		t.Error(err)
+	}
 	for _, tc := range []struct {
 		name string
 		get  func(...int) model.CodeModels
@@ -37,7 +42,9 @@ func TestCodeFilters(t *testing.T) {
 			}
 		})
 	}
-	c.Update(nil)
+	if err := c.Update(nil); err != nil {
+		t.Error(err)
+	}
 	if c.GetStocks() != nil || c.GetETFs() != nil || c.GetIndexes() != nil {
 		t.Fatal("empty filters changed nil lists")
 	}

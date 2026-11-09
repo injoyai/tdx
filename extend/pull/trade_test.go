@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/csv"
+	"errors"
 	"io"
 	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,7 +28,77 @@ type tradeTestPool struct {
 	c tdx.Client
 }
 
-func (p tradeTestPool) Do(fn func(tdx.Client) error) error { return fn(p.c) }
+type tradeYears struct{ years []int }
+
+func (c *tradeYears) RangeYear(year int, _ func(time.Time) bool) { c.years = append(c.years, year) }
+
+func TestTradeExplicitYearRange(t *testing.T) {
+	c := &tradeYears{}
+	p := NewTrade(t.TempDir())
+	p.Pool, p.Workday = tradeTestPool{}, c
+	if err := p.Pull(context.Background(), 2024, 2025, "sz000001"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(c.years, []int{2024, 2025}) {
+		t.Fatal("implicit years were downloaded", c.years)
+	}
+	for _, years := range [][2]int{{0, 2025}, {2025, 2024}, {2025, 10000}} {
+		if err := p.Pull(context.Background(), years[0], years[1], "sz000001"); err == nil {
+			t.Fatal("invalid year range accepted", years)
+		}
+	}
+	if err := p.Pull(nil, 2024, 2025, "sz000001"); err == nil {
+		t.Fatal("nil context accepted")
+	}
+}
+
+type cancelTradePool struct{ entered chan struct{} }
+
+func (p *cancelTradePool) DoContext(ctx context.Context, _ func(tdx.Client) error) error {
+	close(p.entered)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type tradeDay struct{}
+
+func (tradeDay) RangeYear(year int, fn func(time.Time) bool) {
+	fn(time.Date(year, 1, 2, 15, 0, 0, 0, protocol.Location()))
+}
+
+func TestTradeCancellationBeforeBorrowDoesNotExport(t *testing.T) {
+	p := NewTrade(filepath.Join(t.TempDir(), "export"))
+	waiting := &cancelTradePool{entered: make(chan struct{})}
+	p.Pool, p.Workday = waiting, tradeDay{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- p.PullYear(ctx, 2025, "sz000001") }()
+	select {
+	case <-waiting.entered:
+	case <-time.After(time.Second):
+		t.Fatal("trade did not wait for connection")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("trade ignored cancellation")
+	}
+	if _, err := os.Stat(p.Dir); !os.IsNotExist(err) {
+		t.Fatal("canceled trade created export files", err)
+	}
+}
+
+func (p tradeTestPool) DoContext(ctx context.Context, fn func(tdx.Client) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fn(p.c)
+}
 
 type tradeTestCodes struct{}
 
@@ -99,11 +171,12 @@ func TestTradePeriods(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	c.SetTimeout(time.Second)
 
-	snapshot := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2025-01-02", Through: time.Now().In(protocol.Location()).Format(time.DateOnly)}
+	now := time.Now().In(protocol.Location())
+	snapshot := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2025-01-02", Through: now.Format(time.DateOnly)}
 	for _, date := range []time.Time{
 		time.Date(2025, 1, 2, 15, 0, 0, 0, protocol.Location()),
 		time.Date(2025, 1, 3, 15, 0, 0, 0, protocol.Location()),
-		tdx.IntegerDay(time.Now().In(protocol.Location())).Add(15 * time.Hour),
+		time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, now.Location()),
 	} {
 		snapshot.Dates = append(snapshot.Dates, date.Format(time.DateOnly))
 	}

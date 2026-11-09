@@ -11,7 +11,8 @@ import (
 
 // Unit 代表一个可拉取的独立市场/品种类别（可插拔）。
 //
-// 新增一个市场 = 新增一个实现 + Register，无需修改框架代码。
+// 新增一个市场需实现并 Register；自定义市场还须通过 Config.Schedules
+// 或可选的 Schedule() Schedule 方法声明更新边界。
 type Unit interface {
 	// Name 唯一标识（protocol.Market 枚举值，如 protocol.MarketAStock、protocol.MarketHK、protocol.MarketFuture），用于日志/进度条/去重。
 	Name() string

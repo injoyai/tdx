@@ -1,9 +1,6 @@
 package storage
 
-import (
-	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/lib/update"
-)
+import "github.com/injoyai/tdx/v2/extend/model"
 
 // BarStore 是行情持久化边界，不要求 SQL、文件或指定 ORM。
 // 所有方法须支持并发调用，并严格按 Code.Market/Code.Code 隔离证券。
@@ -13,7 +10,11 @@ import (
 // coverage 非空时，分钟数据与覆盖标记须原子提交，并合并相容的既有覆盖范围。
 // 空数据不删除行情或写完成标记。注入的存储由调用方关闭。
 type BarStore interface {
-	update.Store
+	// 完成标记使用 Unix 秒，独立于行情源时间；pull 保存本轮已处理的更新窗口边界。
+	// 缺少记录时返回 has=false。
+	// LoadUpdate 只读；SaveUpdate 须支持首次写入和覆盖已有标记。
+	LoadUpdate(key string) (unix int64, has bool, err error)
+	SaveUpdate(key string, unix int64) error
 	Identity() string
 	LastDayTime(model.Code) (string, error)
 	QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error)

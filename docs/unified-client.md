@@ -24,11 +24,45 @@ for _, q := range quotes {
 }
 ```
 
-构造不联网，因此没有构造错误返回值；首次访问某类协议时建连，连接错误由查询方法返回。两类协议各复用一条连接，默认服务器和重连策略沿用 `DialDefault`/`DialExDefault`；`client.Option` 同时应用于两类连接。可并发查询；`SetTimeout` 覆盖当前和未来连接，默认仍为标准 2 秒、扩展 10 秒。`Close` 先取消首次建连、退避重试及后续连接生命周期，释放已建立的连接，再等待建连结束并释放晚到的连接，允许重复/并发调用，关闭后不会重新建连。两类连接各自控制初始化；一类建连变慢不会阻塞另一类查询或 `SetTimeout`。每个 TCP 地址的建连超时为 5 秒，请求超时不控制建连重试时长；默认自动重试可以通过 `WithRedial(false)` 关闭，进行中的首次重试也可以通过门面的 `Close` 取消。必须通过构造函数使用，零值不用于查询。
+构造不联网，因此没有构造错误返回值；首次访问某类协议时建连，连接错误由查询方法返回。两类协议各复用一条连接，默认服务器和重连策略沿用 `DialDefault`/`DialExDefault`；`client.Option` 同时应用于两类连接。可并发查询；`SetTimeout` 覆盖当前和未来连接，默认仍为标准 2 秒、扩展 10 秒。`Close` 先取消首次建连、退避重试及后续连接生命周期，释放已建立的连接，再等待建连结束并释放晚到的连接，允许重复/并发调用，关闭后不会重新建连。两类连接各自控制初始化；一类建连变慢不会阻塞另一类查询或 `SetTimeout`。每个 TCP 地址的建连超时为 5 秒，首次连接、握手与重试合计最多 `tdx.DefaultDialTimeout`（30 秒）；请求超时与建连超时分别计时。默认自动重试可以通过 `WithRedial(false)` 关闭，首次建连也可由查询 context 或 `Close` 取消。必须通过构造函数使用，零值不用于查询。
+
+需要取消或整个查询的截止时间时，使用请求视图：
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+defer cancel()
+bars, err := tdx.WithContext(ctx, c).GetKlineDayAll("sz000001")
+```
+
+`WithContext` 共享原客户端的连接，不修改原对象的 context、请求超时或重连生命周期。`Pool.DoContext` 自动为回调提供这种视图，归还池中的仍是原连接；回调不得关闭视图。取消会停止等待和后续分页，不返回部分快照。等待响应时取消会清理该请求并忽略迟到响应；发送中断可能留下半帧，会关闭当次传输以避免协议污染。自定义 Client 可实现 `WithContext(context.Context) tdx.Client`，未实现时仍由其单次请求超时控制。只需要单页 K 线的消费者可以依赖 `tdx.KlineReader`；原 `Client` 方法集不变。
 
 ETF、可转债等标准报价需要价格精度元数据时，使用同一连接取得所属交易所代码表，仅缓存在该连接的 `StConn` 实现中，不依赖全局缓存、数据库或额外连接。已缓存代码复用精度，缺少代码时重新读取对应市场；缺失精度信息会返回错误，不猜测价格。
 
-标准连接在 quoteMu 保护下缓存各证券的 Decimal，按交易所刷新并保留其他市场精度；不保存完整扩展代码索引。扩展证券索引另见 [`extend/metadata`](../extend/metadata/README.md)，入口为 metadata.NewCodes。核心 SDK 不导入扩展包。
+标准连接通过可取消的报价门控保护各证券的 Decimal 缓存；并发查询等待门控时可由自己的 context 取消，不影响当前报价请求。缓存按交易所刷新并保留其他市场精度；不保存完整扩展代码索引。扩展证券索引另见 [`extend/metadata`](../extend/metadata/README.md)，入口为 metadata.NewCodes。核心 SDK 不导入扩展包。
+
+## 日志
+
+SDK 日志使用标准库 [log/slog](https://pkg.go.dev/log/slog)。默认使用 slog.Default，SDK 不调用 slog.SetDefault；应用负责选择输出位置、格式和级别。NewRangeDial、地址测速、HTTP 服务和定时任务也使用应用的默认 slog 日志。
+
+可为标准／扩展连接设置独立日志：
+
+```go
+logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+c := tdx.NewClient(
+    tdx.WithLogger(logger),
+    tdx.WithDebug(true),
+    tdx.WithLevel(tdx.LevelDebug),
+)
+defer c.Close()
+```
+
+WithLogger(nil) 使用 slog.Default，不影响其他连接或全局日志。通讯读写记录使用 Debug 级别，包含 prefix 和 data 字段，默认 HEX 编码；必须同时通过 WithLevel 和 slog Handler 的过滤才能输出。日志编码仍可通过构造选项配置，例如传入 func(c *client.Client) { c.Logger.WithUTF8() }；具体连接不再暴露 Logger 字段。
+
+WithLevel(LevelNone) 关闭通讯日志，LevelAll 允许全部通讯记录，Info／Error 过滤保留。WithDebug(false) 关闭通讯及连接事件日志；响应解析错误仍以 Error 写入该连接的 Logger，并保留错误传播和异常堆栈。自定义 slog Handler 的级别继续决定这些 Error 是否输出。
+
+项目已移除直接 logs 调用；ios 仍依赖旧日志模块，go.mod 中保留其 indirect 依赖，不修改上游代码。迁移的输出变化见 [v2 迁移指南](v2-migration.md#日志改为标准库)。
 
 ## 协议实现
 
@@ -73,7 +107,7 @@ _ = quotes; _ = err
 
 `protocol.ParseInstrument` 返回 `{Exchange, Code}`，`Instrument.String()` 返回点分隔代码，港股指数统一为 `hk.HSI`。统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
-业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 `SendFrame`、连接状态和日志等从具体连接使用，业务接口不包含这些能力。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
+业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 SendFrame、Write 系列及 Done／Closed／Err／GetKey 从具体连接使用，业务接口不包含这些能力。底层 Client、Wait、Logger／Event 及 Reset／Restart／Read 等入口不再公开；日志及重连使用构造选项配置。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
 
 ## 查询接口
 
@@ -149,7 +183,7 @@ K 线分页按从近到远查询，返回列表为旧到新，`Until` 包含首�
 
 ## 指标与本地文件的量单位适配
 
-`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于需要协议原始字段的复权等处理；标准指数的原始成交量仍为股。`VWAP()`、CSV 导出与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`：
+`KlineResp.StandardResponse()` 保留原始记录及其单位，适用于需要协议原始字段的复权等处理；标准指数的原始成交量仍为股。`VWAP()` 与 `.day/.lc1/.lc5` 编码器需要整数手，应改用 `KlineResp.Klines()`；CSV 导出直接使用统一 Client 的 List（股数）：
 
 ```go
 r, err := c.GetKlineDay("sh000001", 0, 100)
@@ -163,6 +197,8 @@ fmt.Println(ks.VWAP())
 
 `extend.DoIncomes` 按输入时刻所在的固定东八区日期选取标准日线，从该日零点开始，兼容本地日线零点和协议日线 15:00 时间标签；主机时区不再决定收益起始边界。
 
+该函数返回 `(Incomes, error)`，拒绝 nil 记录、非有限收盘价和乱序输入；偏移表示 K 线条数。结果保留完整输入 K 线，Income.RiseRate 返回比例及可用性，零基准价不再产生有效的 NaN/Inf 涨跌幅。用法与迁移见 [扩展说明](../extend/README.md#区间价格涨跌)。
+
 ## 验证
 
 离线管道测试覆盖代码解析、协议/周期路由、指数解码、混合报价排序与重复项、无需全局元数据的转债校准、分页边界、扩展列表过滤、失败传播、关闭与懒加载并发。港股日线复用 2026-10-09 原始响应及已保存的独立来源样本。新接口没有宣称所有扩展市场/字段完成准确性交叉验证。
@@ -174,6 +210,8 @@ go test ./examples/... -run '^$'
 
 验证产物和发布版本固定样本对照保存在 `output/unified-client/`，该目录不提交。
 
-连接池新增 `GetContext(ctx)` 与 `DoContext(ctx, fn)`，可取消等待空闲连接；原 `Get/Do` 和 `ClientPool` 接口保持兼容。HTTP 标准和扩展行情路由都传入请求上下文，取消后不会继续排队或在借到连接后开始新查询。已开始的行情查询仍由客户端请求超时控制。
+连接池新增 `GetContext(ctx)` 与 `DoContext(ctx, fn)`，可取消等待空闲连接；具体 Pool 保留 Get/Do 便利方法，ClientPool 接口统一只要求 DoContext，自定义连接池须实现取消等待。HTTP 标准和扩展行情路由都传入请求上下文，取消后不会继续排队或在借到连接后开始新查询。已开始的行情查询仍由客户端请求超时控制。
 
-跨日完整分笔在一轮查询中共用日线日期集合；没有对应日线的日期仍跳过，日线校验失败仍返回错误。独立历史分笔查询继续进行日期校验。`update.Tracker.Mark(key)`（`lib/update`）可直接保存首次标记，`IsUpdated(key)` 查询不再创建占位行。
+跨日完整分笔在一轮查询中共用日线日期集合；没有对应日线的日期仍跳过，日线校验失败仍返回错误。独立历史分笔查询继续进行日期校验。行情完成标记通过 `storage.BarStore.SaveUpdate` 保存，`LoadUpdate` 只查询、不创建占位行，见[存储接口说明](storage.md)。
+
+扩展品种全表通过 `Client.GetInstruments()` 获取；MarketClient 自动使用扩展连接，标准连接返回不支持错误。SDK 负责全局分页和完整性校验，pull 只在本轮 Update 内共享返回快照。

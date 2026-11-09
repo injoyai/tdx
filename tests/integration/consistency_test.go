@@ -123,20 +123,28 @@ func TestConsistencyIncomeDateZone(t *testing.T) {
 	ks := protocol.Klines{{Time: consistencyDay(19), Close: 10}, {Time: consistencyDay(20), Close: 11}}
 	for _, loc := range []*time.Location{protocol.Location(), time.UTC} {
 		start := time.Date(2026, 10, 19, 0, 0, 0, 0, loc)
-		got := extend.DoIncomes(ks, start, 1)
+		got, err := extend.DoIncomes(ks, start, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(got) != 1 {
 			t.Errorf("start date %s: got %d results, expected 1", start, len(got))
 			continue
 		}
-		if got[0].RiseRate() != 0.1 {
-			t.Errorf("%s: %v", loc, got[0].RiseRate())
+		if rate, available := got[0].RiseRate(); !available || rate != 0.1 {
+			t.Errorf("%s: rate=%v available=%v", loc, rate, available)
 		}
 	}
 }
 
 func TestConsistencyCodeCacheCanonicalOutput(t *testing.T) {
-	c := metadata.NewCodes(nil)
-	c.Update(model.CodeModels{{Exchange: "sz", Code: "000001", Name: "sample"}})
+	c, err := metadata.NewCodes(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Update(model.CodeModels{{Exchange: "sz", Code: "000001", Name: "sample"}}); err != nil {
+		t.Error(err)
+	}
 	i, _ := protocol.ParseInstrument("sz000001")
 	if got := c.GetName(i.String()); got != "sample" {
 		t.Errorf("GetName(%q)=%q; GetName(sz000001)=%q", i.String(), got, c.GetName("sz000001"))
@@ -169,8 +177,8 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatal(len(rows))
 	}
-	if rows[0].Amount != 0 {
-		t.Errorf("position bits=100000 stored as monetary Amount=%g", rows[0].Amount)
+	if rows[0].Amount != nil {
+		t.Errorf("position bits=100000 stored as monetary Amount=%v", rows[0].Amount)
 	}
 	if err := u.FetchMinute(s, code); err != nil {
 		t.Fatal(err)
@@ -179,7 +187,7 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(minutes) != 1 || minutes[0].Amount != 0 {
+	if len(minutes) != 1 || minutes[0].Amount != nil {
 		t.Fatal("unconfirmed minute amount stored", minutes)
 	}
 }

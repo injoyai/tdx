@@ -10,15 +10,15 @@
 
 ## 技术栈
 
-- Go 1.25+，依赖 `github.com/injoyai/conv`(类型转换)、`github.com/injoyai/logs`(日志)。
+- Go 1.25+，类型转换使用 `github.com/injoyai/conv`，日志使用标准库 `log/slog`；ios 的 logs 仅为间接依赖，SDK 不改全局日志配置。
 - 参考开源：gotdx / mootdx / pytdx / tdx2db / nieqx-tdx。
 
 ## 架构
 
 - `protocol/`：协议帧编解码与数据结构（`model_*.go`、`unit.go`、`frame.go`、`types.go`）。
 - `conn.go`：内部传输；`conn_st.go` / `conn_ex.go`：协议业务连接；`query.go` / `conn_query.go`：共享业务算法及校验。
-- `extend/`：离线数据读取(`local.go`)、行情拉取、爬虫、HTTP server；指标统一由 `protocol.Klines` 提供。
-- `lib/`：gbbq、xorms、zip 工具。
+- `extend/`：离线数据读取(`local/`)、行情拉取、爬虫、HTTP server；指标统一由 `protocol.Klines` 提供。
+- `lib/`：gbbq、update、zip 工具；SQLite/XORM 集中在 `extend/storage/sqlite`。
 - `examples/`：每个典型示例直接放在 `examples/<示例名>/` 下，入口见 `examples/README.md`。
 
 ## 关键约定与决策记录
@@ -33,16 +33,15 @@
 8. **可转债(标准行情7709)**：`protocol.AddPrefix` 已识别可转债前缀——沪市(110/111/113/118)→`sh`、深市(123/125/126/127/128)→`sz`。日K线 `GetKlineDay`/分钟线直接可用，统一返回浮点价格，标准模型价格现也为浮点元值，整数厘只存在于线上编码中。实时行情 `GetQuote` 由当前 `StConn` 使用同一连接读取所属交易所代码表，并在该连接内缓存精度元数据，不依赖 `DefaultCodes`、数据库或额外连接。价格按代码的 `Decimal` 校准（`Decimal=4` 时原始价格÷100）；缺少元数据返回错误，不猜测精度。
 9. **期货(扩展行情7727)**：使用跨市场 `NewClient()` 或 `DialExHqDefault()`，扩展业务实现位于 `conn_ex.go`。合约使用显式交易所前缀，如 `cffIF2609`、`dceA2609`；不能假定连续/主力代码可用。批量行情用 `GetQuoteList(market, 3, 0, n)`（market: 47中金/60主力期货/30上期/28郑商/29大商/66广期）。日K用 `GetKlineDay(code, 0, n)` 或 `GetKline(TypeKlineDay, code, 0, n)`，业务入口按市场映射为实际 category=4；持仓、结算价等保留在 `Extended` 中，未知单位不宣称已确认。原始扩展品种协议分页 start 为全局品种序号；统一 `GetCode(exchange,start,count)` 按市场过滤后分页，不能互换偏移语义。
 10. **`DecodeCode` 通用代码解析**：已泛化支持多市场——A股(6位数字自动补前缀, 行为不变)、港股(5位纯数字如 `00700`/`hk00700`)、美股(纯字母如 `AAPL`/`usBRK.B`, 最长前缀匹配避免 `SHOP` 被误拆为 `sh`+`OP`)、期货(需显式前缀如 `cffIF2609`/`dceA2609`, 裸合约如 `IF2609` 因无法确定交易所而报错提示用前缀)。另支持带点后缀格式 `000001.SZ`/`600000.SH`/`00700.HK`/`AAPL.US`/`IF2609.CFF`(后缀=交易所缩写, 大小写均可; 美股点代码 `BRK.B` 因后缀 B 非交易所而按美股代码解析)。前缀支持小写缩写/大写/中文名(如 `上海600000`)。注意: 标准行情7709的 Frame(model_quote/model_kline 等)只接受 A股 6 位定长代码；统一业务入口使用 `protocol.ParseInstrument` 解析与路由，港股/美股/期货走扩展行情7727的同名 `Get*`，不使用标准行情帧。代码能解析不代表相应市场已接入行情路由。
-11. **manage.go `RangeIndexes` 修复(2026-09)**：历史 bug——曾误遍历 `GetETFs()`，已改为 `GetIndexes()`。若外部代码曾依赖错误行为（遍历出 ETF 列表），需注意语义变化。
 
 - **v2 指标与复权契约**：指标统一由 `protocol.Klines` 实现；VWAP 输入量为手、金额为元，pull 存储与标准行情指数日线的股数须先换算。复权使用仿射 Mul/Add 和 QFQPrice/HFQPrice，不再提供旧纯比例入口；第三方爬虫的比例模型独立保留。
-- **数据库支持边界**：默认使用 SQLite；行情、代码、股本和交易日历分别以业务 `Store` 接口注入，更新标记也通过 `update.Store` 持久化，自定义存储不创建默认本地库。直接注入 Store 由调用方关闭；默认 SQLite 与原 DB 工厂资源归属规则保留。行情的文件辅助能力归 `pull.SQLiteStore`。不内置 MySQL 驱动或行情适配器，不自动转换存量数据；接口契约见 `docs/storage.md`。
-- **默认缓存路径**：元数据缓存位于 `./output/data/database`。历史 `./data/database` 不自动搬迁，使用旧缓存时须显式配置 DB 或在停机后完整复制（含 SQLite WAL/SHM），见 `docs/v2-migration.md`。
-- **元数据资源归属**：Codes/Gbbq/Workday 的 `Close()` 停止更新、等待在途刷新、关闭自建客户端/数据库；直接注入资源由调用方管理，工厂资源归构造对象。Manage 同样区分注入与工厂，并管理 pull 懒加载股本缓存；关闭时先停止调度、释放自建资源，再等待任务退出，以唤醒任务中阻塞的连接池获取。外部共享池及任务自身的阻塞须由调用方解除。独立可停止任务用 `StartTimer`，保留的 `NewTimer` 属进程级任务。HTTP 服务不再初始化全局 DefaultCodes。
+- **数据库支持边界**：行情通过 storage.BarStore 注入，默认后端由应用显式创建；SQLite 文件辅助能力归 storage/sqlite。元数据 Fetch 返回快照，应用自行决定持久化；不内置 MySQL，不自动迁移历史数据。行情数据与分钟覆盖状态必须原子提交，空增量不得删除已有数据。
+- **缓存迁移边界**：SQLite 合并后端把元数据写入指定数据集的 metadata.db，旧独立元数据库不自动搬迁；旧 workday 表也不自动改写成带市场和来源覆盖信息的新结构。迁移前保留原库，显式同步或转换。
+- **资源归属**：metadata.Codes/Gbbq/Workday 是内存查询对象，不联网、不调度、不需要 Close。pull.Service 不关闭注入的连接池和 Store；应用先取消并等待任务结束，再关闭 Service 和共享资源。sqlite.New 的连接由后端关闭，NewMetadata(db) 借用的引擎由调用方关闭。
 
 - **请求等待依赖约束**：`base/maps/wait` 的等待注册与响应完成不能并发修改同一回调列表。内部 conn 在发送前完整注册异步回调，并由同一互斥锁保护注册/处理/清理；超时通过 `Client.SetTimeout` 配置，直接修改具体连接的 `Wait` 不调整请求计时器。
 
-- **统一行情 API 与连接边界**：`Client` 是统一业务接口；`NewClient()` 返回 `Client` 接口，默认实现为跨市场 `*MarketClient`；标准 `Dial*` 直接返回 `*StConn`，`DialExHq*` 返回 `*ExConn`。公开 Conn、包装构造和 CloseAll 已移除；内部 conn 不实现 Client，只负责传输、请求关联和生命周期，协议业务及解码分别归 StConn/ExConn。共享 queries 绑定业务对象，复用分页及历史日期检查，不通过传输层绕回门面；标准报价精度缓存归 StConn。Close 完整关闭生命周期并停止重连。连接池的工厂、Get/Put/Do/Go 使用 Client，原始 SendFrame/状态/日志从具体连接使用；需要扩展全局语义的 HTTP/pull 先取得 ExConn。Codes/Gbbq/Workday 的客户端注入与相应工厂改为 Client 接口，保留空指针注入行为。财务、F10、除权、集合竞价、板块和报表已接入门面，仍只支持标准协议和原标准结果类型，非法市场或扩展单连接提前报错。两者六组基础查询统一为 `GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 及统一返回；对应公开 `Ex*` 已移除，市场行情分页列表改为 `GetQuoteList`。代码查询统一为 `GetCount(exchange)`（int）、`GetCode(exchange,start uint32,count uint16)` 和 `GetCodeAll(exchange)`（`*CodeResp`），公开 `ExCount/ExInstruments` 已移除；扩展单市场数量和分页扫描全局列表，不新增持久缓存。`GetMarkets` 返回内置标准市场或服务器扩展表（跨市场门面合并），发现不等于行情路由接入。历史 HTTP 全局数量/分页与 pull 一轮发现缓存使用协议层保留语义；pull 快照入口为 `GetInstruments`。单协议对象复用业务算法但不额外建连；K线全部周期及 All/Until、完整分笔均使用统一返回类型，独立指数 K线和 ExBarsRange 已移除；区间入口 GetKlineRange 固定一分钟，原扩展区间字段在 RangeExtended。标准指标/复权通过 StandardResponse 提取标准解码价格与时间，扩展或旧响应数量溢出时报错。标准分页继续回填跨页昨收；241分钟线只用于标准股票/ETF。跨日分笔要求对应市场 TradingCalendar，Workday 是沪深日历，逐条保留交易日期，不自动补夜盘自然日。HTTP 适配保留原字段和单位。两类初始化独立同步，关闭清理晚到连接；未知数据尺度保留原始字段，不推测换算。支持范围及迁移说明见 `docs/unified-client.md` 和 `docs/v2-migration.md`。
+- **统一行情 API 与连接边界**：Client 方法集兼容保留，单页行情消费者可依赖 KlineReader。NewClient 按市场懒建标准／扩展连接，Dial* 返回 StConn，DialEx* 返回 ExConn；具体连接不暴露可修改的 ios 协议回调。单协议连接不额外建立另一种协议连接。统一结果保留 Standard/Extended 原始字段；未知单位不推测换算，发现市场不代表行情路由已支持。接口与迁移以 docs/unified-client.md 和 docs/v2-migration.md 为准。
 
 - **连接生命周期依赖约束**：`ios` 的完整写入流程（包括写入统计）和重连初始化须共用门控；初始化在连接回调之前，故门控从 Dial 成功返回前开始，必须保持到握手完整发送后，不能在发布写入快照时提前释放。握手在已持有门控时直接写当次连接，不能再次经过普通加锁入口。对外使用稳定的 `MoreWriter` 入口，心跳只持有当次连接及其关闭信号。生命周期上下文须从首次拨号贯通到读取/重连，否则门面关闭时无法取消默认的首次重试。请求超时覆盖排队、发送、等待；发送被中断时关闭当次连接，防止半帧污染。底层关闭会立即归还读缓存，故协议分包使用每条连接独立的读取缓存；`Close` 取消生命周期并关闭传输，等待读取流程退出后释放底层资源，避免与读取初始化或重连状态重置竞争。
 
@@ -64,30 +63,18 @@
 - API：`ReadDay(dir, code)`、`ReadMinute1(dir, code)`、`ReadMinute5(dir, code)`；code 需带交易所前缀(如 `sz000001`)，本地文件名为 `sz000001.day` 格式。
 - **写入**：`WriteDay(code, ks) ([]byte, error)`、`WriteMinute1(code, ks)`、`WriteMinute5(code, ks)`（均 `([]byte, error)`），与读取格式对称，**只返回通达信格式字节流、不落盘**，由调用方自由决定如何写入/使用（如自行 `os.WriteFile` 到 `./output/lc1/vipdoc/...`）。code 需带交易所前缀用于判断指数/股票。均在 `extend/local.go`。
 
-## extend/pull v2 拉取服务（2026-08 新增）
+## 同步、调度与数据契约
 
-> 通用可插拔的日线+1分钟线拉取服务，覆盖沪深股票/指数/ETF/LOF/板块/期货/港股/美股，每天增量更新。v2 统一使用本服务；旧拉取服务的存量数据库不自动转换，不能仅改目录复用，处理要求见 `docs/v2-migration.md`。包级文档：`extend/pull/README.md`（架构/配置/存储布局/查询/合并/自定义 Unit）。
-
-- **架构**：`pull.Unit` 接口（`Name()/Codes(s)/FetchDay(s,code)/FetchMin(s,code)`）实现市场可插拔；`pull.Service` 编排（并发 `Goroutines`、重试 `Retry`、增量去重 `Updated`、进度条）；`pull.Config`（2026-09 由 `PullConfig` 更名，消除包名 stuttering）全部通过**代码参数**传入（本库是第三方引用库，不写配置文件）。示例：`examples/PullV2`（`go run ./examples/PullV2`）。
-- **存储（sqlite, `lib/xorms`）**：已确认的股票/ETF/指数/板块及港股日线成交量存为**股**；其余扩展市场/周期按 `Market.Info()` 默认倍率存储，实际单位待确认，不能称为股或合约数。两级「地区/资产」目录：日线 `{Dir}/{地区}/{资产}/day/{code}.db`（一代码一库）；1分钟线 `{Dir}/{地区}/{资产}/min/{code}/{code}-{year}.db`（一代码一年一库）。目录映射（`Code.DirName()`=枚举值）：`cn/stock|index|etf|block`、`cn/future`（期货，多交易所共用，地区级）、`hk/stock|index`、`us/stock`。2026-09 布局演进：`day|min 顶层`→`min 文件带代码`→`市场顶层`→`两级地区/资产`（`cn/stock` 等）。`Code.FileName()`=**原始代码**（目录已含市场信息，2026-09 从 key 改为 code），期货含 `/` 代码替换为 `-`（`cff/IF2609`→`cff-IF2609.db`）。`Code.Key()` 仅用于日志/完整键。`KlineDay{Time string pk(YYYY-MM-DD), OHLC float64(原币种/报价单位), Volume int64(按市场配置换算), Amount, Turnover, FloatStock, TotalStock}`；`KlineMinute`（全称）使用源日期时分 `Time` 主键，无股本/换手及 `Unix` / `TimeZone` 附加字段。仅存日线+1分钟，5/15/30/60分钟、周/月/季/年由 `DayToPeriod`/`MinuteToPeriod`（`merge.go`，直接聚合原始浮点字段）纯内存派生、不落盘。
-- **Code.Key() 规则**：cn 四市场→原代码（已带 sh/sz/bj 前缀）；hk→`HK00700`；us→`US.AAPL`；future/hk_index→`cn/future.cff/IF2609` / `hk/index.HSI`（市场值+`.`+代码，key 含 `/` 时文件名替换为 `-`）。`SplitKey` 与 `ParseCode` 共用忽略大小写的市场前缀解析，支持直接拼接与点分隔，完整市场键继续兼容。
-- **Market 枚举（2026-09，值=目录路径）**：`pull.Market`（`type Market string`）+ 常量 `MarketAStock/MarketIndex/MarketEtfLof/MarketBlock/MarketFuture/MarketHK/MarketHKIndex/MarketUS`，定义在 `protocol/market.go`，`extend/pull/market.go` 保留类型与常量别名。**枚举值即两级「地区/资产」路径**：`cn/stock|index|etf|block`、`cn/future`、`hk/stock|index`、`us/stock`——`Code.DirName()` 直接返回枚举值（与磁盘布局完全一致）。`Code.Market`、market 子包 Unit 的 `name` 字段均为该类型（`Name()` 返回 `.String()`）。**演进**：初版扁平值（`a_stock`/`hk`/`us`…）→ 改为目录路径形式（用户提议统一）；`hk.00700` 作为港股简称输入兼容；旧 `a_stock.sh600000` 不再对应内置市场，目录形式为 `hk/stock.00700`/`cn/stock.sh600000`（`hk/index.HSI` 同理）。注意与 `protocol.Exchange`（uint8 协议层市场编码）是两套体系。
-- **Config.Codes 扁平化 + ParseCode 自动路由（2026-09）**：`Codes` 从 `map[Market][]string` 改为扁平 `[]string`，NewService 一次性 `ParseCode` 解析并按市场分组（`Service.overrides`）。路由规则：sh/sz/bj 前缀可直接拼接或点分隔（前缀忽略大小写）→按谓词分类（ETF>股票>板块>指数）；6 位裸数字→`protocol.AddPrefix` 补前缀后分类（`000001`→股票 `sz000001` 非上证指数；北交所指数 899xxx 补不上前缀特判为 `bj+code`）；5 位数字→港股；纯字母→美股；期货支持 `cffIF2609` / `cff.IF2609` / `cff/IF2609`（czc/dce/shf/gfe/qhz 同理），交易所简称转小写、合约主体保留大小写；`market.code` 完整键也可。已注册的自定义市场支持两种形式，保留其注册名称和代码；注册时禁止大小写重名及占用内置简称。内置市场主体统一经 `protocol.ParseInstrument` 校验，市场分类复用 `Instrument.Market()`；显式完整市场键必须匹配品种，自定义市场代码不套用内置规则。**破坏性变更**：`map[Market][]string` 旧写法编译失败，PullV2 示例已同步。
-- **Config.Units 已删除（2026-09，先增后删）**：`Units` 字段经历 `[]Unit`→`[]Market` 后最终**整个删除**——市场完全由 `Codes` 路由决定：`Codes` 空=全量模式（全部注册市场自动发现）；`Codes` 非空=白名单模式（只拉这些代码，拉取范围限定为涉及市场，其余市场不拉）。NewService 中 overrides 分组决定 units 集合。**测试适配**：mockUnit 注册名 "test"，测试用完整键 `"test.sh600000"` 走 ParseCode 路由（`market.code` 形式对任意注册市场可用）。
-- **注册的内置 Unit**（`extend/pull/market/`，`init()` 中 `pull.Register`）：`cn/stock`/`cn/index`/`cn/etf`/`cn/bond`/`cn/other`（标准行情7709，走 `Manage`）；`cn/block`（板块指数，`GetBlockDataWithIndex`）；`cn/future`/`hk/stock`/`us/stock`（扩展行情7727，走 `ExPool`）；`hk/index`（港股指数，市场编码27，2026-09 新增）。`Codes` 空时全部拉取；白名单模式只拉涉及市场。
-- **港股/美股品种类型混合（2026-09 实测）**：`protocol.ExInstrument` 的 `Category` 与品种类型**无关**（美股全 cat=13 含 1.4 万只：股票/ETF/指数/信托混合，SPY/QQQ/DJIA 均在其中；港股主板 cat=2）。区分只能靠名称关键词（不可靠，DJIA 名"道琼斯BuyWrite"无"指数"字样）。**港股指数独立成市场 27**（恒生系 HZ50xx/HSI/VHSI + 中华系 CES，331 只，全 cat=5）——协议可精确区分，故整市场接入为 `hk/index`。港股 ETF（盈富基金 02800 在市场 49）、美股 ETF/指数（市场 74 混合）暂不拆分。`ParseCode` 白名单 `hkIndexCodes`（HSI/HKL/VHSI/CES100/GEM）优先于美股纯字母判断；港股前缀统一为 `hk`（忽略大小写），5 位纯数字归股票，字母或字母数字归指数，如 `hk.HSI` / `hkHSI` / `hk.CES120`；`hk/index.CES120` 完整键兼容。
-- **成交量倍率**：`Market.Info()` 集中声明日线/分钟线 `VolumeScale` 和报价/分时/分笔 `TickVolumeScale`，内置有效倍率全部为正。用户指定国内未单独校准的品种或接口默认100，可转债使用 `cn/bond`，其他国内标准品种用 `cn/other`；默认值不是独立准确性结论。标准指数/板块 K线及期货仍为1。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数和溢出，没有零值兜底。
-- **港股日线请求口径**：腾讯控股真实原始响应及独立源交叉验证确认 category=4 的 Trade 为整数百股，单根与多根同日记录一致；category=9 非首条量近似万股、首条为 0xABC9（官方语义未知），不能按百股换算。适配器用 4，不能只改乘数，也不能据此统一港股指数、美股或所有扩展接口。
-- **扩展 K线分页细节（当前入口 `GetKline`）**：返回列表**从旧到新**，pull 寻找增量边界时从末尾（最新）往前遍历；`page` 以 800 为步进（`start` 参数是偏移）。日K category 配置均为 `TypeKlineDay2`(=4)，扩展分钟为 `TypeKlineMinute2`(=8)。美股周期9的单根/多根量不一致，不能仅改倍率修复；美股周期4为股，港股股票周期4/8为百股。港股指数样本含成交额口径，正倍率1仅保留原值，统一成交数量接口仍拒绝。期货多交易所 market：47中金/60主力/30上期/28郑商/29大商/66广期/42期货指数。**注意 `start` 为 uint16**：翻页偏移超 65535 会回绕，v2 用 `int` 累加 + `exPageLimit` 护栏，超过上限时报错，不保证能拉取全部历史。
-- **增量更新**：`tdx.Updated` 按日去重（非交易日 `Workday.TodayIs()` 跳过）；整体键 `"pull:{配置摘要}"` + **按 Unit 粒度键 `"pull:{unit名}:{配置摘要}"`**。配置摘要包含目录、解析后排序的代码白名单、市场集合、Day/Minute、StartAt、TradeFallback，防止不同任务相互跳过；并发数和重试次数不影响任务身份。同一配置某市场中途失败时，下次只重拉该市场，其余跳过；全部成功才标记整体。旧未限定配置的标记保留但不复用，升级后首次重新做增量检查。内置日线适配器过滤起始/增量边界之前的停止记录，按实际返回的最早记录覆盖，保留服务器已不返回的本地前缀；通用 `SaveDay` 仍按显式 `from` 删尾重插。分钟按年文件。首次全量从 `StartAt` 起（未设置默认最近两年，`NewService` 归一化），`last>0` 时增量拉取直到命中边界。**分钟线历史补全**：`FetchMin` 从 `Start.Year()` 到今年逐年检查，文件不存在的年份全量补拉（std/ex 两路径一致）；某年文件中途失败留半库时删除该文件重跑即可。**空数据保护（双重）**：`SaveDay/SaveMin` 空切片直接跳过（不打开库文件，避免创建空库）；`last>0 && len(out)==0`（退市/停牌/异常返回空）跳写，防"只删不插"侵蚀。
-- **引擎缓存**：`SQLiteStore.engines`（map，路径为 key，`sync.Mutex` 保护）缓存已打开的 sqlite 引擎，默认上限 32；引用计数保护使用中的引擎，释放后按最近使用顺序淘汰，`Close()` 统一释放。
-- **空分钟历史缓存与时区**：原生扫描成功且返回其他年份数据时，空历史年份记入 `Dir/minute-scans.db`，7 天后复查；不建空行情库、不作永久完成标记，不缓存请求失败或整次空返回，分笔兜底不复用。更早范围与时钟回退不命中。行情年度定位按源日期时分；行情接口和存储不提供 `TimeZone`、`Unix`、`Timestamp()` 或公开源时间转换入口。内部标准协议与交易日历仍保留必要的时区处理，交易日只填已确认值；已有源时间主键库的历史额外列不自动删除。存储与接口契约见 `docs/v2-migration.md` 的源时间章节。
-- **查询 API**：`Service.QueryDay(code,start,end)`（单文件）与 `Service.QueryMinute(code,start,end)`（自动按年定位文件拼接，升序）；start/end 使用源日期／日期时分字符串，空字符串=不限制该端（`rangeQuery` 构造条件，注意 xorms `Where` 返回 `*xorms.Session` 需链式调用）；库不存在返回空不报错。
-- **周期合并精度**：pull 的日线、分钟和日历周期直接聚合原始浮点字段，不往返整数厘；港美股高精度及负价格不能套用标准协议的三位小数尺度。
-- **SQLite 批量写入约束**：`insertBatch` 根据字段数和单语句变量预算分批，同一事务提交；`store.go` 的字段数常量须与实际插入字段同步，避免超过 SQLite 占位符上限。
-- **updateUnit 失败感知（2026-09，重要）**：`bar.GoRetry` 重试耗尽只吞错误（`Wait()` 无返回值），旧版 `b.Wait(); return nil` 导致**失败的市场也被标记"当日完成"**，下次被去重跳过 → 永久缺数。修复：以"成功计数"判定（注意 GoRetry 的 defer 每次重试尝试都会执行，重试内多次失败会重复计数，故用成功数 `succCount<len(codes)` 判定而非失败次数），失败时返回错误、Update 不标记该市场。教训：upsert 事务回滚只留空表文件（8KB），错误又未传播，表面"拉取完成"实则无数据——双重掩盖。
-- **Gbbq 空实现与 pull 懒加载（2026-09，重要坑）**：`NewManage()` 默认 `Gbbq: &Gbbq{}`（manage.go 注释"默认不初始化股本变迁数据"），空实现非 nil 但 db/c/m 全空 → `GetEquity` 恒 nil，拉股票日线时流通股/总股本/换手率**静默为 0**（判 `m.Gbbq != nil` 分辨不出）。区分手段：`Gbbq.IsEmpty()`（db/c/m 全 nil）。股票日线通过 `Manage.InitGbbq()` 检测并替换空实现，初始化与关闭共用管理器互斥锁；自建独立连接、数据库和定时任务由 `Manage.Close()` 统一释放。代码、指数和分钟查询不触发股本初始化。用户传自定义 IGbbq/WithGbbq 时不干预。
-- **删尾重插的语义（重要）**：upsert "先删 `>=last` 后插入" 的目的是**自动修复盘中拉到的半根 K 线**（删了完整重插）。两个配套约定：① 拉取时命中边界那根（t == last）必须**收入结果再停**（std 路径 `GetKlineDayUntil` 天然含边界；ex 路径 2026-08 修复前 `break` 前不 append，每次增量静默丢一根——已修复）；② **空结果保护**：`last>0 && len(out)==0`（退市/长期停牌/服务端异常返回空）时必须跳过写入，否则只剩"删"没有"插"，逐次侵蚀历史（a_stock/future 两路径均已加守卫）。
+- **分层边界**：pull 负责获取快照与同步行情；metadata 查询内存数据；storage 只定义 BarStore，SQLite 负责具体事务、表与路径。应用负责组件组装、定时执行、快照发布及关闭；不恢复 Manage，也不把应用专用数据库适配放入 SDK。
+- **请求与生命周期分离**：tdx.WithContext 创建共享连接的独立请求视图，不能把请求 context 当作连接重连生命周期。Pool.DoContext 提供视图、归还原连接；借用方不得 Close。等待响应时取消清理请求并忽略迟到帧，发送中断可能留下半帧时必须关闭当次传输。自定义 Client 若不实现 WithContext，须有有限单次请求超时。
+- **任务去重**：按市场和数据任务配置保存已处理的更新窗口边界；只有非空证券范围的任务全部成功才标记。窗口在本轮开始时选定，不能用结束时间认证跨界后才出现的窗口。自动证券池变化时应用更新 UniverseVersion 并重建 Service，以允许同一更新窗口补拉；仅改名称不需要更新版本。显式 Codes 自带范围身份。Update(true) 仍保留市场级去重，收盘前拉取不阻止当天收盘后更新。
+- **自定义市场**：必须通过 Config.Schedules 或 Unit.Schedule() 明确当地更新时区、收盘边界和延迟；不能让未知市场隐式套用国内时间。调度时间不解释行情源时间。并发数、重试和进度展示不应改变数据任务身份。
+- **错误与输出**：pull 默认不打印终端进度，应用通过 OnProgress 展示。回调串行且不能同步重入 Update；Completed 包括最终失败项。确定性错误不重试；自定义瞬时错误可实现 Temporary() bool。退避可取消，市场失败不得记为成功。
+- **源时间与单位**：日线与分钟线保存来源日期／钟面字符串，不转换成未知时区的 Unix 时间，不推断夜盘交易日。价格、金额为浮点原币种值。未知金额保持 Amount=nil，真实零使用非 nil 的 0；不能把缺失金额当作真实零成交额。
+- **删尾重插**：SaveDay/SaveMinute 在事务中删除 Time>=from 再插入；拉取必须包含边界记录以修复未完成 K 线。空结果跳过写入；内置适配器按实际返回最早时间覆盖，保留服务器滚动窗口之外的本地前缀。分笔补分钟须先合并已有记录，只补缺少源时间，原生结果可替换合成值。
+- **历史分钟覆盖**：行情与覆盖状态原子提交；完成仅表示已处理服务器当前可提供的历史，不证明上市以来无缺失。空历史扫描有期限，不作永久完成；分笔兜底不能复用原生空扫描认证。
+- **存储实现约束**：按 Code.Market/Code.Code 隔离；SQLite 引擎缓存以引用计数保护在用查询，空闲引擎按最近使用顺序淘汰。库不存在的 Last/Query 不建空库。批量插入须遵守占位符预算并保持整个事务原子性。
+- **历史计算限制**：缺失历史股本应返回不可用，不能用当前股本回填历史。当前代码快照不能证明历史证券池完整，也不能消除幸存者偏差。详细数据与复权契约见 docs/data-architecture.md。
 
 ## 踩坑记录
 

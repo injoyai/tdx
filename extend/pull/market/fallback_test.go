@@ -51,10 +51,10 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 	if k := at(9, 30); k.Open != 10 || k.Close != 10 || k.Volume != 100 {
 		t.Fatal(k)
 	}
-	if k := at(9, 31); k.Open != 12 || k.High != 12 || k.Low != 11 || k.Close != 11 || k.Volume != 500 || k.Amount != 5700 {
+	if k := at(9, 31); k.Open != 12 || k.High != 12 || k.Low != 11 || k.Close != 11 || k.Volume != 500 || (k.Amount == nil || *k.Amount != 5700) {
 		t.Fatal(k)
 	}
-	if k := at(9, 32); k.Close != 11 || k.Volume != 0 || k.Amount != 0 {
+	if k := at(9, 32); k.Close != 11 || k.Volume != 0 || (k.Amount == nil || *k.Amount != 0) {
 		t.Fatal("空分钟未沿用既有填充规则", k)
 	}
 	if k := at(13, 1); k.Close != 13 || k.Volume != 400 {
@@ -67,7 +67,10 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 			t.Fatal("缺少来源", k)
 		}
 		volume += k.Volume
-		amount += k.Amount
+		if k.Amount == nil {
+			t.Fatal("synthetic amount missing")
+		}
+		amount += *k.Amount
 	}
 	if volume != 1000 || amount != 11900 {
 		t.Fatal(volume, amount)

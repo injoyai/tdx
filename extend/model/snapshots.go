@@ -3,7 +3,6 @@ package model
 import (
 	"fmt"
 	"time"
-	"unicode/utf8"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -29,17 +28,13 @@ func (s CodeSnapshot) Validate() error {
 		}
 		scope[ex.String()] = true
 	}
-	seen := map[string]bool{}
+	if err := ValidateCodes(s.Rows); err != nil {
+		return err
+	}
 	for _, row := range s.Rows {
-		if row == nil || !scope[row.Exchange] || row.Code == "" ||
-			utf8.RuneCountInString(row.Name) > 128 || utf8.RuneCountInString(row.Code) > 32 {
-			return fmt.Errorf("model: invalid security record")
+		if !scope[row.Exchange] {
+			return fmt.Errorf("model: security outside snapshot scope %s", row.FullCode())
 		}
-		i, err := protocol.ParseInstrument(row.FullCode())
-		if err != nil || i.Exchange.String() != row.Exchange || i.Code != row.Code || seen[row.FullCode()] {
-			return fmt.Errorf("model: invalid or duplicate security %s", row.FullCode())
-		}
-		seen[row.FullCode()] = true
 	}
 	return nil
 }

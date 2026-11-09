@@ -18,6 +18,25 @@ func cutIntChecked(bs []byte) ([]byte, int, error) {
 	return nil, 0, errors.New("整数数据不足或未结束")
 }
 
+// getData 解码已由 cutIntChecked 校验的整数；首字节含六位数值和符号位，后续每字节含七位数值。
+func getData(bs []byte) (data int32) {
+	for i := range bs {
+		switch i {
+		case 0:
+			data += int32(bs[0] & 0x3F)
+		default:
+			data += int32(bs[i]&0x7F) << uint8(6+(i-1)*7)
+		}
+		if bs[i]&0x80 == 0 {
+			break
+		}
+	}
+	if len(bs) > 0 && bs[0]&0x40 > 0 {
+		data = -data
+	}
+	return
+}
+
 // wireDecoder 保留第一个错误，让固定字段和变长整数共用边界检查。
 type wireDecoder struct {
 	bs  []byte

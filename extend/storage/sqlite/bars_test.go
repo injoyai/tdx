@@ -10,6 +10,8 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+func testAmount(v float64) *float64 { return &v }
+
 func TestStoreDay(t *testing.T) {
 	s := testStore(t)
 	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
@@ -17,9 +19,9 @@ func TestStoreDay(t *testing.T) {
 	// 首次插入 3 根
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*model.KlineDay{
-		{Time: base.Format("2006-01-02"), Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 100, Amount: 150},
-		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 1.5, High: 2.5, Low: 1, Close: 2, Volume: 200, Amount: 400},
-		{Time: base.AddDate(0, 0, 2).Format("2006-01-02"), Open: 2, High: 3, Low: 1.5, Close: 2.5, Volume: 300, Amount: 750},
+		{Time: base.Format("2006-01-02"), Open: 1, High: 2, Low: 0.5, Close: 1.5, Volume: 100, Amount: testAmount(150)},
+		{Time: base.AddDate(0, 0, 1).Format("2006-01-02"), Open: 1.5, High: 2.5, Low: 1, Close: 2, Volume: 200, Amount: testAmount(400)},
+		{Time: base.AddDate(0, 0, 2).Format("2006-01-02"), Open: 2, High: 3, Low: 1.5, Close: 2.5, Volume: 300, Amount: testAmount(750)},
 	}
 	if err := s.SaveDay(code, "", ks); err != nil {
 		t.Fatalf("SaveDay: %v", err)
@@ -34,7 +36,7 @@ func TestStoreDay(t *testing.T) {
 	}
 
 	// 增量：从 last 之后追加一根，模拟当天更新的最新 K 线
-	next := &model.KlineDay{Time: base.AddDate(0, 0, 3).Format("2006-01-02"), Open: 2.5, High: 3.5, Low: 2, Close: 3, Volume: 400, Amount: 1200}
+	next := &model.KlineDay{Time: base.AddDate(0, 0, 3).Format("2006-01-02"), Open: 2.5, High: 3.5, Low: 2, Close: 3, Volume: 400, Amount: testAmount(1200)}
 	if err := s.SaveDay(code, last, []*model.KlineDay{next}); err != nil {
 		t.Fatalf("SaveDay 增量: %v", err)
 	}

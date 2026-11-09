@@ -4,6 +4,7 @@ package local
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -53,11 +54,17 @@ func ReadDay(dir string, code string) (protocol.Klines, error) {
 		// 00~03 日期 YYYYMMDD
 		d := binary.LittleEndian.Uint32(rec[0:4])
 		t := time.Date(int(d/10000), time.Month(d/100%100), int(d%100), 0, 0, 0, 0, protocol.Location())
+		if t.Year() < 1 || t.Year() > 9999 || uint32(t.Year()*10000+int(t.Month())*100+t.Day()) != d {
+			return nil, fmt.Errorf("日线记录 %d: 无效日期 %d", i/32, d)
+		}
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {
+			if vol%protocol.SharesPerLot != 0 {
+				return nil, fmt.Errorf("日线记录 %d: 成交量 %d 股不能无损转换为整数手", i/32, vol)
+			}
 			vol = protocol.FromShares(vol)
 		}
-		ks = append(ks, &protocol.Kline{
+		k := &protocol.Kline{
 			Open:   priceFromInt(binary.LittleEndian.Uint32(rec[4:8])),
 			High:   priceFromInt(binary.LittleEndian.Uint32(rec[8:12])),
 			Low:    priceFromInt(binary.LittleEndian.Uint32(rec[12:16])),
@@ -65,7 +72,11 @@ func ReadDay(dir string, code string) (protocol.Klines, error) {
 			Amount: float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))),
 			Volume: vol,
 			Time:   t,
-		})
+		}
+		if err := validateKline(k, true); err != nil {
+			return nil, fmt.Errorf("日线记录 %d: %w", i/32, err)
+		}
+		ks = append(ks, k)
 	}
 	return ks, nil
 }
@@ -106,18 +117,18 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 		m := binary.LittleEndian.Uint16(rec[2:4])
 		hour, minute := int(m/60), int(m%60)
 		t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, protocol.Location())
+		if t.Year() != year || int(t.Month()) != month || t.Day() != day || m >= 24*60 {
+			return nil, fmt.Errorf("分钟记录 %d: 无效日期或时分 %d/%d", i/32, d, m)
+		}
 		amount := math.Float32frombits(binary.LittleEndian.Uint32(rec[20:24]))
 		vol := int64(binary.LittleEndian.Uint32(rec[24:28]))
 		if !index {
+			if vol%protocol.SharesPerLot != 0 {
+				return nil, fmt.Errorf("分钟记录 %d: 成交量 %d 股不能无损转换为整数手", i/32, vol)
+			}
 			vol = protocol.FromShares(vol)
 		}
-		// 1分钟线(.lc1)每个交易日 14:59(偶见14:58)有一条"量=0额=0"的占位记录,
-		// 尾盘无真实成交,这里跳过;5分钟线(.lc5)无占位,全保留。
-		// 只跳过尾盘(>=14:58)的量额全零,避免误删盘中真实无成交分钟。
-		if skipTailPlaceholder && int(m) >= 898 && amount == 0 && vol == 0 {
-			continue
-		}
-		ks = append(ks, &protocol.Kline{
+		k := &protocol.Kline{
 			Open:   float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[4:8]))),
 			High:   float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[8:12]))),
 			Low:    float64(math.Float32frombits(binary.LittleEndian.Uint32(rec[12:16]))),
@@ -125,7 +136,17 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 			Amount: float64(amount),
 			Volume: vol,
 			Time:   t,
-		})
+		}
+		if err := validateKline(k, false); err != nil {
+			return nil, fmt.Errorf("分钟记录 %d: %w", i/32, err)
+		}
+		// 1分钟线(.lc1)每个交易日 14:59(偶见14:58)有一条"量=0额=0"的占位记录,
+		// 尾盘无真实成交,这里跳过;5分钟线(.lc5)无占位,全保留。
+		// 只跳过尾盘(>=14:58)的量额全零,避免误删盘中真实无成交分钟。
+		if skipTailPlaceholder && int(m) >= 898 && amount == 0 && vol == 0 {
+			continue
+		}
+		ks = append(ks, k)
 	}
 	return ks, nil
 }
@@ -145,6 +166,9 @@ func readLocal(dir string, ex protocol.Exchange, sub, name string) ([]byte, erro
 	bs, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("读取本地文件失败 %s: %w", filename, err)
+	}
+	if len(bs)%32 != 0 {
+		return nil, fmt.Errorf("本地文件 %s 长度 %d 不是完整的32字节记录: %w", filename, len(bs), io.ErrUnexpectedEOF)
 	}
 	return bs, nil
 }

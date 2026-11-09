@@ -12,6 +12,9 @@ import (
 	"github.com/injoyai/ios/client"
 )
 
+// transport is available only to tests that inspect the shared connection core.
+func (cn *conn) transport() *conn { return cn }
+
 // testClient lets protocol-independent transport tests inspect the shared core.
 type testClient struct {
 	protocolClient
@@ -84,7 +87,7 @@ func pipeTestClient(t *testing.T, ex bool, serve func(net.Conn), options ...clie
 		b.Close()
 		t.Fatal(err)
 	}
-	c.Logger.Debug(false)
+	c.native.Logger.Debug(false)
 	c.SetTimeout(time.Second)
 	t.Cleanup(func() {
 		c.Close()

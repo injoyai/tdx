@@ -21,7 +21,7 @@
 > 解析见 `protocol/model_gbbq.go`。复权**只用 category=1(XRXD)**。
 > 股本快照仅用于换手率(`Equity.Turnover`)与交叉校验,不参与复权。
 
-本文业务模型指 `protocol.Gbbq` / `protocol.Equity`：股本按股计，`Equity.Turnover` 接收股数并返回百分数。`lib/gbbq` 只用于文件下载和解密，原始 C1..C4 随类别变化，文件的股本单位尚未独立核实。其旧 `GetStocks` / `Equity` / `Turnover` 已标注弃用并保留结果；不能按字段同名直接套用协议模型或猜测倍率。新业务优先使用 `Client.GetGbbq` / `protocol.Gbbq.Equity()`；必须使用文件时，应先核实来源单位再显式转换。
+本文业务模型指 `protocol.Gbbq` / `protocol.Equity`：股本按股计，`Equity.Turnover` 接收股数并返回百分数。`lib/gbbq` 只用于文件下载和解密，原始 C1..C4 随类别变化，文件的股本单位尚未独立核实。其旧 `GetStocks` / `Equity` / `Turnover` 派生方法已删除；不能按字段同名直接套用协议模型或猜测倍率。新业务优先使用 `Client.GetGbbq` / `protocol.Gbbq.Equity()`；必须使用文件时，应先核实来源单位再显式转换。
 
 
 ---

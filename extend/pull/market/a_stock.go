@@ -108,7 +108,7 @@ func init() {
 	pull.Register(&Other{stdUnit{name: protocol.MarketOther}})
 }
 
-// ---- FetchDay 通用实现（含换手率/股本回填，仅股票有） ----
+// ---- FetchDay 通用实现：仅保存原始行情 ----
 
 func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 	pool, err := u.pool(s)
@@ -122,7 +122,8 @@ func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 	from := max(last, s.Start().Format(time.DateOnly))
 
 	var ks []tdx.Kline
-	err = pool.Do(func(c tdx.Client) error {
+	err = pool.DoContext(s.Context(), func(c tdx.Client) error {
+		c = tdx.WithContext(s.Context(), c)
 		var err error
 		ks, err = u.dayUntil(c, code.Code, from)
 		return err
@@ -141,9 +142,7 @@ func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 			Close:  k.Close,
 			Volume: k.Volume,
 		}
-		if k.Amount != nil {
-			d.Amount = *k.Amount
-		}
+		d.Amount = k.Amount
 
 		out = append(out, d)
 	}
@@ -161,7 +160,8 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {
 				var days []tdx.Kline
-				err := pool.Do(func(c tdx.Client) error {
+				err := pool.DoContext(s.Context(), func(c tdx.Client) error {
+					c = tdx.WithContext(s.Context(), c)
 					var err error
 					days, err = u.dayUntil(c, code.Code, from.Format(time.DateOnly))
 					return err
@@ -170,7 +170,8 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 			},
 			trades: func(day time.Time) (protocol.Trades, error) {
 				var trades protocol.Trades
-				err := pool.Do(func(c tdx.Client) error {
+				err := pool.DoContext(s.Context(), func(c tdx.Client) error {
+					c = tdx.WithContext(s.Context(), c)
 					resp, err := c.GetHistoryTradeDay(day.Format("20060102"), code.Code)
 					if err != nil {
 						return err
@@ -188,7 +189,8 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 	}
 	return pullMinutes(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		var ks []tdx.Kline
-		err := pool.Do(func(c tdx.Client) error {
+		err := pool.DoContext(s.Context(), func(c tdx.Client) error {
+			c = tdx.WithContext(s.Context(), c)
 			var err error
 			ks, err = u.minUntil(c, code.Code, from)
 			return err
@@ -203,9 +205,7 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 				Low: k.Low, Close: k.Close,
 				Volume: k.Volume,
 			}
-			if k.Amount != nil {
-				row.Amount = *k.Amount
-			}
+			row.Amount = k.Amount
 			out = append(out, row)
 		}
 		return out, nil

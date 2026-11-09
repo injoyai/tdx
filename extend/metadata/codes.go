@@ -9,11 +9,13 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// NewCodes 复制输入记录，创建代码索引；传 nil 可创建空索引。
-func NewCodes(records []*model.CodeModel) *Codes {
+// NewCodes 校验并复制完整记录，创建代码索引；传 nil 可创建空索引。
+func NewCodes(records []*model.CodeModel) (*Codes, error) {
 	c := &Codes{}
-	c.Update(records)
-	return c
+	if err := c.Update(records); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // Codes 在内存中维护一份可原子替换的证券快照。
@@ -24,19 +26,33 @@ type Codes struct {
 	mu   sync.Mutex
 }
 
-func (c *Codes) Update(ls []*model.CodeModel) {
+// Update 完整校验后原子替换快照；失败保留旧记录。
+func (c *Codes) Update(ls []*model.CodeModel) error {
+	if err := model.ValidateCodes(ls); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.list = make([]*model.CodeModel, 0, len(ls))
 	c.m = make(map[string]*model.CodeModel)
 	for _, row := range ls {
-		if row == nil {
-			continue
-		}
 		v := *row
 		c.list = append(c.list, &v)
 		c.m[v.FullCode()] = &v
 	}
+	return nil
+}
+
+// Snapshot 在一次加锁内复制全部证券，包含未归入股票、ETF 或指数的品种。
+func (c *Codes) Snapshot() model.CodeModels {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rows := make(model.CodeModels, 0, len(c.list))
+	for _, row := range c.list {
+		copy := *row
+		rows = append(rows, &copy)
+	}
+	return rows
 }
 
 func (c *Codes) Iter() iter.Seq2[string, *model.CodeModel] {

@@ -113,11 +113,18 @@ type Exchange struct {
 // MarketClient 统一业务入口，分别路由到 StConn 和 ExConn；每类协议最多一条连接。
 type MarketClient struct {
 	*queries
+	*marketState
+	requestCtx context.Context
+}
+
+// marketState is shared by request views; connection ownership stays with the client.
+type marketState struct {
 	mu         sync.Mutex
-	dialMu     [2]sync.Mutex
+	dialGate   [2]chan struct{}
 	dialing    sync.WaitGroup
 	links      [2]protocolClient
-	dial       [2]func() (protocolClient, error)
+	dial       [2]func(context.Context) (protocolClient, error)
+	lifecycle  context.Context
 	cancel     context.CancelFunc
 	timeout    time.Duration
 	timeoutSet bool
@@ -136,16 +143,20 @@ func newMarketClient(options ...client.Option) *MarketClient {
 	op := append([]client.Option(nil), options...)
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &MarketClient{
-		cancel: cancel,
-		dial: [2]func() (protocolClient, error){
-			func() (protocolClient, error) {
-				return dialSt(ctx, NewRangeDial(hostAddrs(Hosts, Hosts, stPort)), append([]client.Option{WithRedial()}, op...)...)
+		marketState: &marketState{
+			lifecycle: ctx,
+			dialGate:  [2]chan struct{}{make(chan struct{}, 1), make(chan struct{}, 1)},
+			cancel:    cancel,
+			dial: [2]func(context.Context) (protocolClient, error){
+				func(initial context.Context) (protocolClient, error) {
+					return dialStContexts(ctx, initial, NewRangeDial(hostAddrs(Hosts, Hosts, stPort)), append([]client.Option{WithRedial()}, op...)...)
+				},
+				func(initial context.Context) (protocolClient, error) {
+					return dialExContexts(ctx, initial, NewRangeDial(hostAddrs(ExHosts, ExHosts, ExPort)), append([]client.Option{WithRedial()}, op...)...)
+				},
 			},
-			func() (protocolClient, error) {
-				return dialEx(ctx, NewRangeDial(hostAddrs(ExHosts, ExHosts, ExPort)), append([]client.Option{WithRedial()}, op...)...)
-			},
+			closeDone: make(chan struct{}),
 		},
-		closeDone: make(chan struct{}),
 	}
 	c.queries = &queries{source: c}
 	return c
@@ -162,8 +173,18 @@ func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) 
 	if info.Protocol == protocol.ProtocolExtended {
 		index = 1
 	}
-	c.dialMu[index].Lock()
-	defer c.dialMu[index].Unlock()
+	ctx := c.requestContext()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case c.dialGate[index] <- struct{}{}:
+		defer func() { <-c.dialGate[index] }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.lifecycle.Done():
+		return nil, net.ErrClosed
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -171,13 +192,13 @@ func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) 
 	}
 	if link := c.links[index]; link != nil {
 		c.mu.Unlock()
-		return link, nil
+		return WithContext(ctx, link).(protocolClient), nil
 	}
 	// 注册与关闭标记共用锁，Close 开始等待后不会再新增建连任务。
 	c.dialing.Add(1)
 	c.mu.Unlock()
 	defer c.dialing.Done()
-	link, err := c.dial[index]()
+	link, err := c.dial[index](ctx)
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -203,7 +224,7 @@ func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) 
 		link.SetTimeout(c.timeout)
 	}
 	c.links[index] = link
-	return link, nil
+	return WithContext(ctx, link).(protocolClient), nil
 }
 
 // SetTimeout 同时设置已有连接和后续新建连接的请求超时。
@@ -380,6 +401,15 @@ func (c *MarketClient) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 		return nil, err
 	}
 	return link.GetCodeAll(ex)
+}
+
+// GetInstruments 通过扩展连接获取全局品种表，不触发标准连接。
+func (c *MarketClient) GetInstruments() ([]protocol.ExInstrument, error) {
+	link, err := c.connection(protocol.ExchangeHK)
+	if err != nil {
+		return nil, err
+	}
+	return link.GetInstruments()
 }
 
 // GetCount 返回指定市场数量，扩展协议全局计数不能直接替代单市场数量。

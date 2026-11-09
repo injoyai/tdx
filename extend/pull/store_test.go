@@ -3,6 +3,7 @@ package pull
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -18,8 +19,9 @@ func testService(t *testing.T) *Service {
 	// 用完整键 "test.xxx" 通过 ParseCode 路由到该市场
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	s, err := New(&Config{
-		Store: testStore(dir),
-		Codes: []string{"test.sh600000"},
+		Store:      testStore(dir),
+		Codes:      []string{"test.sh600000"},
+		RetryDelay: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -30,6 +32,10 @@ func testService(t *testing.T) *Service {
 
 // mockUnit 仅用于满足 New 的 Unit 非空校验。
 type mockUnit struct{ name string }
+
+func (*mockUnit) Schedule() Schedule {
+	return Schedule{TimeZone: "Asia/Shanghai", CloseTime: "15:30", Delay: 5 * time.Minute}
+}
 
 func (u *mockUnit) Name() string { return u.name }
 func (*mockUnit) Codes(s *Service) ([]model.Code, error) {

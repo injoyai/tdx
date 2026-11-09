@@ -8,7 +8,10 @@ import (
 
 func TestSnapshotOwnsRecords(t *testing.T) {
 	row := &model.CodeModel{Exchange: "sh", Code: "600000", Name: "original"}
-	c := NewCodes([]*model.CodeModel{row})
+	c, err := NewCodes([]*model.CodeModel{row})
+	if err != nil {
+		t.Fatal(err)
+	}
 	row.Name = "changed by producer"
 	if c.GetName("sh600000") != "original" {
 		t.Fatal("constructor retained input pointers")

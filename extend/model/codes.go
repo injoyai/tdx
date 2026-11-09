@@ -3,7 +3,7 @@ package model
 
 import (
 	"fmt"
-	"math"
+	"unicode/utf8"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -34,12 +34,23 @@ func (c *CodeModel) FullCode() string {
 	return c.Exchange + c.Code
 }
 
-// Price 按代码精度校准标准报价；p 已按默认整数分换算，返回实际元/指数点报价。
-func (c *CodeModel) Price(p float64) float64 {
-	return p * math.Pow10(int(2-c.Decimal))
-}
-
 type CodeModels []*CodeModel
+
+// ValidateCodes 校验标准证券完整记录列表；空列表有效，拒绝空行、非规范代码和重复证券。
+func ValidateCodes(rows CodeModels) error {
+	seen := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if row == nil || utf8.RuneCountInString(row.Name) > 128 || utf8.RuneCountInString(row.Code) > 32 {
+			return fmt.Errorf("model: invalid security record")
+		}
+		key, err := StandardCode(row.FullCode())
+		if err != nil || len(key) < 2 || key[:2] != row.Exchange || key[2:] != row.Code || seen[key] {
+			return fmt.Errorf("model: invalid or duplicate security %s", row.FullCode())
+		}
+		seen[key] = true
+	}
+	return nil
+}
 
 func (cs CodeModels) Codes() []string {
 	codes := make([]string, len(cs))

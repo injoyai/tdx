@@ -10,6 +10,13 @@ import (
 // DialClientFunc 创建行情客户端，创建方负责关闭其返回的资源。
 type DialClientFunc func() (Client, error)
 
+// KlineReader 是共享分页算法所需的单页 K 线接口。
+// 只读取 K 线的消费者无需依赖完整 Client。
+type KlineReader interface {
+	// GetKline 使用 protocol.TypeKline* 周期，start 从最新端偏移，count 为 1..800。
+	GetKline(category uint8, code string, start, count uint16) (*KlineResp, error)
+}
+
 // Client 定义标准与扩展行情共用的业务接口。
 // NewClient 返回按市场按需建连的 MarketClient；Dial* 分别返回绑定单种协议的 StConn / ExConn，
 // 查询与该连接协议不匹配的品种会报错，不会自动建立另一类连接。
@@ -21,6 +28,7 @@ type DialClientFunc func() (Client, error)
 // Standard、Extended 和 RangeExtended 保留原始协议数据，未知尺度不推测换算。
 // 标准专用方法仍保留原 protocol 返回类型及单位，不支持扩展品种。
 type Client interface {
+	KlineReader
 	// Close 结束整个客户端生命周期，关闭后不再重连或建立新连接。
 	Close() error
 	// GetBlockData 下载并解析标准板块文件，如 protocol.BlockFileGN。
@@ -36,6 +44,9 @@ type Client interface {
 	GetCode(exchange protocol.Exchange, start uint32, count uint16) (*CodeResp, error)
 	// GetCodeAll 获取指定市场的完整品种列表；北交所使用报表来源。
 	GetCodeAll(exchange protocol.Exchange) (*CodeResp, error)
+	// GetInstruments 获取扩展服务器的完整全局品种表，不按市场过滤、不跨查询缓存。
+	// 分页及完整性校验由 SDK 负责；标准连接返回不支持错误。
+	GetInstruments() ([]protocol.ExInstrument, error)
 	// GetCompanyCategory 获取标准证券的 F10 分类目录。
 	GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error)
 	// GetCompanyContent 按目录中的文件名、字节偏移和长度获取标准 F10 文本。
@@ -64,9 +75,6 @@ type Client interface {
 	GetHistoryTradeFull(code string, calendar TradingCalendar) (*TradeResp, error)
 	// GetIndexCodeAll 获取沪深指数代码及 bj899050，返回值带市场前缀。
 	GetIndexCodeAll() ([]string, error)
-	// GetKline 使用 protocol.TypeKline* 周期；start 从最新端偏移，count 为 1..800。
-	// 日线和一分钟别名按市场映射，响应 Category 保留实际协议周期。
-	GetKline(category uint8, code string, start, count uint16) (*KlineResp, error)
 	// GetKline15Minute 获取十五分钟 K 线的一页数据，分页参数同 GetKline。
 	GetKline15Minute(code string, start, count uint16) (*KlineResp, error)
 	// GetKline15MinuteAll 分页读取全部可用十五分钟 K 线，返回时间升序。

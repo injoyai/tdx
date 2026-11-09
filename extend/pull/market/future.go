@@ -98,7 +98,8 @@ func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from str
 		return nil, err
 	}
 	var out []tdx.Kline
-	err = p.Do(func(c tdx.Client) error {
+	err = p.DoContext(s.Context(), func(c tdx.Client) error {
+		c = tdx.WithContext(s.Context(), c)
 		var parseErr error
 		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: market, Code: bare}).String(), func(k tdx.Kline) bool {
 			layout := protocol.TimeLayout
@@ -160,9 +161,7 @@ func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
 			Time: k.Time, Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: k.Volume,
 		}
-		if k.Amount != nil {
-			row.Amount = *k.Amount
-		}
+		row.Amount = k.Amount
 		out = append(out, row)
 	}
 	return saveDays(s, code, from, out)
@@ -185,9 +184,7 @@ func (u *exUnit) FetchMinute(s *pull.Service, code model.Code) error {
 				Time: k.Time, Open: k.Open, High: k.High,
 				Low: k.Low, Close: k.Close, Volume: k.Volume,
 			}
-			if k.Amount != nil {
-				row.Amount = *k.Amount
-			}
+			row.Amount = k.Amount
 			out = append(out, row)
 		}
 		return out, nil

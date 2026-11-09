@@ -3,6 +3,7 @@ package sqlite
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
@@ -25,6 +26,10 @@ func testStore(t *testing.T) *PullStore {
 var registerMockOnce sync.Once
 
 type mockUnit struct{}
+
+func (*mockUnit) Schedule() pull.Schedule {
+	return pull.Schedule{TimeZone: "Asia/Shanghai", CloseTime: "15:30", Delay: 5 * time.Minute}
+}
 
 func (*mockUnit) Name() string                                { return "sqlite-test" }
 func (*mockUnit) Codes(*pull.Service) ([]model.Code, error)   { return nil, nil }

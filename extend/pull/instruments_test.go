@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type instrumentTestUnit struct {
@@ -37,12 +39,12 @@ type failOnceInstrumentPool struct {
 	fail bool
 }
 
-func (p *failOnceInstrumentPool) Do(fn func(tdx.Client) error) error {
+func (p *failOnceInstrumentPool) DoContext(ctx context.Context, fn func(tdx.Client) error) error {
 	if p.fail {
 		p.fail = false
 		return errors.New("instrument discovery failed")
 	}
-	return p.ClientPool.Do(fn)
+	return p.ClientPool.DoContext(ctx, fn)
 }
 
 func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
@@ -74,6 +76,23 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 				return
 			}
 			if binary.LittleEndian.Uint32(header[1:5]) == 0 {
+				continue
+			}
+			if binary.LittleEndian.Uint16(header[10:12]) == protocol.TypeExCount {
+				data := make([]byte, 23)
+				if !empty.Load() {
+					binary.LittleEndian.PutUint32(data[19:23], 801)
+				}
+				response := make([]byte, 16+len(data))
+				copy(response, []byte{0xb1, 0xcb, 0x74, 0, 0x1c})
+				copy(response[5:9], header[1:5])
+				copy(response[10:12], header[10:12])
+				binary.LittleEndian.PutUint16(response[12:14], uint16(len(data)))
+				binary.LittleEndian.PutUint16(response[14:16], uint16(len(data)))
+				copy(response[16:], data)
+				if _, err := b.Write(response); err != nil {
+					return
+				}
 				continue
 			}
 			pages.Add(1)
@@ -165,7 +184,7 @@ func TestInstrumentsSharedOnlyWithinUpdate(t *testing.T) {
 	for _, unit := range s.units {
 		unit.(*instrumentTestUnit).empty = true
 	}
-	if err := s.Update(true); err != nil || pages.Load() != 13 {
+	if err := s.Update(true); err != nil || pages.Load() != 12 {
 		t.Fatal("successful empty snapshot was repeatedly fetched", err, pages.Load())
 	}
 

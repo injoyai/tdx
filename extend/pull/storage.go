@@ -16,7 +16,7 @@ func (s *Service) checkOpen() error {
 	if s.store == nil {
 		return fmt.Errorf("pull: 行情同步需要 Store")
 	}
-	return nil
+	return s.Context().Err()
 }
 
 func (s *Service) LastDayTime(code model.Code) (string, error) {

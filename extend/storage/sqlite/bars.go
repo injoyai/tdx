@@ -19,9 +19,9 @@ var _ storage.BarStore = (*PullStore)(nil)
 // PullStore 保留一代码一日线库、一代码一年一分钟库的存储布局。
 // 注入 Service 后仍由调用方关闭。
 type PullStore struct {
-	*UpdateStore
 	dir         string
 	updatedDB   *xorm.Engine
+	updateMu    sync.Mutex
 	mu          sync.Mutex
 	engines     map[string]*cachedEngine
 	engineLimit int
@@ -34,25 +34,32 @@ func NewPull(dir string, maxCachedEngines int) (*PullStore, error) {
 	if dir == "" {
 		return nil, errors.New("pull: 数据根目录 Dir 不能为空")
 	}
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
 	if err := checkTimeFormat(dir); err != nil {
+		return nil, err
+	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
 		return nil, err
 	}
 	db, err := Open(filepath.Join(dir, "updated.db"))
 	if err != nil {
 		return nil, err
 	}
-	marks, err := NewUpdate(db)
-	if err != nil {
+	if err := ensureTable(db, new(updateRecord)); err != nil {
 		db.Close()
 		return nil, err
 	}
 	if maxCachedEngines <= 0 {
 		maxCachedEngines = 32
 	}
-	return &PullStore{UpdateStore: marks, dir: dir, updatedDB: db, engines: map[string]*cachedEngine{}, engineLimit: maxCachedEngines}, nil
+	return &PullStore{dir: dir, updatedDB: db, engines: map[string]*cachedEngine{}, engineLimit: maxCachedEngines}, nil
 }
 
-func (s *PullStore) Identity() string { return filepath.Clean(s.dir) }
+func (s *PullStore) Identity() string { return s.dir }
 
 func (s *PullStore) Close() error {
 	s.mu.Lock()
@@ -73,18 +80,24 @@ func (s *PullStore) Close() error {
 
 // openDay 打开某代码日线库并建表（带引擎缓存）。
 func (s *PullStore) openDay(code model.Code) (*xorm.Engine, func(), error) {
+	if err := validateCode(code); err != nil {
+		return nil, nil, err
+	}
 	return s.engine(dayFile(code, s.dir), new(model.KlineDay))
 }
 
 // openMinute 打开某代码指定年份分钟线库并建表（带引擎缓存）。
 func (s *PullStore) openMinute(code model.Code, year int) (*xorm.Engine, func(), error) {
+	if err := validateMinuteCode(code, year); err != nil {
+		return nil, nil, err
+	}
 	return s.engine(minuteFile(code, s.dir, year), new(model.KlineMinute))
 }
 
-// DayFile 返回某代码日线文件路径（供 Unit/查询用）。
+// DayFile 返回某代码日线文件路径；不安全的市场或代码返回空字符串。
 func (s *PullStore) DayFile(code model.Code) string { return dayFile(code, s.dir) }
 
-// MinuteFile 返回某代码指定年份分钟线文件路径。
+// MinuteFile 返回某代码指定年份分钟线文件路径；非法代码或年份返回空字符串。
 func (s *PullStore) MinuteFile(code model.Code, year int) string {
 	return minuteFile(code, s.dir, year)
 }
@@ -92,6 +105,9 @@ func (s *PullStore) MinuteFile(code model.Code, year int) string {
 // QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空。
 // start/end 为空字符串时表示不限制该端。
 func (s *PullStore) QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error) {
+	if err := validateCode(code); err != nil {
+		return nil, err
+	}
 	if err := model.ValidateTimeRange(start, end, time.DateOnly); err != nil {
 		return nil, err
 	}
@@ -109,6 +125,9 @@ func (s *PullStore) QueryDay(code model.Code, start, end string) ([]*model.Kline
 
 // LastDayTime 查询某代码日线库内最后一条记录的源时间；空库返回空字符串。
 func (s *PullStore) LastDayTime(code model.Code) (string, error) {
+	if err := validateCode(code); err != nil {
+		return "", err
+	}
 	if !exists(s.DayFile(code)) {
 		return "", nil
 	}
@@ -122,6 +141,9 @@ func (s *PullStore) LastDayTime(code model.Code) (string, error) {
 
 // LastMinuteTime 查询某代码指定年份分钟库内最后一条记录的源时间；空库返回空字符串。
 func (s *PullStore) LastMinuteTime(code model.Code, year int) (string, error) {
+	if err := validateMinuteCode(code, year); err != nil {
+		return "", err
+	}
 	if !s.MinuteExists(code, year) {
 		return "", nil
 	}
@@ -136,6 +158,9 @@ func (s *PullStore) LastMinuteTime(code model.Code, year int) (string, error) {
 // SaveDay 打开某代码日线库并增量写入（删除 Time>=from 后插入，事务内幂等）。
 // 空数据直接跳过（不打开库文件，避免创建空库）。
 func (s *PullStore) SaveDay(code model.Code, from string, ks []*model.KlineDay) error {
+	if err := validateCode(code); err != nil {
+		return err
+	}
 	if len(ks) == 0 {
 		return nil
 	}
@@ -169,6 +194,9 @@ func (s *PullStore) saveMinute(code model.Code, year int, from string, ks []*mod
 
 // SaveMinute 原子保存分钟数据；coverage 非空时同时合并覆盖标记。
 func (s *PullStore) SaveMinute(code model.Code, year int, from string, ks []*model.KlineMinute, coverage *model.MinuteCoverage) error {
+	if err := validateMinuteCode(code, year); err != nil {
+		return err
+	}
 	if len(ks) == 0 {
 		return nil
 	}
@@ -192,6 +220,9 @@ func (s *PullStore) MinuteExists(code model.Code, year int) bool {
 // QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
 // start/end 为空字符串时表示不限制该端。
 func (s *PullStore) QueryMinute(code model.Code, start, end string) ([]*model.KlineMinute, error) {
+	if err := validateCode(code); err != nil {
+		return nil, err
+	}
 	out := []*model.KlineMinute{}
 	if err := model.ValidateTimeRange(start, end, protocol.TimeLayout); err != nil {
 		return nil, err

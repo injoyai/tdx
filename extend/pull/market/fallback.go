@@ -156,7 +156,7 @@ func tradesToMinutes(day time.Time, trades protocol.Trades) ([]*model.KlineMinut
 		out = append(out, &model.KlineMinute{
 			Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,
 			Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume),
-			Amount: k.Amount, Source: model.MinuteSourceTrade,
+			Amount: &k.Amount, Source: model.MinuteSourceTrade,
 		})
 	}
 	return out, nil
