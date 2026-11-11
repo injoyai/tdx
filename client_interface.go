@@ -48,15 +48,15 @@ type Client interface {
 	// 分页及完整性校验由 SDK 负责；标准连接返回不支持错误。
 	GetInstruments() ([]protocol.ExInstrument, error)
 	// GetCompanyCategory 获取标准证券的 F10 分类目录。
-	GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error)
+	GetCompanyCategory(code string) ([]protocol.CompanyCategory, error)
 	// GetCompanyContent 按目录中的文件名、字节偏移和长度获取标准 F10 文本。
-	GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error)
+	GetCompanyContent(code, filename string, start, length uint32) (string, error)
 	// GetCount 返回指定市场的品种数，扩展市场的数量按完整列表过滤统计。
 	GetCount(exchange protocol.Exchange) (int, error)
 	// GetETFCodeAll 获取沪深 ETF/LOF 代码，返回值带市场前缀。
 	GetETFCodeAll() ([]string, error)
 	// GetFinanceInfo 获取标准证券财务信息，字段单位沿用 protocol.FinanceInfo。
-	GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error)
+	GetFinanceInfo(code string) (*protocol.FinanceInfo, error)
 	// GetGbbq 获取标准证券的股本、除权除息记录。
 	GetGbbq(code string) (*protocol.GbbqResp, error)
 	// GetGbbqAll 逐只查询标准股票的股本、除权除息记录，以带前缀代码为键。

@@ -160,59 +160,29 @@ func (s *Server) handleGbbq(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFinanceInfo(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	ex, err := parseExchange(exStr)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	code, err := queryStr(r, "code")
+	code, err := queryStandardCode(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	respond(s, w, r, func(c tdx.Client) (*protocol.FinanceInfo, error) {
-		return c.GetFinanceInfo(ex, code)
+		return c.GetFinanceInfo(code)
 	})
 }
 
 func (s *Server) handleCompanyCategory(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	ex, err := parseExchange(exStr)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	code, err := queryStr(r, "code")
+	code, err := queryStandardCode(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	respond(s, w, r, func(c tdx.Client) ([]protocol.CompanyCategory, error) {
-		return c.GetCompanyCategory(ex, code)
+		return c.GetCompanyCategory(code)
 	})
 }
 
 func (s *Server) handleCompanyContent(w http.ResponseWriter, r *http.Request) {
-	exStr, err := queryStr(r, "exchange")
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	ex, err := parseExchange(exStr)
-	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	code, err := queryStr(r, "code")
+	code, err := queryStandardCode(r)
 	if err != nil {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -232,16 +202,9 @@ func (s *Server) handleCompanyContent(w http.ResponseWriter, r *http.Request) {
 		respondErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var resp string
-	err = s.pool.DoContext(r.Context(), func(c tdx.Client) error {
-		resp, err = c.GetCompanyContent(ex, code, filename, start, length)
-		return err
+	respond(s, w, r, func(c tdx.Client) (string, error) {
+		return c.GetCompanyContent(code, filename, start, length)
 	})
-	if err != nil {
-		respondErr(w, http.StatusOK, err.Error())
-		return
-	}
-	respondOK(w, resp)
 }
 
 // ---- 分时/成交 ----

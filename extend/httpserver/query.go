@@ -16,6 +16,24 @@ func queryExchange(r *http.Request) (protocol.Exchange, error) {
 	return protocol.ParseExchange(name)
 }
 
+func queryStandardCode(r *http.Request) (string, error) {
+	if r.URL.Query().Has("exchange") {
+		return "", fmt.Errorf("请使用 code=sh600000 形式指定证券")
+	}
+	code, err := queryStr(r, "code")
+	if err != nil {
+		return "", err
+	}
+	i, err := protocol.ParseInstrument(code)
+	if err != nil {
+		return "", err
+	}
+	if i.Exchange > protocol.ExchangeBJ {
+		return "", fmt.Errorf("市场 %s 不支持此标准专用接口", i.Exchange)
+	}
+	return code, nil
+}
+
 // requestPool 使用查询的交易所选择连接池；标准专用接口仍由各 handler 校验。
 func (s *Server) requestPool(r *http.Request) (*tdx.Pool, error) {
 	ex := protocol.ExchangeSZ

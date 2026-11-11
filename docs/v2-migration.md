@@ -202,6 +202,8 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 `Client.Close()` 保持关闭已有及晚到连接、停止重连的语义，可重复调用；传输层不再提供 `CloseAll` 兼容入口。财务、F10、集合竞价、除权、板块、报表和标准分类代码列表由 `StConn` 实现；`ExConn` 对这些接口明确报错。门面自动取得标准连接，标准接口的返回类型和单位保持不变。
 
+财务和 F10 的 Go 调用将原 `(exchange, code)` 合并为证券代码字符串，例如 `GetFinanceInfo("sh600000")`、`GetCompanyCategory("sh600000")` 和 `GetCompanyContent("sh600000", filename, start, length)`。实现 `Client` 的调用方也需同步更新这三个方法的签名。
+
 ## 跨市场统一查询
 
 单协议业务连接实现使用简名 `StConn` / `ExConn`，此前 `StandardClient` / `ExtendedClient` 不保留别名；直接由对应 `Dial*` 创建。

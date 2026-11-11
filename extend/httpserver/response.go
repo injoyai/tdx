@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-
-	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Response 统一响应结构
@@ -73,13 +71,4 @@ func queryUint32(r *http.Request, key string) (uint32, error) {
 		return 0, fmt.Errorf("参数 %s 格式错误: %s", key, s)
 	}
 	return uint32(n), nil
-}
-
-// parseExchange 将字符串转换为 protocol.Exchange
-func parseExchange(s string) (protocol.Exchange, error) {
-	ex, err := protocol.ParseExchange(s)
-	if err == nil && ex <= protocol.ExchangeBJ {
-		return ex, nil
-	}
-	return 0, fmt.Errorf("不支持的交易所: %s (可选: sh, sz, bj)", s)
 }

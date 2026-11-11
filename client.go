@@ -485,26 +485,26 @@ func (c *MarketClient) GetCallAuction(code string) (*protocol.CallAuctionResp, e
 	return link.GetCallAuction(code)
 }
 
-func (c *MarketClient) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
-	if _, err := standardSecurity(exchange, code); err != nil {
+func (c *MarketClient) GetCompanyCategory(code string) ([]protocol.CompanyCategory, error) {
+	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
 	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	return link.GetCompanyCategory(exchange, code)
+	return link.GetCompanyCategory(code)
 }
 
-func (c *MarketClient) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
-	if _, err := standardSecurity(exchange, code); err != nil {
+func (c *MarketClient) GetCompanyContent(code, filename string, start, length uint32) (string, error) {
+	if _, err := standardInstrument(code); err != nil {
 		return "", err
 	}
 	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return "", err
 	}
-	return link.GetCompanyContent(exchange, code, filename, start, length)
+	return link.GetCompanyContent(code, filename, start, length)
 }
 
 func (c *MarketClient) GetETFCodeAll() ([]string, error) {
@@ -515,15 +515,15 @@ func (c *MarketClient) GetETFCodeAll() ([]string, error) {
 	return link.GetETFCodeAll()
 }
 
-func (c *MarketClient) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
-	if _, err := standardSecurity(exchange, code); err != nil {
+func (c *MarketClient) GetFinanceInfo(code string) (*protocol.FinanceInfo, error) {
+	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
 	link, err := c.connection(protocol.ExchangeSZ)
 	if err != nil {
 		return nil, err
 	}
-	return link.GetFinanceInfo(exchange, code)
+	return link.GetFinanceInfo(code)
 }
 
 func (c *MarketClient) GetGbbq(code string) (*protocol.GbbqResp, error) {

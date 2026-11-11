@@ -445,11 +445,11 @@ func (*ExConn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (*ExConn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
+func (*ExConn) GetCompanyCategory(code string) ([]protocol.CompanyCategory, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (*ExConn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
+func (*ExConn) GetCompanyContent(code, filename string, start, length uint32) (string, error) {
 	return "", errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
@@ -457,7 +457,7 @@ func (*ExConn) GetETFCodeAll() ([]string, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 
-func (*ExConn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
+func (*ExConn) GetFinanceInfo(code string) (*protocol.FinanceInfo, error) {
 	return nil, errors.New("此接口仅支持标准行情连接；跨市场使用 NewClient")
 }
 

@@ -117,9 +117,11 @@ func main() {
 | `GET /quote` | `codes` | 获取实时行情报价(支持多个代码) |
 | `GET /call_auction` | `code` | 获取集合竞价数据 |
 | `GET /gbbq` | `code` | 获取除权除息(股本变更)数据 |
-| `GET /finance` | `exchange`, `code` | 获取财务信息 |
-| `GET /company/category` | `exchange`, `code` | 获取公司信息(F10)文件目录 |
-| `GET /company/content` | `exchange`, `code`, `filename`, `start`, `length` | 获取公司信息(F10)文件内容 |
+| `GET /finance` | `code` | 获取财务信息 |
+| `GET /company/category` | `code` | 获取公司信息(F10)文件目录 |
+| `GET /company/content` | `code`, `filename`, `start`, `length` | 获取公司信息(F10)文件内容 |
+
+财务和 F10 通过 `code` 指定证券，例如 `GET /finance?code=sh600000`。
 
 ### 分时/成交
 

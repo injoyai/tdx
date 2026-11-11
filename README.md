@@ -187,14 +187,18 @@ for _, f := range fs {
 c, _ := tdx.DialDefault()
 defer c.Close()
 
+code := "sh600000"
 // 财务/基本面: 流通股本/总股本/上市日期/股东户数/净利润等
-fi, _ := c.GetFinanceInfo(protocol.ExchangeSH, "600519")
-fmt.Println(fi.LiuTongGuBen, fi.ZongGuBen, fi.GuDongRenShu, fi.JingLiRun)
+if fi, err := c.GetFinanceInfo(code); err == nil {
+    fmt.Println(fi.LiuTongGuBen, fi.ZongGuBen, fi.GuDongRenShu, fi.JingLiRun)
+}
 
 // F10 公司资料: 先取分类, 再读正文
-cats, _ := c.GetCompanyCategory(protocol.ExchangeSH, "600519")
-content, _ := c.GetCompanyContent(protocol.ExchangeSH, "600519", cats[0].Filename, cats[0].Start, cats[0].Length)
-_ = content
+if cats, err := c.GetCompanyCategory(code); err == nil && len(cats) > 0 {
+    cat := cats[0]
+    content, _ := c.GetCompanyContent(code, cat.Filename, cat.Start, cat.Length)
+    _ = content
+}
 
 // 行业归属(通达信新行业 T + 申万行业 X), 全市场
 hy, _ := c.GetTdxHy()

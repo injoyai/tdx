@@ -3,12 +3,14 @@ package httpserver
 import (
 	"encoding/json"
 	"errors"
-	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/protocol"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type dedupClient struct {
@@ -104,14 +106,19 @@ func (c *dedupClient) GetReportFile(file string) ([]byte, error) {
 	c.called, c.args = "GetReportFile", file
 	return []byte{3, 4}, c.err
 }
-func (c *dedupClient) GetFinanceInfo(ex protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
-	c.called, c.args = "GetFinanceInfo", ex.String()+"/"+code
+func (c *dedupClient) GetFinanceInfo(code string) (*protocol.FinanceInfo, error) {
+	c.called, c.args = "GetFinanceInfo", code
 	return &protocol.FinanceInfo{}, c.err
 }
-func (c *dedupClient) GetCompanyCategory(ex protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
-	c.called, c.args = "GetCompanyCategory", ex.String()+"/"+code
+func (c *dedupClient) GetCompanyCategory(code string) ([]protocol.CompanyCategory, error) {
+	c.called, c.args = "GetCompanyCategory", code
 	return []protocol.CompanyCategory{}, c.err
 }
+func (c *dedupClient) GetCompanyContent(code, filename string, start, length uint32) (string, error) {
+	c.called, c.args = "GetCompanyContent", fmt.Sprintf("%s/%s/%d/%d", code, filename, start, length)
+	return "info", c.err
+}
+
 func TestHTTPHandlerContracts(t *testing.T) {
 	for _, tc := range []struct {
 		path, method, args string
@@ -134,8 +141,9 @@ func TestHTTPHandlerContracts(t *testing.T) {
 		{"/block/data/index?file=sample", "GetBlockDataWithIndex", "sample", []*protocol.Block{}},
 		{"/block/file?file=sample", "GetBlockFileRaw", "sample", []byte{1, 2}},
 		{"/report/file?file=sample", "GetReportFile", "sample", []byte{3, 4}},
-		{"/finance?exchange=sz&code=000001", "GetFinanceInfo", "sz/000001", &protocol.FinanceInfo{}},
-		{"/company/category?exchange=sz&code=000001", "GetCompanyCategory", "sz/000001", []protocol.CompanyCategory{}},
+		{"/finance?code=sh600000", "GetFinanceInfo", "sh600000", &protocol.FinanceInfo{}},
+		{"/company/category?code=sh600000", "GetCompanyCategory", "sh600000", []protocol.CompanyCategory{}},
+		{"/company/content?code=sh600000&filename=info.txt&start=7&length=4", "GetCompanyContent", "sh600000/info.txt/7/4", "info"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			for _, mode := range []string{"success", "client error", "pool error"} {
@@ -201,5 +209,27 @@ func TestHTTPHandlerContracts(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.Code != 0 || string(got.Data) != "null" {
 			t.Fatal("typed nil changed", w.Body.String(), err)
 		}
+	}
+}
+
+func TestHTTPStandardSecurityParameters(t *testing.T) {
+	c := &dedupClient{}
+	p := handlerPool(t, c)
+	mux := http.NewServeMux()
+	(&Server{pool: p, exPool: p}).registerRoutes(mux)
+	for _, path := range []string{
+		"/finance?exchange=sz&code=000001",
+		"/company/category?exchange=sz&code=000001",
+		"/company/content?exchange=sz&code=000001&filename=info.txt&start=7&length=4",
+		"/finance?code=hk00700",
+		"/company/category?code=sh.invalid",
+		"/company/content?code=sh600000&filename=info.txt&start=7",
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != http.StatusBadRequest || c.called != "" {
+			t.Errorf("%s: status=%d, called=%q", path, w.Code, c.called)
+		}
+		t.Logf("%s status=%d", path, w.Code)
 	}
 }

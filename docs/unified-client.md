@@ -89,6 +89,8 @@ _ = quotes; _ = err
 
 标准客户端不支持扩展证券和行情分页列表；扩展客户端不支持标准证券及财务、F10、除权、板块、报表等标准专用接口，均在发送前报错。实现同一接口不代表服务器的数据能力相同。
 
+财务和 F10 使用统一证券代码，如 `GetFinanceInfo("sh600000")`、`GetCompanyCategory("sh600000")` 和 `GetCompanyContent("sh600000", filename, start, length)`。`GetTdxHy()` 读取全市场行业归属，无需传入证券代码。
+
 ## 代码与市场
 
 | 输入示例 | 协议市场 |

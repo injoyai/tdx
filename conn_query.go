@@ -151,14 +151,3 @@ func standardInstrument(code string) (protocol.Instrument, error) {
 	}
 	return i, nil
 }
-
-func standardSecurity(exchange protocol.Exchange, code string) (string, error) {
-	if exchange > protocol.ExchangeBJ {
-		return "", fmt.Errorf("市场 %d 不支持此标准专用接口", exchange)
-	}
-	i, err := standardInstrument((protocol.Instrument{Exchange: exchange, Code: code}).String())
-	if err != nil {
-		return "", err
-	}
-	return i.Code, nil
-}

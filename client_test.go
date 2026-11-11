@@ -623,6 +623,18 @@ func interfaceFinanceResponse(b []byte) []byte {
 }
 
 func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
+	for _, i := range []protocol.Instrument{
+		{Exchange: protocol.ExchangeSZ, Code: "000001"},
+		{Exchange: protocol.ExchangeSH, Code: "600000"},
+	} {
+		t.Run(i.String(), func(t *testing.T) { testClientInterfaceRoutesStandardCapabilities(t, i) })
+	}
+}
+
+func testClientInterfaceRoutesStandardCapabilities(t *testing.T, i protocol.Instrument) {
+	t.Helper()
+	code := i.Exchange.String() + i.Code
+	market := i.Exchange.Uint8()
 	api := NewClient(WithRedial(false))
 	m, ok := api.(*MarketClient)
 	if !ok {
@@ -637,11 +649,14 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 			case protocol.TypeQuote:
 				return testQuoteResponse(b)
 			case protocol.TypeFinance:
-				if string(b[3:9]) != "000001" {
-					t.Error("finance code changed", b)
+				if b[2] != market || string(b[3:9]) != i.Code {
+					t.Error("wrong finance market or code", b)
 				}
 				return interfaceFinanceResponse(b)
 			case protocol.TypeCompanyCat:
+				if binary.LittleEndian.Uint16(b) != uint16(market) || string(b[2:8]) != i.Code {
+					t.Error("wrong F10 category market or code", b)
+				}
 				r := make([]byte, 154)
 				r[0] = 1
 				copy(r[2:], "About")
@@ -650,7 +665,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 				binary.LittleEndian.PutUint32(r[150:], 4)
 				return r
 			case protocol.TypeCompanyContent:
-				if string(b[2:8]) != "000001" || binary.LittleEndian.Uint32(b[90:]) != 7 || binary.LittleEndian.Uint32(b[94:]) != 4 {
+				if binary.LittleEndian.Uint16(b) != uint16(market) || string(b[2:8]) != i.Code || string(b[10:18]) != "info.txt" || binary.LittleEndian.Uint32(b[90:]) != 7 || binary.LittleEndian.Uint32(b[94:]) != 4 {
 					t.Error("F10 request changed", b)
 				}
 				r := make([]byte, 16)
@@ -686,15 +701,16 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 	if err != nil || len(quotes) != 2 {
 		t.Fatal(quotes, err)
 	}
-	f, err := api.GetFinanceInfo(protocol.ExchangeSZ, "000001")
+	f, err := api.GetFinanceInfo(code)
 	if err != nil || f.LiuTongGuBen != 20000 || f.ZongGuBen != 30000 {
 		t.Fatal(f, err)
 	}
-	cats, err := api.GetCompanyCategory(protocol.ExchangeSZ, "000001")
+	cats, err := api.GetCompanyCategory(i.String())
 	if err != nil || len(cats) != 1 || cats[0].Start != 7 || cats[0].Length != 4 {
 		t.Fatal(cats, err)
 	}
-	content, err := api.GetCompanyContent(protocol.ExchangeSZ, "000001", "info.txt", 7, 4)
+	cat := cats[0]
+	content, err := api.GetCompanyContent(i.Code+"."+i.Exchange.String(), cat.Filename, cat.Start, cat.Length)
 	if err != nil || content != "info" {
 		t.Fatal(content, err)
 	}
@@ -714,7 +730,7 @@ func TestClientInterfaceRoutesStandardCapabilities(t *testing.T) {
 	if err = api.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = api.GetFinanceInfo(protocol.ExchangeSZ, "000001"); err == nil {
+	if _, err = api.GetFinanceInfo(code); err == nil {
 		t.Fatal("closed facade queried finance")
 	}
 	if std.Load() != 7 {
@@ -727,9 +743,9 @@ func TestClientInterfaceRejectsUnsupportedCapabilities(t *testing.T) {
 	native := respondingTestClient(t, true, func(_, _ []byte) []byte { requests.Add(1); return nil })
 	var api Client = native
 	for _, call := range []func() error{
-		func() error { _, e := api.GetFinanceInfo(protocol.ExchangeSZ, "000001"); return e },
-		func() error { _, e := api.GetCompanyCategory(protocol.ExchangeSZ, "000001"); return e },
-		func() error { _, e := api.GetCompanyContent(protocol.ExchangeSZ, "000001", "a", 0, 1); return e },
+		func() error { _, e := api.GetFinanceInfo("sz000001"); return e },
+		func() error { _, e := api.GetCompanyCategory("sz000001"); return e },
+		func() error { _, e := api.GetCompanyContent("sz000001", "a", 0, 1); return e },
 		func() error { _, e := api.GetGbbq("sz000001"); return e },
 		func() error { _, e := api.GetGbbqAll(); return e },
 		func() error { _, e := api.GetCallAuction("sz000001"); return e },
@@ -761,10 +777,10 @@ func TestClientInterfaceRejectsUnsupportedCapabilities(t *testing.T) {
 	m := unified.(*MarketClient)
 	var dials atomic.Int32
 	m.dial[0] = func(_ context.Context) (protocolClient, error) { dials.Add(1); return nil, io.ErrClosedPipe }
-	if _, err := unified.GetFinanceInfo(protocol.ExchangeHK, "00700"); err == nil {
+	if _, err := unified.GetFinanceInfo("hk00700"); err == nil {
 		t.Fatal("HK finance accepted")
 	}
-	if _, err := unified.GetCompanyContent(protocol.ExchangeSZ, "too-long", "a", 0, 1); err == nil {
+	if _, err := unified.GetCompanyContent("sz.too-long", "a", 0, 1); err == nil {
 		t.Fatal("invalid code accepted")
 	}
 	if _, err := unified.GetGbbq("us.AAPL"); err == nil {

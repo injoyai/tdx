@@ -182,7 +182,7 @@ func TestProtocolClientQueries(t *testing.T) {
 				}
 			}
 			if extended {
-				if _, err := api.GetFinanceInfo(protocol.ExchangeSZ, "000001"); err == nil {
+				if _, err := api.GetFinanceInfo("sz000001"); err == nil {
 					t.Fatal("extended client accepted finance")
 				}
 				if _, err := api.GetReportFile("a"); err == nil {

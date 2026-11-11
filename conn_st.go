@@ -512,13 +512,12 @@ func (c *StConn) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 }
 
 // GetCompanyCategory 获取 F10 公司信息分类目录。
-func (c *StConn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]protocol.CompanyCategory, error) {
-	normalized, err := standardSecurity(exchange, code)
+func (c *StConn) GetCompanyCategory(code string) ([]protocol.CompanyCategory, error) {
+	i, err := standardInstrument(code)
 	if err != nil {
 		return nil, err
 	}
-	code = normalized
-	r, err := c.SendFrame(protocol.MCompanyCat.Frame(exchange.Uint8(), code))
+	r, err := c.SendFrame(protocol.MCompanyCat.Frame(i.Exchange.Uint8(), i.Code))
 	if err != nil {
 		return nil, err
 	}
@@ -526,13 +525,12 @@ func (c *StConn) GetCompanyCategory(exchange protocol.Exchange, code string) ([]
 }
 
 // GetCompanyContent 获取 F10 某分类的文本内容。
-func (c *StConn) GetCompanyContent(exchange protocol.Exchange, code, filename string, start, length uint32) (string, error) {
-	normalized, err := standardSecurity(exchange, code)
+func (c *StConn) GetCompanyContent(code, filename string, start, length uint32) (string, error) {
+	i, err := standardInstrument(code)
 	if err != nil {
 		return "", err
 	}
-	code = normalized
-	r, err := c.SendFrame(protocol.MCompanyContent.Frame(exchange.Uint8(), code, filename, start, length))
+	r, err := c.SendFrame(protocol.MCompanyContent.Frame(i.Exchange.Uint8(), i.Code, filename, start, length))
 	if err != nil {
 		return "", err
 	}
@@ -540,13 +538,12 @@ func (c *StConn) GetCompanyContent(exchange protocol.Exchange, code, filename st
 }
 
 // GetFinanceInfo 获取标的财务/基本面信息（流通股本/总股本/行业/地域/股东户数/财务）。
-func (c *StConn) GetFinanceInfo(exchange protocol.Exchange, code string) (*protocol.FinanceInfo, error) {
-	normalized, err := standardSecurity(exchange, code)
+func (c *StConn) GetFinanceInfo(code string) (*protocol.FinanceInfo, error) {
+	i, err := standardInstrument(code)
 	if err != nil {
 		return nil, err
 	}
-	code = normalized
-	f := protocol.MFinance.Frame(exchange.Uint8(), code)
+	f := protocol.MFinance.Frame(i.Exchange.Uint8(), i.Code)
 	result, err := c.SendFrame(f)
 	if err != nil {
 		return nil, err
