@@ -42,10 +42,11 @@ type Client interface {
 	// GetCode 按指定市场内的偏移分页；start 从 0 开始，count 为 1..1000。
 	// 扩展市场先扫描全局品种列表，再过滤和分页；沪深 start 不得超过 65535。
 	GetCode(exchange protocol.Exchange, start uint32, count uint16) (*CodeResp, error)
-	// GetCodeAll 获取指定市场的完整品种列表；北交所使用报表来源。
+	// GetCodeAll 获取指定市场的品种列表；扩展市场按 GetInstruments 的返回范围过滤，北交所使用报表来源。
 	GetCodeAll(exchange protocol.Exchange) (*CodeResp, error)
-	// GetInstruments 获取扩展服务器的完整全局品种表，不按市场过滤、不跨查询缓存。
-	// 分页及完整性校验由 SDK 负责；标准连接返回不支持错误。
+	// GetInstruments 获取扩展服务器可分页提供的全局品种表，不按市场过滤、不跨查询缓存。
+	// 报告总数高于实读数时，SDK 复查尾部后可返回实读列表并记录告警；其他缺页报错。
+	// 标准连接返回不支持错误。
 	GetInstruments() ([]protocol.ExInstrument, error)
 	// GetCompanyCategory 获取标准证券的 F10 分类目录。
 	GetCompanyCategory(code string) ([]protocol.CompanyCategory, error)

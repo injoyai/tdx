@@ -18,6 +18,7 @@ type frameWriter struct {
 	writer ios.MoreWriter
 	conn   io.Closer
 	gate   chan struct{}
+	server string
 }
 
 // Write 经握手门控和请求超时写入完整字节，重连后仍使用同一入口。
@@ -30,6 +31,12 @@ func (cn *conn) WriteHEX(s string) error           { return cn.output.WriteHEX(s
 func (cn *conn) WriteJson(v any) error             { return cn.output.WriteJson(v) }
 func (cn *conn) WriteAny(v any) error              { return cn.output.WriteAny(v) }
 func (cn *conn) WriteChan(ch chan any) error       { return cn.output.WriteChan(ch) }
+
+func (cn *conn) currentWriter() *frameWriter {
+	cn.waitMu.Lock()
+	defer cn.waitMu.Unlock()
+	return cn.writer
+}
 
 // TCP 重复 Close 会报错，底层库因此跳过断开回调和读缓存清理。
 type closeOnceConn struct {
@@ -83,7 +90,7 @@ func (cn *conn) wrapWriter(native *client.Client) *frameWriter {
 	if cn.writeGate == nil {
 		cn.writeGate = make(chan struct{}, 1)
 	}
-	w := &frameWriter{writer: native.MoreWriter, conn: native.Origin(), gate: cn.writeGate}
+	w := &frameWriter{writer: native.MoreWriter, conn: native.Origin(), gate: cn.writeGate, server: native.GetKey()}
 	cn.writer = w
 	if cn.output == nil {
 		outer := ios.NewMoreWrite(ios.WriteFunc(func(bs []byte) (int, error) {

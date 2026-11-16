@@ -125,26 +125,61 @@ func (c *ExConn) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 	return out, nil
 }
 
-// GetInstruments 读取全局品种表；先取总数，拒绝缺页，不增加跨查询缓存。
+const instrumentPageSize = 800
+
+// GetInstruments 读取扩展服务器可分页提供的全局品种表。
+// 报告总数与实读数之间的尾部差异经同一连接复查后允许返回，其他缺页报错。
 func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
+	writer := c.currentWriter()
 	total, err := c.getExtendedCount()
 	if err != nil {
 		return nil, err
 	}
 	out := []protocol.ExInstrument{}
+	shortTail := false
 	for start := 0; start < total; {
-		count := min(800, total-start)
+		count := min(instrumentPageSize, total-start)
 		items, err := c.getExtendedInstruments(uint32(start), uint16(count))
 		if err != nil {
 			return nil, err
 		}
+		if len(items) == 0 && shortTail && c.currentWriter() == writer {
+			confirmed, err := c.confirmInstrumentEnd(start, total, out[start-1])
+			if err != nil {
+				return nil, err
+			}
+			// 重连后无法使用另一条连接上的响应确认原扫描的末尾。
+			if confirmed && c.currentWriter() == writer {
+				c.logger().Warn("扩展品种报告总数高于可读条数", "server", writer.server, "reported_total", total, "read_total", start)
+				return out, nil
+			}
+		}
 		if len(items) == 0 || len(items) > count {
 			return nil, fmt.Errorf("扩展品种分页 %d 不完整: %w", start, io.ErrUnexpectedEOF)
 		}
+		shortTail = count == total-start && len(items) < count
 		out = append(out, items...)
 		start += len(items)
 	}
 	return out, nil
+}
+
+func (c *ExConn) confirmInstrumentEnd(start, total int, last protocol.ExInstrument) (bool, error) {
+	anchor, err := c.getExtendedInstruments(uint32(start-1), 1)
+	if err != nil || len(anchor) != 1 || anchor[0].Market != last.Market || anchor[0].Code != last.Code {
+		return false, err
+	}
+	// 用常规页长复查，避免把与请求条数有关的空响应识别为表尾。
+	rows, err := c.getExtendedInstruments(uint32(start), instrumentPageSize)
+	if err != nil || len(rows) != 0 {
+		return false, err
+	}
+	rows, err = c.getExtendedInstruments(uint32(total-1), 1)
+	if err != nil || len(rows) != 0 {
+		return false, err
+	}
+	count, err := c.getExtendedCount()
+	return err == nil && count == total, err
 }
 
 // GetCount 返回扩展单市场数量，而非服务器全市场总数。
