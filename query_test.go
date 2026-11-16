@@ -50,7 +50,7 @@ func TestHistoryTradeRequiresDailyKline(t *testing.T) {
 								if binary.LittleEndian.Uint16(b[10:]) != 4 {
 									t.Error("incorrect extended daily category")
 								}
-								if state == "missing" {
+								if state == "missing" || binary.LittleEndian.Uint32(b[14:18]) != 0 {
 									return make([]byte, 20)
 								}
 								return testExtendedBar(day)
@@ -58,7 +58,7 @@ func TestHistoryTradeRequiresDailyKline(t *testing.T) {
 							if b[8] != protocol.TypeKlineDay {
 								t.Error("incorrect standard daily category")
 							}
-							if state == "missing" {
+							if state == "missing" || binary.LittleEndian.Uint16(b[12:14]) != 0 {
 								return []byte{0, 0}
 							}
 							return completionStandardBars([]uint32{day}, nil, false)
@@ -93,8 +93,12 @@ func TestHistoryTradeRequiresDailyKline(t *testing.T) {
 					if state == "present" {
 						want = 1
 					}
+					wantDaily := int32(1)
+					if state == "newer-date" {
+						wantDaily = 2 // 读到空页才确认没有更早的日线。
+					}
 					instrument, _ := protocol.ParseInstrument(code)
-					if err != nil || r == nil || r.Count != want || len(r.List) != want || r.Date != "20261009" || r.Instrument != instrument || daily.Load() != 1 || trades.Load() != int32(want) {
+					if err != nil || r == nil || r.Count != want || len(r.List) != want || r.Date != "20261009" || r.Instrument != instrument || daily.Load() != wantDaily || trades.Load() != int32(want) {
 						t.Fatal("daily guard failed", r, err, daily.Load(), trades.Load())
 					}
 				})
@@ -109,7 +113,7 @@ func TestHistoryTradeDailyPagination(t *testing.T) {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
 			daily.Add(1)
 			if binary.LittleEndian.Uint16(b[12:]) == 0 {
-				days := make([]uint32, 800)
+				days := make([]uint32, binary.LittleEndian.Uint16(b[14:16]))
 				for j := range days {
 					days[j] = 20261010
 				}
@@ -173,12 +177,13 @@ func TestTradePaginationOverflow(t *testing.T) {
 func TestOtherPaginationLimits(t *testing.T) {
 	for _, mode := range []string{"code", "stock", "index", "until", "extended"} {
 		t.Run(mode, func(t *testing.T) {
-			c := respondingTestClient(t, mode == "extended", func(h, _ []byte) []byte {
+			c := respondingTestClient(t, mode == "extended", func(h, b []byte) []byte {
 				if mode == "extended" {
 					sample := testExtendedBar(20250102)
 					out := append([]byte(nil), sample[:20]...)
-					binary.LittleEndian.PutUint16(out[18:], 800)
-					for j := 0; j < 800; j++ {
+					count := binary.LittleEndian.Uint16(b[18:20])
+					binary.LittleEndian.PutUint16(out[18:], count)
+					for j := uint16(0); j < count; j++ {
 						out = append(out, sample[20:]...)
 					}
 					return out
@@ -191,8 +196,9 @@ func TestOtherPaginationLimits(t *testing.T) {
 				if mode == "index" {
 					record = append(record, 0, 0, 0, 0)
 				}
-				out := protocol.Bytes(uint16(800))
-				for i := 0; i < 800; i++ {
+				count := binary.LittleEndian.Uint16(b[14:16])
+				out := protocol.Bytes(count)
+				for i := uint16(0); i < count; i++ {
 					out = append(out, record...)
 				}
 				return out
@@ -282,11 +288,17 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 					return completionRange()
 				}
 				if typ == protocol.TypeExBars {
+					if binary.LittleEndian.Uint32(b[14:18]) != 0 {
+						return make([]byte, 20)
+					}
 					return testExtendedBar(20261009)
 				}
 				if typ != protocol.TypeKline {
 					t.Error("unexpected query", h)
 					return nil
+				}
+				if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+					return []byte{0, 0}
 				}
 				index := b[0] == 1
 				if b[8] == protocol.TypeKlineMinute {
@@ -381,21 +393,90 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 }
 
 func TestUnifiedKlinePaginationLast(t *testing.T) {
+	var requests atomic.Int32
+	starts := []uint16{0, 2, 3}
+	pages := [][]uint32{{20261008, 20261009}, {20261007}, nil}
 	c := respondingTestClient(t, false, func(_, b []byte) []byte {
 		start := binary.LittleEndian.Uint16(b[12:])
-		n := 800
-		if start != 0 {
-			n = 1
+		if count := binary.LittleEndian.Uint16(b[14:16]); count != 700 {
+			t.Errorf("unexpected standard K-line request: start=%d count=%d", start, count)
 		}
-		days := make([]uint32, n)
-		for j := range days {
-			days[j] = 20261009
+		page := int(requests.Add(1)) - 1
+		if page >= len(starts) || start != starts[page] {
+			t.Errorf("unexpected standard K-line page: page=%d start=%d", page, start)
+			return completionStandardBars(nil, nil, false)
 		}
-		return completionStandardBars(days, nil, false)
+		return completionStandardBars(pages[page], nil, false)
 	})
 	r, err := c.GetKlineDayAll("sz000001")
-	if err != nil || r.Count != 801 || r.List[1].Standard.Last != 10 {
-		t.Fatal("cross-page previous close lost", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Count != 3 || len(r.List) != 3 || int(requests.Load()) != len(starts) {
+		t.Fatalf("got %d bars in %d requests, want 3 bars in %d requests", r.Count, requests.Load(), len(starts))
+	}
+	if r.List[0].Time != "2026-10-07" || r.List[1].Time != "2026-10-08" || r.List[2].Time != "2026-10-09" || r.List[1].Standard.Last != 10 {
+		t.Fatal("cross-page order or previous close changed", r.List)
+	}
+}
+
+func TestExtendedKlineShortPage(t *testing.T) {
+	const total = 703
+	oldest := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name   string
+		starts []uint32
+		want   int
+	}{
+		{"all", []uint32{0, 700, 702, total}, total},
+		{"until", []uint32{0, 700}, total - 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			c := marketTestClient(t, nil, func(h, b []byte) []byte {
+				start := binary.LittleEndian.Uint32(b[14:18])
+				count := binary.LittleEndian.Uint16(b[18:20])
+				page := int(requests.Add(1)) - 1
+				if count != 700 {
+					t.Errorf("extended page size=%d, want 700", count)
+				}
+				if binary.LittleEndian.Uint16(h[10:12]) != protocol.TypeExBars || page >= len(tc.starts) || start != tc.starts[page] {
+					t.Errorf("unexpected K-line request: page=%d start=%d count=%d", page, start, count)
+					return make([]byte, 20)
+				}
+				end := total - int(start)
+				n := min(700, end)
+				if start == 700 {
+					n = 2 // 模拟历史尚未读完时的短页。
+				}
+				data := make([]byte, 20, 20+32*n)
+				binary.LittleEndian.PutUint16(data[18:20], uint16(n))
+				for i := end - n; i < end; i++ {
+					year, month, day := oldest.AddDate(0, 0, i).Date()
+					data = append(data, testExtendedBar(uint32(year*10000 + int(month)*100 + day))[20:]...)
+				}
+				return data
+			})
+			var r *KlineResp
+			var err error
+			if tc.name == "until" {
+				boundary := oldest.AddDate(0, 0, 1).Format(time.DateOnly)
+				r, err = c.GetKlineDayUntil("hk00700", func(k Kline) bool { return k.Time <= boundary })
+			} else {
+				r, err = c.GetKlineDayAll("hk00700")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Count != tc.want || len(r.List) != tc.want || int(requests.Load()) != len(tc.starts) {
+				t.Fatalf("got %d bars (%d in list) in %d requests, want %d bars in %d requests", r.Count, len(r.List), requests.Load(), tc.want, len(tc.starts))
+			}
+			for i, k := range r.List {
+				if want := oldest.AddDate(0, 0, total-tc.want+i).Format(time.DateOnly); k.Time != want {
+					t.Fatalf("bar %d date=%s, want %s", i, k.Time, want)
+				}
+			}
+		})
 	}
 }
 
@@ -523,8 +604,14 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 	var daily atomic.Int32
 	c := respondingTestClient(t, true, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeExBars {
-			if binary.LittleEndian.Uint16(b[10:]) == 4 {
+			isDay := binary.LittleEndian.Uint16(b[10:]) == 4
+			if isDay {
 				daily.Add(1)
+			}
+			if binary.LittleEndian.Uint32(b[14:18]) != 0 {
+				return make([]byte, 20)
+			}
+			if isDay {
 				r := testExtendedBar(20261008)
 				r = append(r, testExtendedBar(20261009)[20:]...)
 				binary.LittleEndian.PutUint16(r[18:], 2)
@@ -547,7 +634,7 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 	if err != nil || r.Count != 2 || r.List[0].Date != "20261008" || r.List[1].Date != "20261009" {
 		t.Fatal(r, err)
 	}
-	if daily.Load() != 1 {
+	if daily.Load() != 2 {
 		t.Fatal("repeated daily guard", daily.Load())
 	}
 	if _, err = c.GetHistoryTradeFull("hk00700", nil); err == nil {
@@ -555,6 +642,9 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 	}
 	failed := respondingTestClient(t, true, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeExBars {
+			if binary.LittleEndian.Uint32(b[14:18]) != 0 {
+				return make([]byte, 20)
+			}
 			if binary.LittleEndian.Uint16(b[10:]) == 4 {
 				r := testExtendedBar(20261008)
 				r = append(r, testExtendedBar(20261009)[20:]...)
@@ -578,6 +668,9 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 func TestUnifiedAuctionMinute(t *testing.T) {
 	c := respondingTestClient(t, false, func(h, b []byte) []byte {
 		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+				return []byte{0, 0}
+			}
 			if b[8] == protocol.TypeKlineDay {
 				return testStandardBar(false)
 			}

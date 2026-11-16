@@ -135,20 +135,26 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 	if stop == nil {
 		return nil, errors.New("K线停止条件不能为空")
 	}
+	const pageSize = 700
 	var out *KlineResp
 	var last *protocol.Kline
-	for start := 0; start <= 65535; start += 800 {
+	for start := 0; start <= 65535; {
 		if err := q.context().Err(); err != nil {
 			return nil, err
 		}
-		r, err := q.source.GetKline(category, code, uint16(start), 800)
+		r, err := q.source.GetKline(category, code, uint16(start), pageSize)
 		if err != nil {
 			return nil, err
 		}
 		if out == nil {
 			out = &KlineResp{Instrument: r.Instrument, Category: r.Category}
 		}
-		if len(r.List) > 0 && r.List[0].Standard != nil {
+		count := len(r.List)
+		// 服务端可能返回非末页的短页，读到空页才确认历史耗尽。
+		if count == 0 {
+			return out, nil
+		}
+		if r.List[0].Standard != nil {
 			if last != nil {
 				last.Last = r.List[len(r.List)-1].Standard.Close
 			}
@@ -164,9 +170,10 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 		}
 		out.List = append(r.List, out.List...)
 		out.Count = len(out.List)
-		if matched || r.Count < 800 {
+		if matched {
 			return out, nil
 		}
+		start += count
 	}
 	return nil, errors.New("K线分页偏移超过协议 uint16 上限，历史未完整读取")
 }

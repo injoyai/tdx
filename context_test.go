@@ -120,11 +120,12 @@ func TestContextStopsPagination(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var pages atomic.Int32
-	c := respondingTestClient(t, true, func(_, _ []byte) []byte {
+	c := respondingTestClient(t, true, func(_, b []byte) []byte {
 		pages.Add(1)
-		data := make([]byte, 20+800*32)
-		binary.LittleEndian.PutUint16(data[18:20], 800)
-		for i := 0; i < 800; i++ {
+		count := binary.LittleEndian.Uint16(b[18:20])
+		data := make([]byte, 20+int(count)*32)
+		binary.LittleEndian.PutUint16(data[18:20], count)
+		for i := 0; i < int(count); i++ {
 			copy(data[20+i*32:], testExtendedBar(20261009)[20:])
 		}
 		return data

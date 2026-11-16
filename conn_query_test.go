@@ -138,9 +138,15 @@ func TestProtocolClientQueries(t *testing.T) {
 					return data
 				case protocol.TypeKline:
 					daily.Add(1)
+					if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+						return []byte{0, 0}
+					}
 					return testStandardBar(false)
 				case protocol.TypeExBars:
 					daily.Add(1)
+					if binary.LittleEndian.Uint32(b[14:18]) != 0 {
+						return make([]byte, 20)
+					}
 					return testExtendedBar(20261009)
 				case protocol.TypeHistoryTrade:
 					history.Add(1)

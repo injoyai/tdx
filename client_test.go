@@ -454,7 +454,7 @@ func TestMarketClientKlinePagination(t *testing.T) {
 	c := marketTestClient(t, nil, func(_, b []byte) []byte {
 		calls.Add(1)
 		start := int(binary.LittleEndian.Uint32(b[14:18]))
-		n := 800
+		n := 700
 		if start != 0 {
 			n = 1
 		}
@@ -467,8 +467,8 @@ func TestMarketClientKlinePagination(t *testing.T) {
 		}
 		return data
 	})
-	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 19900 })
-	if err != nil || r.Count != 801 || r.List[0].Volume != 19900 || r.List[800].Volume != 99900 || calls.Load() != 2 {
+	r, err := c.GetKlineUntil(9, "hk00700", func(k Kline) bool { return k.Volume == 29900 })
+	if err != nil || r.Count != 701 || r.List[0].Volume != 29900 || r.List[700].Volume != 99900 || calls.Load() != 2 {
 		t.Fatal("pagination order/inclusive boundary changed", r, err)
 	}
 }

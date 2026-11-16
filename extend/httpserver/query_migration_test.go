@@ -80,6 +80,10 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 			case protocol.TypeHistoryTrade:
 				data = []byte{1, 0, 0, 0, 0, 0, 0x3a, 2, 0xa8, 0x0f, 1, 1, 0}
 			case protocol.TypeKline:
+				if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+					data = []byte{0, 0}
+					break
+				}
 				data = []byte{1, 0}
 				if b[8] <= 3 || b[8] == 7 || b[8] == 8 {
 					data = append(data, protocol.Bytes(uint16((2026-2004)*2048+1000+9))...)
@@ -110,7 +114,7 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 				binary.LittleEndian.PutUint32(data[42:], math.Float32bits(9))
 			case protocol.TypeExBars:
 				data = make([]byte, 20) // 合法空列表；原 HTTP 响应必须仍为 []。
-				if hasDaily && binary.LittleEndian.Uint16(b[18:20]) == 800 {
+				if hasDaily && binary.LittleEndian.Uint16(b[18:20]) > 1 {
 					// 历史分笔的交易日检查需要对应日线；直接单根查询仍为空。
 					data = make([]byte, 52)
 					binary.LittleEndian.PutUint16(data[18:], 1)
