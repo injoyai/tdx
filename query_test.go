@@ -264,7 +264,7 @@ func completionRange() []byte {
 	for p := 18; p < 34; p += 4 {
 		binary.LittleEndian.PutUint32(b[p:], math.Float32bits(10))
 	}
-	binary.LittleEndian.PutUint32(b[34:], 123)
+	binary.LittleEndian.PutUint32(b[34:], math.Float32bits(456000))
 	binary.LittleEndian.PutUint32(b[38:], 456)
 	binary.LittleEndian.PutUint32(b[42:], math.Float32bits(9))
 	return b
@@ -333,7 +333,8 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 				t.Fatal(r, err)
 			}
 			if extended {
-				if r.List[0].RangeExtended.Position != 123 || r.List[0].RangeExtended.SettlementPrice != 9 || r.List[0].Amount != nil {
+				row := r.List[0]
+				if row.RangeExtended.Position != math.Float32bits(456000) || row.RangeExtended.SettlementPrice != 9 || row.Amount == nil || *row.Amount != 456000 {
 					t.Fatal("range fields lost", r)
 				}
 				if _, err = r.StandardResponse(); err == nil {

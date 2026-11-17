@@ -109,7 +109,7 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 				for p := 18; p < 34; p += 4 {
 					binary.LittleEndian.PutUint32(data[p:], math.Float32bits(10))
 				}
-				binary.LittleEndian.PutUint32(data[34:], 123)
+				binary.LittleEndian.PutUint32(data[34:], math.Float32bits(456000))
 				binary.LittleEndian.PutUint32(data[38:], 456)
 				binary.LittleEndian.PutUint32(data[42:], math.Float32bits(9))
 			case protocol.TypeExBars:
@@ -222,8 +222,13 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 		t.Fatal(empty)
 	}
 	r := httpData[tdx.KlineResp](t, mux, "/kline/range?code=hk00700&date=20261009&date2=20261009")
-	if r.Count != 1 || r.List[0].Close != 10 || r.List[0].Volume != 45600 || r.List[0].RangeExtended.Position != 123 || r.List[0].RangeExtended.Trade != 456 || r.List[0].RangeExtended.SettlementPrice != 9 {
+	if r.Count != 1 {
 		t.Fatal(r)
+	}
+	row := r.List[0]
+	if row.Close != 10 || row.Volume != 45600 || row.Amount == nil || *row.Amount != 456000 ||
+		row.RangeExtended.Position != math.Float32bits(456000) || row.RangeExtended.Trade != 456 || row.RangeExtended.SettlementPrice != 9 {
+		t.Fatal(row)
 	}
 }
 

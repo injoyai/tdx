@@ -74,7 +74,11 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		if binary.LittleEndian.Uint16(b[10:12]) != want {
 			t.Error("wrong day category", b)
 		}
-		return testExtendedBar(20261009)
+		bar := testExtendedBar(20261009)
+		if b[0] == byte(protocol.ExchangeHK) || b[0] == byte(protocol.ExchangeUS) {
+			binary.LittleEndian.PutUint32(bar[40:44], math.Float32bits(478800))
+		}
+		return bar
 	})
 	for _, tc := range []struct {
 		code string
@@ -96,6 +100,10 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		if k.Standard != nil {
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
+			}
+		} else if tc.code == "hk00700" || tc.code == "usAAPL" {
+			if k.Close != 10.5 || k.Amount == nil || *k.Amount != 478800 {
+				t.Fatal(tc.code, "daily amount missing or incorrect", k)
 			}
 		} else if k.Close != 10.5 || k.Extended.Position != 123 || k.Extended.Price != 10.75 || k.Amount != nil {
 			t.Fatal("lost futures fields or mislabeled position as amount", k)
@@ -446,7 +454,61 @@ func TestMarketClientCapturedHKDay(t *testing.T) {
 	if err != nil || r.Count != 1 || r.List[0].Volume != 20422500 {
 		t.Fatal("captured Tencent cross-validation sample changed", r, err)
 	}
-	t.Logf("2026-10-09 HK00700: volume=%d shares; independent saved sample=20422500 shares", r.List[0].Volume)
+	// HKEX Daily Quotations, 2026-10-09, HKD turnover rounded to wire precision.
+	const hkexAmount = 8_610_387_928
+	if amount := r.List[0].Amount; amount == nil || *amount != float64(float32(hkexAmount)) {
+		t.Fatalf("HK00700 day amount = %v, want %v HKD", amount, float64(float32(hkexAmount)))
+	}
+	t.Logf("2026-10-09 HK00700: volume=%d shares, amount=%.0f HKD", r.List[0].Volume, *r.List[0].Amount)
+}
+
+func TestMarketClientExtendedKlineAmount(t *testing.T) {
+	const amount float32 = 34_495_488 // 腾讯控股 2026-11-17 15:58 的通达信原值。
+	c := marketTestClient(t, nil, func(h, b []byte) []byte {
+		bar := testExtendedBar(0)
+		category := uint8(binary.LittleEndian.Uint16(b[10:12]))
+		if protocol.IsIntraday(category) {
+			binary.LittleEndian.PutUint16(bar[20:22], (2026-2004)*2048+1117)
+			binary.LittleEndian.PutUint16(bar[22:24], 15*60+58)
+		} else {
+			binary.LittleEndian.PutUint32(bar[20:24], 20261117)
+		}
+		binary.LittleEndian.PutUint32(bar[40:44], math.Float32bits(amount))
+		if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeExBarsRange {
+			return bar[6:] // 区间协议的响应头短 6 字节，记录布局一致。
+		}
+		return bar
+	})
+	for _, tc := range []struct {
+		code     string
+		category uint8
+		hasRange bool
+		known    bool
+	}{
+		{"hk00700", protocol.TypeKlineMinute, true, true},
+		{"hk00700", protocol.TypeKline5Minute, false, true},
+		{"hk00700", protocol.TypeKline15Minute, false, true},
+		{"usAAPL", protocol.TypeKlineMinute2, true, true},
+		{"usAAPL", protocol.TypeKline30Minute, false, true},
+		{"usAAPL", protocol.TypeKline60Minute, false, true},
+		{"usAAPL", protocol.TypeKlineWeek, false, false},
+		{"cffIF2609", protocol.TypeKlineMinute, true, false},
+	} {
+		check := func(r *KlineResp, err error) {
+			t.Helper()
+			if err != nil || r.Count != 1 {
+				t.Fatalf("%s category %d: count or error: %v %v", tc.code, tc.category, r, err)
+			}
+			got := r.List[0].Amount
+			if !tc.known && got != nil || tc.known && (got == nil || *got != float64(amount)) {
+				t.Fatalf("%s category %d: unexpected amount: %v, expected available: %t", tc.code, tc.category, got, tc.known)
+			}
+		}
+		check(c.GetKline(tc.category, tc.code, 0, 1))
+		if tc.hasRange {
+			check(c.GetKlineRange(tc.code, "20261117", "20261117"))
+		}
+	}
 }
 
 func TestMarketClientKlinePagination(t *testing.T) {

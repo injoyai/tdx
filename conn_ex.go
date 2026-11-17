@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"time"
 
@@ -39,19 +40,31 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
+	hasAmount := exKlineHasAmount(i.Exchange, out.Category)
 	for j := range bars {
 		k := &bars[j]
 		volume, err := scaleVolume(int64(k.Trade), scale)
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, Extended: k})
+		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, Extended: k}
+		if hasAmount {
+			amount := k.Amount
+			row.Amount = &amount
+		}
+		out.List = append(out.List, row)
 	}
 	if len(out.List) > int(count) {
 		return nil, errors.New("K线响应数量超过请求数量")
 	}
 	out.Count = len(out.List)
 	return out, nil
+}
+
+// 港美股已核对的日线和分钟周期使用 float32 成交额，期货在相同位置保存持仓。
+func exKlineHasAmount(exchange protocol.Exchange, category uint8) bool {
+	return (exchange == protocol.ExchangeHK || exchange == protocol.ExchangeUS) &&
+		(category == protocol.TypeKlineDay2 || protocol.IsIntraday(category))
 }
 
 // GetQuote 逐品种获取扩展五档报价，任一请求失败不返回部分结果。
@@ -283,13 +296,19 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 		return nil, err
 	}
 	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute}
+	hasAmount := exKlineHasAmount(i.Exchange, out.Category)
 	for j := range r {
 		k := &r[j]
 		volume, err := scaleVolume(int64(k.Trade), scale)
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, RangeExtended: k})
+		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, RangeExtended: k}
+		if hasAmount {
+			amount := float64(math.Float32frombits(k.Position))
+			row.Amount = &amount
+		}
+		out.List = append(out.List, row)
 	}
 	return filterKlineRange(out, fromDay, toDay), nil
 }

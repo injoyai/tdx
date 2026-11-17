@@ -72,10 +72,10 @@ type ExKline struct {
 	High     float64 `json:"high"`     // 最高价，原始浮点值，原币种/报价单位
 	Low      float64 `json:"low"`      // 最低价，原始浮点值，原币种/报价单位
 	Close    float64 `json:"close"`    // 收盘价/该周期最新价，原始浮点值，原币种/报价单位
-	Position uint32  `json:"position"` // 持仓
+	Position uint32  `json:"position"` // 原始整数值，期货为持仓
 	Trade    uint32  `json:"trade"`    // 成交量
 	Price    float64 `json:"price"`    // 结算价，原币种/报价单位
-	Amount   float64 `json:"amount"`   // position 字节按 float32 重解释的原始值，金额单位/语义未确认
+	Amount   float64 `json:"amount"`   // Position 字节按 float32 重解释，港美股周期 4 日线及分钟线为原币种成交额
 }
 
 // ExMinuteTick 扩展分时一笔。
@@ -104,11 +104,11 @@ type ExTradeTick struct {
 // ExRangeKline 扩展历史K线区间一根。
 type ExRangeKline struct {
 	Datetime        string  `json:"datetime"`
-	Open            float64 `json:"open"`  // 开盘价，原始浮点值，原币种/报价单位
-	High            float64 `json:"high"`  // 最高价，原始浮点值，原币种/报价单位
-	Low             float64 `json:"low"`   // 最低价，原始浮点值，原币种/报价单位
-	Close           float64 `json:"close"` // 收盘价/该周期最新价，原始浮点值，原币种/报价单位
-	Position        uint32  `json:"position"`
+	Open            float64 `json:"open"`     // 开盘价，原始浮点值，原币种/报价单位
+	High            float64 `json:"high"`     // 最高价，原始浮点值，原币种/报价单位
+	Low             float64 `json:"low"`      // 最低价，原始浮点值，原币种/报价单位
+	Close           float64 `json:"close"`    // 收盘价/该周期最新价，原始浮点值，原币种/报价单位
+	Position        uint32  `json:"position"` // 原始字节，港美股按 float32 解释为成交额，期货为持仓
 	Trade           uint32  `json:"trade"`
 	SettlementPrice float64 `json:"settlementPrice"` // 结算价，原币种/报价单位
 }

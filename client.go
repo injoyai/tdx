@@ -28,7 +28,7 @@ type Kline struct {
 	Low           float64  // 最低价，原币种/报价单位
 	Close         float64  // 收盘价/该周期最新价，原币种/报价单位
 	Volume        int64    // 股票为股，期货为张
-	Amount        *float64 // 原币种成交额；nil 表示该市场的金额语义未确认
+	Amount        *float64 // 原币种成交额；nil 表示该市场和周期的成交额不可用
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline
 	RangeExtended *protocol.ExRangeKline // 区间协议的持仓和结算价等原始字段

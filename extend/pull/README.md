@@ -252,7 +252,7 @@ Codes: []string{
 
 > 与本地 `.day/.lc1/.lc5` 文件的单位不同。国内默认 ×100 不是单位校准结论，不能仅依据字段名宣称其已验证为股数；港股指数不作为成交数量输出。
 
-拉取层直接保存统一 `tdx.Kline` 的时间、价格和成交量，不再提取 `Standard` / `Extended` 后重复换算，也不受旧 `StandardResponse()` 的 uint16 记录数限制。Client 的 `Amount=nil` 保留为 nil，SQLite 写入 SQL NULL，不额外增加状态字段。扩展原始 `Amount` 与持仓字节重叠，不能作为成交额；需要原始字段时使用 Client 记录的 `Extended`。
+拉取层直接保存统一 `tdx.Kline` 的时间、价格、成交量和成交额。港股主板和美股日线、分钟线随新拉取或重拉写入原币种成交额。Client 的 `Amount=nil` 在 SQLite 写入 SQL NULL。历史空值需要重拉对应日期或分钟区间。
 
 周期合并仅在全部组成记录的 Amount 都已知时求和，任一记录为 nil 则合计为 nil；真实零仍是有效金额。聚合不修改输入金额，价格和金额都不做汇率换算。SQLite 使用新 `source-time-v2` 目录，旧 `source-time-v1` 不兼容；通过显式导入保留的旧数据中，多余的旧 `TradingDate` / `AmountUnknown` 列不再映射，新库不创建它们，不自动删列或修改历史值。旧库中既有 0 仍读为非 nil 的 0，不从历史值猜测其有效性；曾自行写入非零未知金额的旧库需由调用方核对后重拉。
 
