@@ -18,4 +18,8 @@ func init() {
 		name:    protocol.MarketHK,
 		markets: []protocol.Exchange{protocol.ExchangeHK},
 	}})
+	pull.Register(&exUnit{
+		name:    protocol.MarketHKFund,
+		markets: []protocol.Exchange{protocol.ExchangeHKFund},
+	})
 }

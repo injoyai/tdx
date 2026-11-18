@@ -471,8 +471,9 @@ func TestClientUnifiedQueries(t *testing.T) {
 				t.Fatal(trade, err)
 			}
 			if extended {
-				if quotes[0].Extended == nil || bars.List[0].Extended == nil || minute.List[0].Extended == nil || trade.List[0].Extended == nil || trade.List[0].Price != nil {
-					t.Fatal("lost extended data or guessed trade scale")
+				if quotes[0].Extended == nil || bars.List[0].Extended == nil || minute.List[0].Extended == nil ||
+					trade.List[0].Extended == nil || trade.List[0].Price == nil || *trade.List[0].Price != 10 {
+					t.Fatal("lost extended data or normalized trade price")
 				}
 			} else if quotes[0].Standard == nil || bars.List[0].Standard == nil || minute.List[0].Standard == nil || trade.List[0].Standard == nil || trade.List[0].Price == nil || *trade.List[0].Price != 10 {
 				t.Fatal("lost standard data")

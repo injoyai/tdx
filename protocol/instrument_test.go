@@ -13,6 +13,13 @@ func TestParseInstrument(t *testing.T) {
 		{"bj899050", ExchangeBJ, "899050"}, {"899050", ExchangeBJ, "899050"},
 		{"上海600000", ExchangeSH, "600000"}, {"00700", ExchangeHK, "00700"},
 		{"HK.00700", ExchangeHK, "00700"}, {"hk.HSI", ExchangeHI, "HSI"},
+		{"02800", ExchangeHKFund, "02800"}, {"02800.HK", ExchangeHKFund, "02800"},
+		{"HK02849", ExchangeHKFund, "02849"}, {"hk.02850", ExchangeHK, "02850"},
+		{"HK03199", ExchangeHKFund, "03199"}, {"hk03200", ExchangeHK, "03200"},
+		{"hk03499", ExchangeHKFund, "03499"}, {"hk03500", ExchangeHK, "03500"},
+		{"hk09801", ExchangeHKFund, "09801"}, {"hk09850", ExchangeHK, "09850"},
+		{"hk82800", ExchangeHKFund, "82800"}, {"hk83200", ExchangeHK, "83200"},
+		{"hkf.00823", ExchangeHKFund, "00823"}, {"香港基金02800", ExchangeHKFund, "02800"},
 		{"HKCES120", ExchangeHI, "CES120"}, {"HKL", ExchangeHI, "HKL"},
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
 		{"hi.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
@@ -78,10 +85,28 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 			t.Fatal(tc.code, market, err)
 		}
 	}
-	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketUS, MarketHKIndex} {
+	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketHKFund, MarketUS, MarketHKIndex} {
 		info, ok := market.Info()
 		if !ok || info.Day.VolumeScale <= 0 || info.Minute.VolumeScale <= 0 || info.TickVolumeScale <= 0 {
 			t.Fatalf("%s has nonpositive volume scale: %+v", market, info)
+		}
+	}
+}
+
+func TestExtendedTradePriceScale(t *testing.T) {
+	for _, ex := range []Exchange{ExchangeHK, ExchangeHKFund, ExchangeUS, ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeHI, ExchangeQHZ} {
+		market, err := (Instrument{Exchange: ex}).Market()
+		if err != nil {
+			t.Fatal(ex, err)
+		}
+		info, _ := market.Info()
+		got, ok := info.ExtendedTradePrice(ex, 23660)
+		if ex == ExchangeHI || ex == ExchangeQHZ {
+			if ok {
+				t.Fatal("unconfirmed price scale", ex, got)
+			}
+		} else if !ok || got != 23.66 {
+			t.Fatal(ex, got, ok)
 		}
 	}
 }

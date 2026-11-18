@@ -29,6 +29,8 @@ func TestMarketPrefixForms(t *testing.T) {
 		{[]string{"sh019001", "cn/other.sh019001"}, protocol.MarketOther, "sh019001"},
 		{[]string{"sh880001", "sh.880001"}, protocol.MarketBlock, "sh880001"},
 		{[]string{"hk00700", "HK00700", "hk.00700", "HK.00700"}, protocol.MarketHK, "00700"},
+		{[]string{"hk02800", "02800", "02800.HK", "hkf02800", "HKF.02800", "hk/fund.02800"}, protocol.MarketHKFund, "02800"},
+		{[]string{"hkf.00823", "hk/fund.00823"}, protocol.MarketHKFund, "00823"},
 		{[]string{"hkHSI", "hk.HSI", "HK.HSI", "Hk.hsi", " hk.HSI "}, protocol.MarketHKIndex, "HSI"},
 		{[]string{"hkCES120", "HK.CES120"}, protocol.MarketHKIndex, "CES120"},
 		{[]string{"hk.HZ5021", "hkHZ5021"}, protocol.MarketHKIndex, "HZ5021"},

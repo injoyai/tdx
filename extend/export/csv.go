@@ -9,10 +9,10 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// KlinesToCSV 接受统一 Client 的 K 线，成交量直接按股输出；未知成交额留空。
-// 日线时间列为空；本入口表头适用于人民币、股数口径的数据。
+// KlinesToCSV 接受统一 Client 的 K 线。可转债成交量为张，股票为股，未知成交额留空。
+// 日线时间列为空，价格和金额表头适用于人民币数据。
 func KlinesToCSV(filename string, code, name string, ks []tdx.Kline) error {
-	data := [][]any{{"日期", "时间", "代码", "名称", "开盘(元)", "最高(元)", "最低(元)", "收盘(元)", "成交量(股)", "成交额(元)"}}
+	data := [][]any{{"日期", "时间", "代码", "名称", "开盘(元)", "最高(元)", "最低(元)", "收盘(元)", volumeTitle(code), "成交额(元)"}}
 	for _, v := range ks {
 		layout := protocol.TimeLayout
 		clock := ""
@@ -49,7 +49,23 @@ func KlinesToCSV(filename string, code, name string, ks []tdx.Kline) error {
 
 // TradesToCSV 接受统一 Client 的标准分笔，成交量按股输出；未知价格与成交额留空。
 func TradesToCSV(filename string, ts []tdx.Trade) error {
-	data := [][]any{{"日期", "时间", "价格(元)", "成交量(股)", "成交额(元)", "方向(0买,1卖,2中性)"}}
+	return tradesToCSV(filename, "成交量(股)", ts)
+}
+
+// TradesToCSVForCode 按证券代码标注统一分笔的成交量单位。
+func TradesToCSVForCode(filename, code string, ts []tdx.Trade) error {
+	return tradesToCSV(filename, volumeTitle(code), ts)
+}
+
+func volumeTitle(code string) string {
+	if i, err := protocol.ParseInstrument(code); err == nil && protocol.IsConvertibleBond(i.Exchange.String()+i.Code) {
+		return "成交量(张)"
+	}
+	return "成交量(股)"
+}
+
+func tradesToCSV(filename, volume string, ts []tdx.Trade) error {
+	data := [][]any{{"日期", "时间", "价格(元)", volume, "成交额(元)", "方向(0买,1卖,2中性)"}}
 	for _, v := range ts {
 		date := ""
 		if v.Date != "" {
@@ -65,7 +81,12 @@ func TradesToCSV(filename string, ts []tdx.Trade) error {
 		}
 		var price, amount any = "", ""
 		if v.Price != nil {
-			price, amount = *v.Price, *v.Price*float64(v.Volume)
+			price = *v.Price
+		}
+		if v.Amount != nil {
+			amount = *v.Amount
+		} else if v.Price != nil && v.Extended == nil {
+			amount = *v.Price * float64(v.Volume)
 		}
 		status := 2
 		switch v.Direction {

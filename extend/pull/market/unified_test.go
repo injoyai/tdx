@@ -59,6 +59,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 		{"sh510300", "sh510300"}, {"sh880001", "sh880001"},
 		{"sh110075", "sh110075"}, {"sh019001", "sh019001"},
 		{"hk00700", "hk.00700"}, {"hk.HSI", "hk.HSI"}, {"usAAPL", "us.AAPL"},
+		{"hk02800", "hkf.02800"}, {"hk/fund.00823", "hkf.00823"},
 		{"cffIF2609", "cff.IF2609"}, {"czcTA2609", "czc.TA2609"},
 		{"dceM2609", "dce.M2609"}, {"shfcu2609", "shf.cu2609"},
 		{"gfeSI2609", "gfe.SI2609"}, {"qhzIFL9", "qhz.IFL9"},

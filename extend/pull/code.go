@@ -11,7 +11,7 @@ import (
 
 var marketPrefixes = []string{
 	protocol.MarketAStock.String(), protocol.MarketIndex.String(), protocol.MarketEtfLof.String(), protocol.MarketBlock.String(),
-	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
+	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKFund.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
 	protocol.MarketBond.String(), protocol.MarketOther.String(),
 }
 
@@ -49,6 +49,8 @@ func codeInMarket(prefix, body string) (model.Code, error) {
 		query = body
 	case protocol.MarketHK:
 		query = "hk." + body
+	case protocol.MarketHKFund:
+		query = "hkf." + body
 	case protocol.MarketHKIndex:
 		query = "hi." + body
 	case protocol.MarketUS:
@@ -89,10 +91,10 @@ func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body str
 //
 //	sz000001 / sh.600000 / bj920001     带交易所前缀，可直接拼接或用点分隔；前缀不区分大小写
 //	600000                               6 位裸数字，自动补交易所前缀后再分类
-//	hk00700 / hk.HSI / 00700              港股股票或指数
+//	hk00700 / hk02800 / hk.HSI / 00700    港股股票、基金或指数
 //	usAAPL / us.BRK.B / AAPL              美股
 //	cffIF2609 / cff.IF2609 / cff/IF2609   期货
-//	cn/future.cff/IF2609 / hk/stock.00700 / US.AAPL / hk/index.HSI  完整市场键
+//	cn/future.cff/IF2609 / hk/stock.00700 / hk/fund.02800 / US.AAPL / hk/index.HSI  完整市场键
 //
 // 无法识别时返回错误。
 func ParseCode(s string) (model.Code, error) {

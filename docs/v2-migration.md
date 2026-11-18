@@ -152,13 +152,13 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 `Quote`、`KlineResp`、`MinuteResp`、`TradeResp` 移除 `VolumeUnit`，`VolumeUnknown` 和 `protocol.VolumeUnit` 枚举也移除。统一成交量及五档买卖量使用股票股数、期货合约张数；HTTP、分页结果和停止回调使用相同口径。调用方删除原先依据单位再乘 100 的代码，避免重复转换。原始 `Standard/Extended/RangeExtended` 与 `StandardResponse()` 保留各自的协议单位；指标或本地文件编码使用 `KlineResp.Klines()`，由它将统一股数转为整数手。
 
-`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`，报价/分时/分笔使用 `MarketInfo.TickVolumeScale`，倍率全部为正。国内尚未校准的品种或接口按用户指定默认 100；标准指数/板块 K 线和期货使用已确认的 1。可转债新增 `cn/bond`，其他未细分国内品种使用 `cn/other`，不再冒用股票类别；pull 的目录随类别区分，既有目录不会自动搬移。
+`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`。报价以及原始槽位提供成交量的分时和分笔使用 `MarketInfo.TickVolumeScale`。标准指数 `cn/index` 日、周、月、季、年线的解码量乘 100，与统一报价口径一致。标准指数分时和分笔的调用方改读 `Amount`，其中分时原始量乘 10,000、分笔原始量乘 100，单位元，两者的 `Volume` 均为 0。旧版 SDK 已入库的记录需在受影响范围内重新获取。国内其他尚未校准的品种或接口默认 100，期货用 1。可转债使用 `cn/bond`，其他未细分国内品种使用 `cn/other`。
 
 可转债市场使用短名 `protocol.MarketBond`，对应 `market.Bond` 和目录 `cn/bond`。若已使用此前的 `MarketConvertibleBond`、`market.ConvertibleBond` 或 `cn/convertible_bond`，需同步更新引用及配置；旧目录不会自动搬移。
 
 `KlineInfo.ToStorageVolume` 现在返回 `(int64, error)`，调用方须处理零/负倍率、负数量和溢出错误，不再对零值配置偷偷采用 ×100。期货、美股 pull 存储从旧默认 ×100 改为保留张数/股数；港股分钟 K 线采用 ×100。已有数据库不自动修改，旧记录不能未经核对混用。
 
-国内可转债及其他默认品种按上述倍率开放，不宣称已经完成单位校准。港股指数含成交额口径，配置为正倍率 1，但统一成交数量接口仍报错，不能把它当作已确认股数。港股 K 线仅有百股精度，不能恢复零股。完整边界见 [数据契约](unified-client.md#数据契约)。以下历史迁移条目的量单位说明以本节为准。
+可转债日线及长周期按 ×1000、分钟线和报价/分时/分笔按 ×10 归一为张。分时和分笔分别按各自编码校准价格。其他国内默认品种尚未逐接口校准。港股指数含成交额口径，配置为正倍率 1，但统一成交数量接口仍报错，不能把它当作已确认股数。港股 K 线仅有百股精度，不能恢复零股。完整边界见 [数据契约](unified-client.md#数据契约)。以下历史迁移条目的量单位说明以本节为准。
 
 美股日线从周期 9 改为 4：相同 AAPL 日期，旧周期单根返回 1,172,584，多根末条返回 395,396；周期 4 单根、多根均为 39,539,690 股，与独立报价一致。此类旧数据不能整体乘倍数修正，应保留旧库后重新拉取或逐条核对。
 
@@ -246,7 +246,7 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 原标准 `Client.GetQuote/GetKline/GetMinute/GetHistoryMinute/GetTrade/GetHistoryTrade` 的返回类型也分别改为 `[]Quote`、`*KlineResp`、`*MinuteResp`、`*TradeResp`，与 `MarketClient` 相同。日期统一使用有效 `YYYYMMDD` 字符串；代码包含市场前缀，可用 `protocol.Instrument{Exchange: ex, Code: code}.String()` 构造。
 
-统一价格为原币种/报价单位浮点值；未知量单位、扩展分笔价格和金额语义保持显式未确认。需要协议特有字段或原始成交量口径时，从记录的 `Standard/Extended` 获取解码结构；标准价格和成交额现在也已改为浮点元值，不再提供整数厘。例如旧 `quote.Kline.Close.Float64()` 改为统一 `quote.Price`，期货持仓从 `quote.Extended.ChiCang` 读取。标准成交转指标时，将每条 `Trade.Standard` 收集为 `protocol.Trades`；不要把未知扩展量按百股直接换算。
+统一价格为原币种/报价单位浮点值，支持的扩展分笔价格按市场规则填充。需要协议特有字段或原始单位时，从记录的 `Standard/Extended` 获取解码结构。例如旧 `quote.Kline.Close.Float64()` 改为统一 `quote.Price`，期货持仓从 `quote.Extended.ChiCang` 读取。由股票分笔生成指标时可将 `Trade.Standard` 收集为 `protocol.Trades`。标准指数的分笔金额和数量请直接读取统一结果。
 
 `DialDefault/DialExDefault` 仍只连接对应服务，通用 `Get*` 查询其他协议品种会报错；跨市场使用 `NewClient()`。`Client` 与 `MarketClient` 的全部 K线周期、`All/Until` 便捷方法均返回 `KlineResp`；`Until` 的回调参数改为 `Kline`。独立指数 K线查询和 `ExBarsRange` 均已移除，无兼容别名。统一代码路由仍只覆盖已接入的市场；此前直接用任意市场编号调用六组 `Ex*` 的代码，在未接入市场上需使用已有 `SendFrame` 与 `protocol.MEx.Frame*`，不能仅把市场编号替换成未知前缀。
 
@@ -256,7 +256,7 @@ Go 函数返回类型不支持协变，不能把 `DialDefault` 直接当作 `fun
 
 `GetHistoryTradeBefore/Full` 的交易日历参数改为 `TradingCalendar`（提供 `Range` 方法）。日历实现使用 `*metadata.Workday`（`metadata`），它是中国市场历史日历；其他市场必须由调用方提供对应日历。查询从最早可获取月线所对应月份开始，不保证服务器保留上市以来的全部分笔；`Before` 沿用日历的日期结束边界，获取整日数据，不按结束时刻截断当天分笔。扩展夜盘日期和价格尺度不作猜测换算。
 
-复权和协议数据处理可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取保留的标准解码结构，价格和成交额已为浮点元值，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的股数，不能直接作为整数手输入交给 VWAP 或本地文件写入器；这些场景使用新增的 `KlineResp.Klines()`：
+复权和协议数据处理可使用 `resp.StandardResponse()` 获取原 `protocol.KlineResp/MinuteResp/TradeResp`。它只提取保留的标准解码结构，价格和成交额已为浮点元值，不将扩展字段冒充标准数据；扩展结果和超过 uint16 数量上限的结果会报错。它保留标准指数的解码量；VWAP 或本地文件写入器使用新增的 `KlineResp.Klines()`：
 
 ```go
 r, err := c.GetKlineDayAll("sz000001")
@@ -304,7 +304,7 @@ HTTP 查询直接返回统一函数的结果，包含证券标识和单位；不
 | `extend.Info` | 调用方按需要组合行情、股本和换手率数据 |
 | `extend.DefaultDayKlineExportTitle` / `DefaultMinuteKlineExportTitle` | CSV 导出使用 `KlinesToCSV`；自定义列由调用方定义 |
 
-`protocol.Klines` 成为唯一指标实现。VWAP 的输入成交量须为手，成交额为元；`pull` 查询结果使用股和元，只需转换成交量。标准行情指数日线的解码成交量为股，调用 VWAP 前也需转为手。VWAP 修正手股换算，ATR 使用最近 n 个真实波幅，RSI 在纯上涨窗口返回 100、平盘窗口返回 0。RSI/ATR 为已有的简单滚动窗口口径，不改为其他平滑算法。
+`protocol.Klines` 成为唯一指标实现。VWAP 的输入成交量须为手，成交额为元；`pull` 查询结果使用股和元，只需转换成交量。标准行情指数日线可用 `KlineResp.Klines()` 取得指标所需的整数手。VWAP 修正手股换算，ATR 使用最近 n 个真实波幅，RSI 在纯上涨窗口返回 100、平盘窗口返回 0。RSI/ATR 为已有的简单滚动窗口口径，不改为其他平滑算法。
 
 第三方爬虫使用 `spider.Factor/Factors`，它们是数据源返回的比例模型，不等同于通达信仿射复权模型。
 
@@ -400,9 +400,11 @@ import (
 
 Amount 改为 *float64：Client 未提供金额时保存 nil／SQL NULL，非 nil 的 0 为真实零。移除 AmountUnknown，新库不另加状态列。聚合仅在全部组成记录金额已知时求和，否则为 nil。旧库既有 0 保持非 nil 的 0，不自动推断为未知或重写历史。扩展原始持仓字节不会作为金额落库。源时间格式库的旧状态列不再映射或使用，不自动删列、改历史金额；过去自定义写入非零未知金额的记录需自行核对并重拉。示例见 [pull](../examples/pull/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
-内置市场的参数和倍率集中于 `Market.Info()`。K 线倍率：股票/ETF、可转债、其他国内品种、港股主板为 100，标准指数/板块、美股及期货为 1。报价/分时/分笔使用 `TickVolumeScale`。港股指数保留正倍率 1，但缺少股数口径，统一成交数量接口拒绝。所有转换拒绝零/负倍率，不再使用隐藏兜底。
+内置市场的参数和倍率集中于 `Market.Info()`。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用 `TickVolumeScale`。港股指数的统一成交数量接口对未确认的数量口径返回错误。
 
-港股主板日线由 category=9 改为 4，修正成交量请求口径；标准行情指数及板块分钟线直接使用解码后的股数，取消拉取层重复 ×100。已有数据库不会自动修正历史记录；旧港股日线首条的异常量不能靠整体乘倍数恢复，重新获取时请保留旧库，并考虑服务器历史保留范围。
+港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。香港 ETF 五位代码按港交所分配区间自动进入扩展市场 49，`pull` 存于 `hk/fund`；市场 49 的其他基金可用 `hkf.<代码>` 显式指定。
+
+标准 `GetFinanceInfo` 的财务金额从原始千元转换为人民币元。旧解码按万倍换算的金额需重新查询；股本沿用万股转换，股东户数直接读取。
 
 ## 数据库支持
 
@@ -541,7 +543,7 @@ difference := math.Abs(k.High - k.Low)
 
 - 标准报价的整数分、K 线/实时分时的整数厘和历史分时/分笔的差值仍按协议尺度解码；累计差值先用整数求和，再转换为浮点，避免累计误差。变长整数的校验和尺度转换由对应协议消息的解码器完成，原 `GetPrice`、`CutInt`、`CutInt64` 入口已移除。
 - 统一业务接口及 `pull` 数据库已有的价格/金额单位保持不变。`Standard`、`StandardResponse()`、集合竞价及直接返回协议模型的 JSON 价格/金额由整数厘变为浮点元值；已有手写整数厘字面量及序列化快照须主动除以 1000 后迁移，不能按新单位直接读取旧 JSON。
-- 扩展分笔 `ExTradeTick.Price` 仍为未确认尺度的原始 `uint32`，业务 `Trade.Price` 仍为 `nil`；这不是已归一化的价格，不猜测换算。
+- 扩展分笔 `ExTradeTick.Price` 保留原始 `uint32`。港股主板、香港基金、美股和国内期货合约的业务 `Trade.Price` 按市场配置除以 1,000。港股基金使用港股买卖标记，美股的未确认方向为 0。
 - 指标不再截断为整数厘，可能与旧版结果有小幅差异。复权 `QFQPrice/HFQPrice` 仍按现有约定四舍五入到分；`XRXD.Pre` 返回未截断的浮点参考价。
 - `.day/.lc1/.lc5` 的磁盘格式不变：日线价格在写入时四舍五入到整数分，分钟价格/金额保留文件原有的 `float32` 精度，读取时不再截断为厘。写入器拒绝 NaN、Inf 和超出格式范围的值；日线价格还必须处于无符号整数分范围。成交量单位和尾盘占位规则保持不变。
 - `float64` 仍有二进制表示误差；计算结果比较应按来源精度和业务容差处理，不提供精确十进制结算保证。
@@ -551,7 +553,7 @@ difference := math.Abs(k.High - k.Low)
 
 `KlineResp.Klines()` 直接转换统一记录，不再受旧 `protocol.KlineResp.Count uint16` 的 65535 条限制；仍校验标准来源、原始记录和非负整百股。`StandardResponse()` 的旧类型限制和协议分页偏移上限均保留。
 
-Client 的 `KlineResp.Klines()` 返回整数手成交量，指数从原始股数改为股数 ÷100，随后可交给 metadata.Gbbq.QFQ/HFQ、`VWAP()` 和 `local.Write*`。股票原始量已为手，正常输入的结果不变；不能无损换算为整数手时返回错误。直接调用 `QFQ` / `HFQ` 仍保留输入量额，调用方须先归一化输入。CSV 入口改为直接接收统一 Client 的 List（股数）；复权或本地文件数据需要显式转换，不能直接传入协议整数手。
+Client 的 `KlineResp.Klines()` 返回整数手成交量，由统一成交量换算，随后可交给 metadata.Gbbq.QFQ/HFQ、`VWAP()` 和 `local.Write*`。股票原始量已为手，正常输入的结果不变；不能无损换算为整数手时返回错误。直接调用 `QFQ` / `HFQ` 仍保留输入量额，调用方须先归一化输入。CSV 入口改为直接接收统一 Client 的 List（股数）；复权或本地文件数据需要显式转换，不能直接传入协议整数手。
 
 `spider.GetTHSDayKline` 不再舍入成交量：源股数不是非负整数、溢出或不能整除 100 时返回错误；Full 系列的不复权数据也统一为整数手。
 

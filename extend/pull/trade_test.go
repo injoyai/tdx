@@ -116,6 +116,12 @@ func TestTradeMissingDependencies(t *testing.T) {
 }
 
 func TestTradePeriods(t *testing.T) {
+	t.Run("stock", func(t *testing.T) { testTradePeriods(t, "sz000001", "成交量(股)", 100, 10, 1000) })
+	t.Run("convertible bond", func(t *testing.T) { testTradePeriods(t, "sh113052", "成交量(张)", 10, 1, 10) })
+	t.Run("index", func(t *testing.T) { testTradePeriods(t, "sh000001", "成交量(股)", 0, 10, 100) })
+}
+
+func testTradePeriods(t *testing.T, code, volumeTitle string, units, price, tradeAmount int) {
 	var c tdx.Client
 	reader, server := net.Pipe()
 	t.Cleanup(func() { server.Close() })
@@ -147,6 +153,9 @@ func TestTradePeriods(t *testing.T) {
 					data = append(data, 0, 0, 0)
 					data = append(data, protocol.Bytes(math.Float32bits(1))...)
 					data = append(data, protocol.Bytes(math.Float32bits(1000))...)
+					if protocol.IsIndex(code) {
+						data = append(data, 0, 0, 0, 0) // 涨跌家数。
+					}
 				}
 			}
 			resp := make([]byte, 16+len(data))
@@ -189,12 +198,23 @@ func TestTradePeriods(t *testing.T) {
 	downloader.Pool = tradeTestPool{c: c}
 	downloader.Workday = w
 	downloader.CodeName = (tradeTestCodes{}).GetName
-	if err := downloader.PullYear(context.Background(), 2025, "sz000001"); err != nil {
+	if err := downloader.PullYear(context.Background(), 2025, code); err != nil {
 		t.Fatal(err)
+	}
+	filename := code + "-2025.csv"
+	file, err := os.Open(filepath.Join(dir, "分时成交", filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	trades, err := csv.NewReader(file).ReadAll()
+	if err != nil || len(trades) != 3 || trades[0][3] != volumeTitle ||
+		trades[1][2] != strconv.Itoa(price) || trades[1][3] != strconv.Itoa(units) || trades[1][4] != strconv.Itoa(tradeAmount) {
+		t.Fatalf("incorrect trade export: %v, err=%v", trades, err)
 	}
 	for _, period := range []int{1, 5, 15, 30, 60} {
 		t.Run(strconv.Itoa(period), func(t *testing.T) {
-			f, err := os.Open(filepath.Join(dir, strconv.Itoa(period)+"分钟", "sz000001-2025.csv"))
+			f, err := os.Open(filepath.Join(dir, strconv.Itoa(period)+"分钟", filename))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -206,7 +226,7 @@ func TestTradePeriods(t *testing.T) {
 			if got, want := len(rows)-1, 2*((241+period-1)/period); got != want {
 				t.Fatalf("data rows=%d, want %d", got, want)
 			}
-			if rows[1][1] != "09:30" || rows[1][8] != "100" || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
+			if rows[0][8] != volumeTitle || rows[1][1] != "09:30" || rows[1][8] != strconv.Itoa(units) || rows[2][1] != time.Date(2025, 1, 2, 9, 30+period, 0, 0, protocol.Location()).Format("15:04") {
 				t.Fatalf("auction/session boundary changed: first=%v second=%v", rows[1], rows[2])
 			}
 			for i := 2; i < len(rows); i++ {
@@ -222,8 +242,8 @@ func TestTradePeriods(t *testing.T) {
 					t.Fatal(err)
 				}
 				volume += v
-				if row[7] != "10" {
-					t.Fatalf("close=%s, want 10 yuan", row[7])
+				if row[7] != strconv.Itoa(price) {
+					t.Fatalf("close=%s, want %d yuan", row[7], price)
 				}
 				a, err := strconv.ParseFloat(row[9], 64)
 				if err != nil {
@@ -231,11 +251,11 @@ func TestTradePeriods(t *testing.T) {
 				}
 				amount += a
 			}
-			if volume != 200 {
-				t.Fatalf("volume=%d, want 200 shares", volume)
+			if volume != 2*units {
+				t.Fatalf("volume=%d, want %d", volume, 2*units)
 			}
-			if amount != 2000 {
-				t.Fatalf("amount=%v, want 2000 yuan", amount)
+			if amount != float64(2*tradeAmount) {
+				t.Fatalf("amount=%v, want %d yuan", amount, 2*tradeAmount)
 			}
 		})
 	}

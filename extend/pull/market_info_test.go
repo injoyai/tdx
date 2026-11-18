@@ -18,13 +18,14 @@ func TestMarketInfoRouting(t *testing.T) {
 		day, min           uint8
 		dayScale, minScale int64
 	}{
-		{"sh110075", protocol.MarketBond, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
+		{"sh110075", protocol.MarketBond, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 1000, 10},
 		{"sh019001", protocol.MarketOther, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
 		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
+		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.SharesPerLot, 1},
 		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"hk02800", protocol.MarketHKFund, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
@@ -68,7 +69,7 @@ func TestMarketInfoRouting(t *testing.T) {
 	}
 }
 
-func TestStandardIndexVolumeIsNotConvertedTwice(t *testing.T) {
+func TestStandardIndexDayAndMinuteVolume(t *testing.T) {
 	info, _ := protocol.MarketIndex.Info()
 	for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 		// 一条指数记录：价格差值为零，原始量 123400，额和涨跌家数为零。
@@ -80,10 +81,10 @@ func TestStandardIndexVolumeIsNotConvertedTwice(t *testing.T) {
 		if err != nil || len(bars.List) != 1 {
 			t.Fatal(bars, err)
 		}
-		// 日线原始量是手；分钟原始量是股，解码器先除 100 再乘 100。
+		// 指数日线报文量经过解码后是手，再由配置换算。分钟线保留解码量。
 		want := int64(123400)
 		if spec.Category == protocol.TypeKlineDay {
-			want *= 100
+			want = 1_234_000_000
 		}
 		if got, err := spec.ToStorageVolume(bars.List[0].Volume); err != nil || got != want {
 			t.Fatalf("category %d: stored volume %d, want %d", spec.Category, got, want)

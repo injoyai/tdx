@@ -18,7 +18,7 @@ func (i Instrument) String() string {
 	return i.Exchange.String() + "." + i.Code
 }
 
-// Market 返回已接入行情的市场类别；不据此推断扩展市场的股票/ETF/指数类型。
+// Market 返回已接入行情的市场类别。
 func (i Instrument) Market() (Market, error) {
 	switch i.Exchange {
 	case ExchangeSZ, ExchangeSH, ExchangeBJ:
@@ -39,6 +39,8 @@ func (i Instrument) Market() (Market, error) {
 		}
 	case ExchangeHK:
 		return MarketHK, nil
+	case ExchangeHKFund:
+		return MarketHKFund, nil
 	case ExchangeHI:
 		return MarketHKIndex, nil
 	case ExchangeUS:
@@ -51,7 +53,7 @@ func (i Instrument) Market() (Market, error) {
 }
 
 // ParseInstrument 支持拼接/点分隔前缀、交易所后缀和可判定的裸代码。
-// 期货保留合约大小写；港股股票和指数分别路由到市场 31 和 27。
+// 期货保留合约大小写；港股股票、基金和指数分别路由到市场 31、49 和 27。
 func ParseInstrument(s string) (Instrument, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -67,7 +69,7 @@ func ParseInstrument(s string) (Instrument, error) {
 			return Instrument{}, err
 		}
 	}
-	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHK, ExchangeHI, ExchangeUS} {
+	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHKFund, ExchangeHK, ExchangeHI, ExchangeUS} {
 		prefix := ex.String()
 		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
 			continue
@@ -123,8 +125,13 @@ func checkedInstrument(ex Exchange, body string) (Instrument, error) {
 			i.Exchange = ExchangeHI
 		} else {
 			valid = valid && len(body) == 5 && isDigits(body)
+			if valid && isHKETFCode(body) {
+				i.Exchange = ExchangeHKFund
+			}
 		}
 		i.Code = strings.ToUpper(body)
+	case ExchangeHKFund:
+		valid = len(body) == 5 && isDigits(body)
 	case ExchangeHI:
 		valid = valid && hasLetter
 		i.Code = strings.ToUpper(body)
@@ -141,4 +148,20 @@ func checkedInstrument(ex Exchange, body string) (Instrument, error) {
 		return Instrument{}, fmt.Errorf("市场 %s 的代码 %q 无效（标准代码6字节，扩展代码最多9字节）", ex, body)
 	}
 	return i, nil
+}
+
+// isHKETFCode 依据港交所证券代号编配计划匹配五位数字 ETF 代码。
+// 市场 49 的其他基金品种可用 hkf 显式指定。
+// https://www.hkex.com.hk/Products/Securities/Stock-Code-Allocation-Plan
+func isHKETFCode(code string) bool {
+	for _, span := range [][2]string{
+		{"02800", "02849"}, {"03000", "03199"}, {"03400", "03499"}, // 港元
+		{"09000", "09199"}, {"09400", "09499"}, {"09800", "09849"}, // 美元
+		{"82800", "82849"}, {"83000", "83199"}, {"83400", "83499"}, // 人民币
+	} {
+		if code >= span[0] && code <= span[1] {
+			return true
+		}
+	}
+	return false
 }

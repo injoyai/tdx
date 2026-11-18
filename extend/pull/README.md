@@ -81,11 +81,12 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 | `protocol.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
 | `protocol.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
 | `protocol.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
-| `protocol.MarketBond` | `cn/bond` | 可转债 | 7709 | 普通 K 线，按国内默认倍率 |
+| `protocol.MarketBond` | `cn/bond` | 可转债 | 7709 | 普通 K 线，成交量按张返回 |
 | `protocol.MarketOther` | `cn/other` | 其他国内品种，含尚未细分的普通债券 | 7709 | 普通 K 线，按国内默认倍率 |
 | `protocol.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
 | `protocol.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
 | `protocol.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
+| `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，ETF 代码自动路由 |
 | `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
 
@@ -95,9 +96,9 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 ### 市场 K 线配置
 
-`Market.Info()` 返回行情协议、解码分类、日线/1 分钟线的请求类型和 `VolumeScale`，并用 `TickVolumeScale` 声明报价/分时/分笔倍率。内置有效倍率全部为正，集中在 [`protocol/market.go`](../../protocol/market.go)。
+`Market.Info()` 返回行情协议、解码分类、日线/1 分钟线请求类型，以及日线、分钟线、周月季年线、报价/分时/分笔的量价换算规则。定义集中在 [`protocol/market.go`](../../protocol/market.go)。
 
-`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
+`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
 
 ```go
 code, err := pull.ParseCode("hk00700")
@@ -117,20 +118,24 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | 市场 | 日线类型 / 解码量单位 | 1 分钟类型 / 解码量单位 |
 |---|---|---|
 | 股票、ETF/LOF | 9 / 百股 | 7 / 百股 |
-| 可转债、其他国内品种 | 9 / 默认 ×100 | 7 / 默认 ×100 |
-| 指数、板块指数 | 9 / 股 | 7 / 股 |
-| 港股主板 | 4 / 百股（×100 转股） | 8 / 百股（×100 转股） |
+| 可转债（`cn/bond`） | 9 / ×1000 转张 | 7 / ×10 转张 |
+| 其他国内品种 | 9 / 默认 ×100 | 7 / 默认 ×100 |
+| 标准指数（`cn/index`） | 9 / 解码量 ×100，与统一报价口径一致 | 7 / 成交量不可用，统一 Volume 为 0 |
+| 板块指数（`cn/block`） | 9 / 保留解码量，单位未统一校准 | 7 / 保留解码量，单位未统一校准 |
+| 港股主板、香港基金 | 4 / 解码量 ×100 | 8 / 解码量 ×100 |
 | 期货 | 4 / 张（×1） | 8 / 张（×1） |
 | 美股 | 4 / 股（×1） | 8 / 股（×1） |
 | 港股指数 | 4 / 原样保留（×1），数量接口拒绝 | 8 / 原样保留（×1），数量接口拒绝 |
 
-`VolumeScale=1` 保留已确认的股数/张数，`100` 为百股换算或用户指定的国内默认倍率；可转债等国内默认项尚未逐接口校准。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数含成交额口径，倍率 1 不代表已确认股数，统一数量接口拒绝。未匹配市场（含空值）的 `Info()` 也填充标准行情配置：股票解码、日线类型 9、分钟线类型 7，所有成交量倍率默认 100；布尔值仍返回 `false` 标明非内置市场，自定义 `Unit` 可按实际协议声明配置。
+`VolumeScale=1` 保留解码量，倍率 1 本身不代表已确认单位。`100` 为百股换算或用户指定的国内默认倍率，其他国内默认项尚未逐接口校准。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数含成交额口径，统一数量接口拒绝。未匹配市场（含空值）的 `Info()` 也填充标准行情配置：股票解码、日线类型 9、分钟线类型 7，所有成交量倍率默认 100；布尔值仍返回 `false` 标明非内置市场，自定义 `Unit` 可按实际协议声明配置。
 
 期货、美股旧存储采用默认 ×100，新数据采用 ×1；已有数据库不自动修改，不能混用新旧数值。应保留旧库后重新拉取，或先核实来源再迁移。
 
+旧版 SDK 存入的 `cn/index` 日线、分钟线及 `cn/bond` 日线、分钟线可能仍是旧量口径，需要按受影响区间重拉。可转债历史分笔和合成分钟线 CSV 的数量列为张。
+
 标准行情由 `GetKline*` 按代码选择解码类型。股票/ETF 分钟拉取使用 `GetKlineMinute241Until` 保留竞价拆分；可转债、其他国内品种及指数走普通分页，不套用股票竞价拆分。K 线与报价/分时/分笔使用各自声明的倍率，本地文件仍遵循自身协议单位。
 
-港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
+标准指数的日、周、月、季、年统一量均为解码量 ×100。港股主板、香港基金和美股周、月、季、年线由统一 Client 支持，香港市场量按 ×10000、美股量按 ×100，成交额使用原币种。拉取层仍只保存日线与 1 分钟线。港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
 
 > `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
 
@@ -224,6 +229,7 @@ Codes: []string{
     "399001",   // 深证成指（指数）
     "880001",   // 板块指数
     "00700",    // 港股（5 位数字）
+    "hk02800",  // 盈富基金（香港 ETF，市场 49）
     "HSI",      // 恒生指数（知名港股指数白名单）
     "AAPL",     // 美股（纯字母）
     "cff/IF2609", // 期货（带交易所前缀）
@@ -233,7 +239,7 @@ Codes: []string{
 内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
 > 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
-> 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。
+> 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。香港基金也可直接写 `hk/fund.02800`，存储目录为 `hk/fund`。
 
 ---
 
@@ -246,7 +252,7 @@ Codes: []string{
 | 字段 | 单位 |
 |---|---|
 | 价格（Open/High/Low/Close） | 证券原币种或报价单位（float64） |
-| Volume | 直接使用统一 Client 的最小单位：股票为股，期货为张；可转债等国内默认项尚未逐接口校准 |
+| Volume | 直接使用统一 Client 的最小单位：股票为股，可转债和期货为张；其他国内默认项尚未逐接口校准 |
 | Amount | *float64 原币种成交额；nil 表示未知，非 nil 的 0 表示真实零 |
 | Source（分钟线） | 空字符串=原生数据；`trade`=分笔合成，聚合结果含合成输入时保留该标记 |
 

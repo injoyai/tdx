@@ -397,7 +397,7 @@ func decodeExMinute(bs []byte, headerLen int) ([]ExMinuteTick, error) {
 
 // ---- 分笔成交 ----
 
-// ExTradeCache 分笔解析上下文(market 决定港股 B/S 判定)。
+// ExTradeCache 分笔解析上下文，市场决定成交性质的编码。
 type ExTradeCache struct{ Market uint8 }
 
 // FrameTrade 当日分笔请求。
@@ -441,6 +441,7 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 	out := make([]ExTradeTick, 0, num)
+	tradeMarket := extendedTradeMarket(Exchange(market))
 	for i := 0; i < num; i++ {
 		raw := int(r.u16())
 		price := r.u32()
@@ -451,7 +452,7 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 		if second > 59 {
 			second = 0
 		}
-		dir, name := exTradeNature(market, direction, volume, zengcang)
+		dir, name := exTradeNature(tradeMarket, direction, volume, zengcang)
 		out = append(out, ExTradeTick{
 			Hour: raw / 60, Minute: raw % 60, Second: second,
 			Price: price, Volume: volume, ZengCang: zengcang,
@@ -462,8 +463,9 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 }
 
 // exTradeNature 还原买卖方向与开平性质,移植自 pytdx。
-func exTradeNature(market uint8, direction uint16, volume uint32, zengcang int32) (int, string) {
-	if market == 31 || market == 48 { // 港股
+func exTradeNature(market Market, direction uint16, volume uint32, zengcang int32) (int, string) {
+	switch market {
+	case MarketHK, MarketHKFund:
 		switch direction {
 		case 0:
 			return 1, "B"
@@ -472,6 +474,9 @@ func exTradeNature(market uint8, direction uint16, volume uint32, zengcang int32
 		default:
 			return 0, ""
 		}
+	case MarketFuture:
+	default:
+		return 0, ""
 	}
 	value := int(direction) / 10000
 	vol := int32(volume)

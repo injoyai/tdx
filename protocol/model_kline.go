@@ -156,6 +156,7 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		resp.List = make([]*Kline, 0, resp.Count)
 	}
 
+	info := standardMarketInfo(c.Code)
 	var last int64 // 线上的整数厘差值先累加，再转换为元，避免累计浮点误差。
 	for i := uint16(0); i < resp.Count; i++ {
 		date := d.take(4)
@@ -189,14 +190,12 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 			年: 不需要操作
 
 		*/
-		k.Volume = int64(float32Value(d.uint32()))
-		k.Volume = normalizeKlineVolume(k.Volume, c)
+		k.Volume = info.standardKlineVolume(int64(float32Value(d.uint32())), c.Type, c.Kind)
 		k.Amount = float32Value(d.uint32())
 
 		switch c.Kind {
 		case KindIndex:
-			//指数和股票的差别,指数多解析4字节,并处理成交量*100
-			k.Volume = ToShares(k.Volume)
+			// 指数多带两个 uint16 涨跌家数。
 			k.UpCount = int(d.uint16())
 			k.DownCount = int(d.uint16())
 		}
@@ -214,16 +213,6 @@ type KlineCache struct {
 	Type uint8  //1分钟,5分钟,日线等
 	Kind string //指数,个股等
 	Code string //证券代码,用于区分不同品种的成交量单位
-}
-
-func normalizeKlineVolume(volume int64, c KlineCache) int64 {
-	switch c.Type {
-	case TypeKlineMinute, TypeKline5Minute, TypeKlineMinute2, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute, TypeKlineDay2:
-		if !IsConvertibleBond(c.Code) {
-			return FromShares(volume)
-		}
-	}
-	return volume
 }
 
 // FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00

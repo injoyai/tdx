@@ -14,6 +14,7 @@ type DialClientFunc func() (Client, error)
 // 只读取 K 线的消费者无需依赖完整 Client。
 type KlineReader interface {
 	// GetKline 使用 protocol.TypeKline* 周期，start 从最新端偏移，count 为 1..800。
+	// 标准指数日内 K 线的成交量不可用，Volume 为 0，原始字段保留在 Standard。
 	GetKline(category uint8, code string, start, count uint16) (*KlineResp, error)
 }
 
@@ -24,7 +25,7 @@ type KlineReader interface {
 //
 // code 推荐使用带市场前缀的证券代码，如 sh600000、hk00700、usAAPL、cffIF2609；
 // 显式传入 exchange 的方法使用该市场的代码主体。date 使用有效 YYYYMMDD。
-// 统一结果的价格按品种原币种/报价单位表示，成交量和五档买卖量使用最小单位：股票为股，期货为张；
+// 统一结果的价格按品种原币种/报价单位表示，成交量和五档买卖量使用最小单位：股票为股，可转债和期货为张；
 // Standard、Extended 和 RangeExtended 保留原始协议数据，未知尺度不推测换算。
 // 标准专用方法仍保留原 protocol 返回类型及单位，不支持扩展品种。
 type Client interface {
@@ -170,7 +171,7 @@ type Client interface {
 	// GetTdxZs 从标准 zhb.zip 解析 tdxzs.cfg，获取板块名称与指数代码的对应关系。
 	GetTdxZs() ([]*protocol.TdxZs, error)
 	// GetTrade 获取当日一页分笔；start 从最新端偏移，count 为 1..1800。
-	// 扩展分笔价格尺度未确认，公共 Price 为 nil，原始价格保留在 Extended.Price。
+	// 扩展分笔的公共 Price 按市场换算，原始价格保留在 Extended.Price。
 	GetTrade(code string, start, count uint16) (*TradeResp, error)
 	// GetTradeAll 分页读取当日全部可用分笔，按旧页在前的顺序合并；中途失败不返回部分结果。
 	GetTradeAll(code string) (*TradeResp, error)

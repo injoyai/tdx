@@ -40,7 +40,7 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	hasAmount := exKlineHasAmount(i.Exchange, out.Category)
+	hasAmount := info.HasExtendedKlineAmount(out.Category)
 	for j := range bars {
 		k := &bars[j]
 		volume, err := scaleVolume(int64(k.Trade), scale)
@@ -59,12 +59,6 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	}
 	out.Count = len(out.List)
 	return out, nil
-}
-
-// 港美股已核对的日线和分钟周期使用 float32 成交额，期货在相同位置保存持仓。
-func exKlineHasAmount(exchange protocol.Exchange, category uint8) bool {
-	return (exchange == protocol.ExchangeHK || exchange == protocol.ExchangeUS) &&
-		(category == protocol.TypeKlineDay2 || protocol.IsIntraday(category))
 }
 
 // GetQuote 逐品种获取扩展五档报价，任一请求失败不返回部分结果。
@@ -237,7 +231,7 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 }
 
 func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, error) {
-	i, _, err := protocolInstrument(code, true)
+	i, info, err := protocolInstrument(code, true)
 	if err != nil {
 		return nil, err
 	}
@@ -256,14 +250,17 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	// shortcut: 扩展分笔价格尺度未确认，取得各市场交叉验证样本后填充公共 Price。
 	for j := range ticks {
 		k := &ticks[j]
 		volume, err := scaleVolume(int64(k.Volume), scale)
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Volume: volume, Direction: k.Direction, Extended: k})
+		var price *float64
+		if value, ok := info.ExtendedTradePrice(i.Exchange, k.Price); ok {
+			price = &value
+		}
+		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Price: price, Volume: volume, Direction: k.Direction, Extended: k})
 	}
 	out.Count = len(out.List)
 	return out, nil
@@ -296,7 +293,7 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 		return nil, err
 	}
 	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute}
-	hasAmount := exKlineHasAmount(i.Exchange, out.Category)
+	hasAmount := info.HasExtendedKlineAmount(out.Category)
 	for j := range r {
 		k := &r[j]
 		volume, err := scaleVolume(int64(k.Trade), scale)

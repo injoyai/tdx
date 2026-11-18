@@ -15,7 +15,7 @@ type MinuteResp struct {
 type PriceNumber struct {
 	Time   string
 	Price  float64 // 分时价格，元（指数为点）；已按协议尺度换算
-	Number int
+	Number int     // 原始数量槽位，标准指数分时为万元
 }
 
 func (p PriceNumber) String() string {

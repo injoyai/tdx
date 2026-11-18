@@ -27,14 +27,14 @@ type Kline struct {
 	High          float64  // 最高价，原币种/报价单位
 	Low           float64  // 最低价，原币种/报价单位
 	Close         float64  // 收盘价/该周期最新价，原币种/报价单位
-	Volume        int64    // 股票为股，期货为张
+	Volume        int64    // 股票为股，可转债和期货为张；标准指数日内缺少可用成交量时为 0
 	Amount        *float64 // 原币种成交额；nil 表示该市场和周期的成交额不可用
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline
 	RangeExtended *protocol.ExRangeKline // 区间协议的持仓和结算价等原始字段
 }
 
-// Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量及五档买卖量使用最小单位（股票为股，期货为张）。
+// Quote 是统一五档报价，价格使用品种原币种/报价单位，成交量及五档买卖量使用最小单位（股票为股，可转债和期货为张）。
 type Quote struct {
 	Instrument protocol.Instrument
 	PreClose   float64    // 昨收/昨结，原币种/报价单位
@@ -42,7 +42,7 @@ type Quote struct {
 	High       float64    // 最高价，原币种/报价单位
 	Low        float64    // 最低价，原币种/报价单位
 	Price      float64    // 最新价，原币种/报价单位
-	Volume     int64      // 股票为股，期货为张
+	Volume     int64      // 股票为股，可转债和期货为张
 	Bid        [5]float64 // 买一至买五价格，原币种/报价单位
 	BidVolume  [5]int64
 	Ask        [5]float64 // 卖一至卖五价格，原币种/报价单位
@@ -61,9 +61,10 @@ type MinuteResp struct {
 
 // Minute 是统一分时记录，Standard 或 Extended 保留对应协议的原始数据。
 type Minute struct {
-	Time     string  // HH:MM
-	Price    float64 // 分时价格，原币种/报价单位
-	Volume   int64   // 股票为股，期货为张
+	Time     string   // HH:MM
+	Price    float64  // 分时价格，原币种/报价单位
+	Volume   int64    // 股票为股，可转债和期货为张；标准指数缺量时为 0
+	Amount   *float64 // 原币种成交额；标准指数分时从原始数量槽位换算，其他为 nil
 	Standard *protocol.PriceNumber
 	Extended *protocol.ExMinuteTick
 }
@@ -81,8 +82,9 @@ type Trade struct {
 	Date      string   // 历史查询日期 YYYYMMDD；跨日结果逐条保留，不推断当日扩展日期
 	Time      string   // HH:MM:SS，源数据无秒时为 00
 	Price     *float64 // 成交价/最新价，原币种/报价单位；扩展分笔尺度未知时为 nil，原值见 Extended.Price
-	Volume    int64    // 股票为股，期货为张
-	Direction int      // 1 买，-1 卖，0 中性
+	Volume    int64    // 股票为股，可转债和期货为张；标准指数缺量时为 0
+	Amount    *float64 // 原币种成交额；标准指数分笔从原始数量槽位换算，其他为 nil
+	Direction int      // 1 买，-1 卖，0 中性或方向未知
 	Standard  *protocol.Trade
 	Extended  *protocol.ExTradeTick
 }
@@ -638,8 +640,8 @@ func standardKline(k *protocol.Kline) Kline {
 	return Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume, Amount: &amount, Standard: k}
 }
 
-// Klines 复制标准 K 线并统一成交量为整数手，供指标和本地文件编码使用。
-// 使用统一记录的股数；不能无损换算时返回错误，不修改原始协议记录。
+// Klines 复制标准 K 线并将成交量换算为百股单位，供指标和本地文件编码使用。
+// 成交量无法无损换算为整数百单位时返回错误，不修改原始协议记录。
 func (r *KlineResp) Klines() (protocol.Klines, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")
@@ -660,7 +662,7 @@ func (r *KlineResp) Klines() (protocol.Klines, error) {
 }
 
 // StandardResponse 保留原始记录及其单位，供复权、指标适配与协议数据处理使用。
-// 指标与本地文件编码需要整数手，使用 Klines；指数原始量为股。
+// 指标与本地文件编码需要整数手，使用 Klines。
 func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 	if r.Instrument.Exchange > protocol.ExchangeBJ {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")

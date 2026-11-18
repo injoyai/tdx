@@ -75,7 +75,10 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			t.Error("wrong day category", b)
 		}
 		bar := testExtendedBar(20261009)
-		if b[0] == byte(protocol.ExchangeHK) || b[0] == byte(protocol.ExchangeUS) {
+		if string(b[1:6]) == "02800" && b[0] != byte(protocol.ExchangeHKFund) {
+			t.Error("Hong Kong fund sent to wrong market", b[0])
+		}
+		if b[0] == byte(protocol.ExchangeHK) || b[0] == byte(protocol.ExchangeHKFund) || b[0] == byte(protocol.ExchangeUS) {
 			binary.LittleEndian.PutUint32(bar[40:44], math.Float32bits(478800))
 		}
 		return bar
@@ -85,8 +88,9 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		vol  int64
 	}{
 		{"sz000001", 10000},
-		{"sh000001", 10000},
+		{"sh000001", 1000000},
 		{"hk00700", 45600},
+		{"hk02800", 45600},
 		{"cffIF2609", 456}, {"usAAPL", 456},
 	} {
 		r, err := c.GetKlineDay(tc.code, 0, 1)
@@ -101,7 +105,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
 			}
-		} else if tc.code == "hk00700" || tc.code == "usAAPL" {
+		} else if tc.code == "hk00700" || tc.code == "hk02800" || tc.code == "usAAPL" {
 			if k.Close != 10.5 || k.Amount == nil || *k.Amount != 478800 {
 				t.Fatal(tc.code, "daily amount missing or incorrect", k)
 			}
@@ -251,14 +255,19 @@ func TestMarketClientTicks(t *testing.T) {
 		if typ == protocol.TypeExHistTrade {
 			market = request[4]
 		}
-		nature := uint16(256)
-		if market != 31 {
+		var nature uint16
+		switch protocol.Exchange(market) {
+		case protocol.ExchangeHK:
+			nature = 256
+		case protocol.ExchangeHKFund:
+			nature = 512
+		case protocol.ExchangeCFF:
 			nature = 10000
 		}
 		binary.LittleEndian.PutUint16(b[30:32], nature)
 		return b
 	})
-	for _, code := range []string{"sz000001", "hk00700", "cffIF2609", "usAAPL"} {
+	for _, code := range []string{"sz000001", "hk00700", "hk02800", "cffIF2609", "usAAPL"} {
 		for _, historical := range []bool{false, true} {
 			minute, err := c.GetMinute(code)
 			if historical {
@@ -271,7 +280,12 @@ func TestMarketClientTicks(t *testing.T) {
 			if historical {
 				trade, err = c.GetHistoryTrade("20261009", code, 0, 1)
 			}
-			if err != nil || trade.Count != 1 || trade.List[0].Direction != -1 {
+			wantDirection := -1
+			if code == "usAAPL" || code == "hk02800" {
+				wantDirection = 0
+			}
+			if err != nil || trade.Count != 1 || trade.List[0].Direction != wantDirection ||
+				minute.List[0].Amount != nil || trade.List[0].Amount != nil {
 				t.Fatal(trade, err)
 			}
 			wantMinute, wantTrade := int64(123), int64(100)
@@ -282,8 +296,12 @@ func TestMarketClientTicks(t *testing.T) {
 				t.Fatal("tick minimum units changed", code, minute, trade)
 			}
 			if code != "sz000001" {
-				if minute.List[0].Price != 500 || minute.List[0].Extended.OpenInterest != 123 || trade.List[0].Price != nil || trade.List[0].Extended.Price != 500000 {
+				if minute.List[0].Price != 500 || minute.List[0].Extended.OpenInterest != 123 ||
+					trade.List[0].Price == nil || *trade.List[0].Price != 500 || trade.List[0].Extended.Price != 500000 {
 					t.Fatal("extended fields/scales changed", minute, trade)
+				}
+				if wantDirection == 0 && trade.List[0].Extended.NatureName != "" {
+					t.Fatal("unsupported direction has a trade nature", trade.List[0].Extended)
 				}
 			} else if trade.List[0].Price == nil || *trade.List[0].Price != 10 {
 				t.Fatal("standard price changed", trade)
@@ -484,15 +502,26 @@ func TestMarketClientExtendedKlineAmount(t *testing.T) {
 		category uint8
 		hasRange bool
 		known    bool
+		volume   int64
 	}{
-		{"hk00700", protocol.TypeKlineMinute, true, true},
-		{"hk00700", protocol.TypeKline5Minute, false, true},
-		{"hk00700", protocol.TypeKline15Minute, false, true},
-		{"usAAPL", protocol.TypeKlineMinute2, true, true},
-		{"usAAPL", protocol.TypeKline30Minute, false, true},
-		{"usAAPL", protocol.TypeKline60Minute, false, true},
-		{"usAAPL", protocol.TypeKlineWeek, false, false},
-		{"cffIF2609", protocol.TypeKlineMinute, true, false},
+		{"hk00700", protocol.TypeKlineMinute, true, true, 45_600},
+		{"hk00700", protocol.TypeKline5Minute, false, true, 45_600},
+		{"hk00700", protocol.TypeKline15Minute, false, true, 45_600},
+		{"hk00700", protocol.TypeKlineWeek, false, true, 4_560_000},
+		{"hk00700", protocol.TypeKlineMonth, false, true, 4_560_000},
+		{"hk00700", protocol.TypeKlineQuarter, false, true, 4_560_000},
+		{"hk00700", protocol.TypeKlineYear, false, true, 4_560_000},
+		{"hk02800", protocol.TypeKlineMinute, true, true, 45_600},
+		{"hkf.02800", protocol.TypeKlineWeek, false, true, 4_560_000},
+		{"usAAPL", protocol.TypeKlineMinute2, true, true, 456},
+		{"usAAPL", protocol.TypeKline30Minute, false, true, 456},
+		{"usAAPL", protocol.TypeKline60Minute, false, true, 456},
+		{"usAAPL", protocol.TypeKlineWeek, false, true, 45_600},
+		{"usAAPL", protocol.TypeKlineMonth, false, true, 45_600},
+		{"usAAPL", protocol.TypeKlineQuarter, false, true, 45_600},
+		{"usAAPL", protocol.TypeKlineYear, false, true, 45_600},
+		{"cffIF2609", protocol.TypeKlineMinute, true, false, 456},
+		{"cffIF2609", protocol.TypeKlineWeek, false, false, 456},
 	} {
 		check := func(r *KlineResp, err error) {
 			t.Helper()
@@ -502,6 +531,9 @@ func TestMarketClientExtendedKlineAmount(t *testing.T) {
 			got := r.List[0].Amount
 			if !tc.known && got != nil || tc.known && (got == nil || *got != float64(amount)) {
 				t.Fatalf("%s category %d: unexpected amount: %v, expected available: %t", tc.code, tc.category, got, tc.known)
+			}
+			if r.List[0].Volume != tc.volume {
+				t.Fatalf("%s category %d: volume %d, want %d", tc.code, tc.category, r.List[0].Volume, tc.volume)
 			}
 		}
 		check(c.GetKline(tc.category, tc.code, 0, 1))
@@ -681,6 +713,9 @@ func interfaceFinanceResponse(b []byte) []byte {
 	copy(r[3:9], b[3:9])
 	binary.LittleEndian.PutUint32(r[9:], math.Float32bits(2))
 	binary.LittleEndian.PutUint32(r[25:], math.Float32bits(3))
+	binary.LittleEndian.PutUint32(r[25+7*4:], math.Float32bits(4.5))
+	binary.LittleEndian.PutUint32(r[25+11*4:], math.Float32bits(6))
+	binary.LittleEndian.PutUint32(r[25+26*4:], math.Float32bits(7.5))
 	return r
 }
 
@@ -764,7 +799,8 @@ func testClientInterfaceRoutesStandardCapabilities(t *testing.T, i protocol.Inst
 		t.Fatal(quotes, err)
 	}
 	f, err := api.GetFinanceInfo(code)
-	if err != nil || f.LiuTongGuBen != 20000 || f.ZongGuBen != 30000 {
+	if err != nil || f.LiuTongGuBen != 20_000 || f.ZongGuBen != 30_000 ||
+		f.ZongZiChan != 4_500 || f.GuDongRenShu != 6 || f.JingLiRun != 7_500 {
 		t.Fatal(f, err)
 	}
 	cats, err := api.GetCompanyCategory(i.String())
@@ -1060,7 +1096,7 @@ func TestKlinesVolumeValidation(t *testing.T) {
 		valid             bool
 	}{
 		{12300, 123, 123, true},   // 股票原始量为百股，统一量为股。
-		{12300, 12300, 123, true}, // 指数原始量和统一量均为股。
+		{12300, 12300, 123, true}, // 原始解码已是最小单位的记录。
 		{0, 0, 0, true},
 		{12301, 12301, 0, false},
 		{-100, 0, 0, false},

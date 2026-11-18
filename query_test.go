@@ -314,8 +314,18 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 				if err != nil || r.Count != 1 {
 					t.Fatal(r, err)
 				}
-				if !extended && (r.List[0].Standard.UpCount != 3 || r.List[0].Volume != r.List[0].Standard.Volume) {
-					t.Fatal("index decoder was not selected", r)
+				if !extended {
+					row := r.List[0]
+					want := row.Standard.Volume
+					switch {
+					case protocol.IsIntraday(r.Category):
+						want = 0
+					default:
+						want *= protocol.SharesPerLot
+					}
+					if row.Standard.UpCount != 3 || row.Volume != want {
+						t.Fatal("incorrect index decoding or volume conversion", r)
+					}
 				}
 			}
 			for _, fn := range []func(string) (*KlineResp, error){c.GetKline5MinuteAll, c.GetKline15MinuteAll, c.GetKline30MinuteAll, c.GetKline60MinuteAll, c.GetKlineDayAll, c.GetKlineWeekAll, c.GetKlineMonthAll, c.GetKlineQuarterAll, c.GetKlineYearAll} {
@@ -344,6 +354,10 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 				raw, err := r.StandardResponse()
 				if err != nil || raw.List[0].UpCount != 3 {
 					t.Fatal(raw, err)
+				}
+				if r.List[0].Volume != 0 || raw.List[0].Volume != 100 ||
+					r.List[0].Amount == nil || *r.List[0].Amount != 1000 {
+					t.Fatal("incorrect index range volume or amount", r)
 				}
 			}
 			before := sent.Load()
@@ -577,7 +591,7 @@ func TestUnifiedTradePaging(t *testing.T) {
 				if daily.Load() != wantDaily {
 					t.Fatal("daily guard repeated for each trade page", daily.Load())
 				}
-				if extended && (r.List[0].Price != nil || r.List[0].Extended.Price != 500000) {
+				if extended && (r.List[0].Price == nil || *r.List[0].Price != 500 || r.List[0].Extended.Price != 500000) {
 					t.Fatal("extended scale changed")
 				}
 			})

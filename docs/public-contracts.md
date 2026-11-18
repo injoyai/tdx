@@ -6,7 +6,8 @@
 
 - `Code.Market/Code.Code` 共同定义证券身份；市场路由与输入形式见 `extend/pull/README.md`。代码主体保留期货大小写，不把不同身份混为一条记录。
 - `KlineDay.Time` 为 `YYYY-MM-DD`；`KlineMinute.Time` 为 `YYYY-MM-DD HH:MM`。它们是源日期／钟面时间，不推导来源时区、Unix 时间或夜盘交易日。
-- OHLC 和 Amount 是原币种／报价单位；Volume 使用统一 Client 的最小单位，股票为股、期货为张。`Amount=nil` 表示未知，非 nil 的零表示真实零；不能以当前值回填历史缺失金额。
+- OHLC 和 Amount 是原币种／报价单位；Volume 使用统一 Client 的最小单位，股票为股、可转债和期货为张。`Amount=nil` 表示未知，非 nil 的零表示真实零；不能以当前值回填历史缺失金额。
+- 标准指数（`cn/index`）原生分钟 K 线的 `Volume=0` 表示通达信没有提供可用成交量，OHLC 和成交额照常保存。
 - `KlineMinute.Source=""` 为原生分钟，`"trade"` 为分笔合成；合成结果不等于原生分钟精度。
 - `MinuteCoverage.From` 是已处理请求范围左端；原生扫描 `Through` 为空，分笔覆盖 `Through` 为右开端点。覆盖只证明已处理服务器可提供的范围，不证明历史无缺笔。
 - `MinuteEmptyScan.CheckedAt` 是缓存检查 Unix 秒；空扫描不是永久完成证明。

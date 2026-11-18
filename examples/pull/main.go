@@ -52,10 +52,10 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		switch code.Market {
-		case protocol.MarketFuture, protocol.MarketHK, protocol.MarketHKIndex, protocol.MarketUS:
+		info, _ := code.Market.Info()
+		if info.Protocol == protocol.ProtocolExtended {
 			needsEx = true
-		default:
+		} else {
 			needsSt = true
 		}
 	}

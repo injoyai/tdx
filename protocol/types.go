@@ -36,6 +36,8 @@ func (e Exchange) String() string {
 		return "szo"
 	case ExchangeHK:
 		return "hk"
+	case ExchangeHKFund:
+		return "hkf"
 	case ExchangeUS:
 		return "us"
 	case ExchangeCSI:
@@ -91,6 +93,8 @@ func (e Exchange) Name() string {
 		return "深圳个股期权"
 	case ExchangeHK:
 		return "香港交易所"
+	case ExchangeHKFund:
+		return "香港基金"
 	case ExchangeUS:
 		return "美国股票"
 	case ExchangeCSI:
@@ -157,7 +161,7 @@ var allExchanges = []Exchange{
 	ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFEO, ExchangeGFE,
 	ExchangeHI, ExchangeOF, ExchangeSZO, ExchangeSHO,
 	ExchangeCFF, ExchangeQHZ, ExchangeNQ,
-	ExchangeHK, ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeCNI,
+	ExchangeHK, ExchangeHKFund, ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeCNI,
 }
 
 // isExchangeName 判断字符串是否为已知市场的字母缩写或中文名(排除纯数字)。
@@ -180,28 +184,29 @@ const (
 	ExchangeBJ                 //北京交易所
 
 	// 以下为通达信量化 API 补充的市场类型
-	ExchangeNQ   Exchange = 44  //新三板
-	ExchangeSHO  Exchange = 8   //上海个股期权
-	ExchangeSZO  Exchange = 9   //深圳个股期权
-	ExchangeHK   Exchange = 31  //香港交易所
-	ExchangeUS   Exchange = 74  //美国股票
-	ExchangeCSI  Exchange = 62  //中证指数
-	ExchangeCNI  Exchange = 102 //国证指数
-	ExchangeHG   Exchange = 38  //国内宏观指标
-	ExchangeCFF  Exchange = 47  //中金期货
-	ExchangeCZC  Exchange = 28  //郑州期货
-	ExchangeDCE  Exchange = 29  //大连期货
-	ExchangeSHF  Exchange = 30  //上海期货
-	ExchangeINE  Exchange = 30  //上海能源(与ExchangeSHF同值,代码同为30)
-	ExchangeGFE  Exchange = 66  //广州期货
-	ExchangeHI   Exchange = 27  //港股指数
-	ExchangeOF   Exchange = 33  //开放式基金净值
-	ExchangeCFFO Exchange = 7   //中金所期权
-	ExchangeCZCO Exchange = 4   //郑州期货期权
-	ExchangeDCEO Exchange = 5   //大连期货期权
-	ExchangeSHFO Exchange = 6   //上海期货期权
-	ExchangeGFEO Exchange = 67  //广州期货期权
-	ExchangeQHZ  Exchange = 42  //期货类指数
+	ExchangeNQ     Exchange = 44  //新三板
+	ExchangeSHO    Exchange = 8   //上海个股期权
+	ExchangeSZO    Exchange = 9   //深圳个股期权
+	ExchangeHK     Exchange = 31  //香港交易所
+	ExchangeHKFund Exchange = 49  //香港基金
+	ExchangeUS     Exchange = 74  //美国股票
+	ExchangeCSI    Exchange = 62  //中证指数
+	ExchangeCNI    Exchange = 102 //国证指数
+	ExchangeHG     Exchange = 38  //国内宏观指标
+	ExchangeCFF    Exchange = 47  //中金期货
+	ExchangeCZC    Exchange = 28  //郑州期货
+	ExchangeDCE    Exchange = 29  //大连期货
+	ExchangeSHF    Exchange = 30  //上海期货
+	ExchangeINE    Exchange = 30  //上海能源(与ExchangeSHF同值,代码同为30)
+	ExchangeGFE    Exchange = 66  //广州期货
+	ExchangeHI     Exchange = 27  //港股指数
+	ExchangeOF     Exchange = 33  //开放式基金净值
+	ExchangeCFFO   Exchange = 7   //中金所期权
+	ExchangeCZCO   Exchange = 4   //郑州期货期权
+	ExchangeDCEO   Exchange = 5   //大连期货期权
+	ExchangeSHFO   Exchange = 6   //上海期货期权
+	ExchangeGFEO   Exchange = 67  //广州期货期权
+	ExchangeQHZ    Exchange = 42  //期货类指数
 )
 
 // OrderType 委托类型, 来源: 通达信量化 Dict 枚举

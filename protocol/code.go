@@ -14,7 +14,7 @@ import (
 //     后缀为交易所缩写(大小写均可);美股点代码如 "BRK.B" 因后缀 B 不是交易所而按美股代码解析。
 //  3. 裸 6 位数字代码,自动识别并补前缀(A股/基金/指数/可转债/板块指数),如 "000001"→sz000001。
 //  4. 裸非 6 位代码,根据代码形态推断市场:
-//     - 5 位纯数字(如 00700)→ 香港(ExchangeHK)
+//     - 5 位纯数字(如 00700、02800)→ 香港主板或香港基金
 //     - 纯字母代码(如 AAPL/BRK.B)→ 美国(ExchangeUS)
 //     - 字母+数字的合约代码(如 IF2609)→ 无法确定交易所,提示使用显式前缀
 //
@@ -131,6 +131,11 @@ func normalizeCode(ex Exchange, body string) (string, error) {
 			return "", fmt.Errorf("美股代码非法: %q", body)
 		}
 		return strings.ToUpper(body), nil
+	case ExchangeHKFund:
+		if len(body) != 5 || !isDigits(body) {
+			return "", fmt.Errorf("香港基金代码必须为 5 位数字: %q", body)
+		}
+		return body, nil
 	case ExchangeHK, ExchangeSHO, ExchangeSZO, ExchangeOF, ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeHI, ExchangeHG, ExchangeNQ:
 		if isStockSymbol(body) {
 			// 纯字母主体属于美股代码,不属于这些市场
@@ -192,13 +197,6 @@ func isFuturesCode(s string) bool {
 		}
 	}
 	return hasLetter && hasDigit
-}
-
-func basePrice(code string) float64 {
-	if IsETF(code) {
-		return 10
-	}
-	return 1
 }
 
 // IsStock 是否是股票,示例sz000001

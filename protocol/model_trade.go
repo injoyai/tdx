@@ -19,7 +19,7 @@ type TradeResp struct {
 type Trade struct {
 	Time   time.Time //时间, 09:30
 	Price  float64   // 成交价，元（指数为点）
-	Volume int       //成交量,手
+	Volume int       // 原始量槽位，股票每手百股、可转债每手十张，标准指数为百元
 	Status int       //0是买，1是卖，2中性/汇总 中途也可能出现2,例20241115(sz000001)的14:56
 	Number int       //单数,历史数据该字段无效
 }
@@ -29,7 +29,7 @@ func (t *Trade) String() string {
 		t.Time, t.Price, t.Amount(), t.Volume, t.Number, t.StatusString())
 }
 
-// Amount 返回成交额（元），按成交价乘以手数×100 计算。
+// Amount 按股票每手百股计算成交额（元）。其他品种应使用统一 Client 的量额口径。
 func (t *Trade) Amount() float64 {
 	return t.Price * float64(ToShares(int64(t.Volume)))
 }
@@ -109,7 +109,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 		return nil, err
 	}
 	resp.List = make(Trades, 0, count)
-	multiple := basePrice(c.Code)
+	divisor := standardMarketInfo(c.Code).TradePriceDivisor
 	var lastPrice int64
 	for i := uint16(0); i < resp.Count; i++ {
 		if len(bs) < 2 {
@@ -130,7 +130,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 			}
 		}
 		lastPrice += int64(values[0]) // 先累计线上整数分，再换算为元。
-		mt.Price = float64(lastPrice) / 100 / multiple
+		mt.Price = float64(lastPrice) / 100 / divisor
 		mt.Volume = values[1]
 		mt.Status = values[2]
 		if !historical {
@@ -158,7 +158,7 @@ func (ts Trades) SideVolumes() (sell int64, buy int64) {
 	return
 }
 
-// Klines 按分笔自带的交易日期与时区合并为沪深 241 根分钟线，保留 09:30 竞价。
+// Klines 按分笔自带的交易日期与时区合并为沪深 241 根分钟线，保留 09:30 竞价，按每手百股计算成交额。
 func (ts Trades) Klines() Klines {
 	//按天分割
 	m := make(types.SortMap[int64, Trades])

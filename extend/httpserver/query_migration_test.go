@@ -212,8 +212,8 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 				if row.Price == nil || *row.Price != 10 || row.Standard.Price != 10 || row.Volume != 100 || row.Standard.Volume != 1 {
 					t.Fatal(row)
 				}
-			} else if row.Price != nil || row.Extended.Price != 10000 {
-				t.Fatal("unknown extended price scale was guessed", row)
+			} else if row.Price == nil || *row.Price != 10 || row.Extended.Price != 10000 {
+				t.Fatal("incorrect normalized or raw extended price", row)
 			}
 		}
 	}

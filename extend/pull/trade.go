@@ -67,6 +67,15 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 	if isNil(p.Workday) {
 		return fmt.Errorf("pull: 历史分笔下载需要配置 Workday")
 	}
+	instrument, err := protocol.ParseInstrument(code)
+	if err != nil {
+		return err
+	}
+	market, err := instrument.Market()
+	if err != nil {
+		return err
+	}
+	info, _ := market.Info()
 
 	tss := []tdx.Trade{}
 	kss1 := protocol.Klines(nil)
@@ -123,7 +132,7 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 	}
 
 	filename := code + "-" + conv.String(year) + ".csv"
-	if err := export.TradesToCSV(filepath.Join(p.Dir, "分时成交", filename), tss); err != nil {
+	if err := export.TradesToCSVForCode(filepath.Join(p.Dir, "分时成交", filename), code, tss); err != nil {
 		return err
 	}
 	name := ""
@@ -140,9 +149,16 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 		}
 		rows := make([]tdx.Kline, 0, len(ks))
 		for _, k := range ks {
-			amount := k.Amount
+			// Trades.Klines 按股票的每手百股计算金额，转债按每手张数调整。
+			amount := k.Amount * (float64(info.TickVolumeScale) / protocol.SharesPerLot)
+			volume := k.Volume * info.TickVolumeScale
+			if info.TradeAmountScale > 0 {
+				// 标准合成器保留在 Volume 中的是原始分笔数量槽位的合计。
+				amount = float64(k.Volume) * float64(info.TradeAmountScale)
+				volume = 0
+			}
 			rows = append(rows, tdx.Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,
-				Low: k.Low, Close: k.Close, Volume: protocol.ToShares(k.Volume), Amount: &amount})
+				Low: k.Low, Close: k.Close, Volume: volume, Amount: &amount})
 		}
 		if err := export.KlinesToCSV(filepath.Join(p.Dir, conv.String(period)+"分钟", filename), code, name, rows); err != nil {
 			return err
