@@ -13,6 +13,7 @@ var marketPrefixes = []string{
 	protocol.MarketAStock.String(), protocol.MarketIndex.String(), protocol.MarketEtfLof.String(), protocol.MarketBlock.String(),
 	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKFund.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
 	protocol.MarketBond.String(), protocol.MarketOther.String(),
+	protocol.MarketInternationalIndex.String(),
 }
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
@@ -55,6 +56,8 @@ func codeInMarket(prefix, body string) (model.Code, error) {
 		query = "hi." + body
 	case protocol.MarketUS:
 		query = "us." + body
+	case protocol.MarketInternationalIndex:
+		query = "wi." + body
 	default:
 		if body == "" {
 			return model.Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
@@ -94,6 +97,7 @@ func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body str
 //	hk00700 / hk02800 / hk.HSI / 00700    港股股票、基金或指数
 //	usAAPL / us.BRK.B / AAPL              美股
 //	cffIF2609 / cff.IF2609 / cff/IF2609   期货
+//	wi.A_IXIC / global/index.A_IXIC      国际指数
 //	cn/future.cff/IF2609 / hk/stock.00700 / hk/fund.02800 / US.AAPL / hk/index.HSI  完整市场键
 //
 // 无法识别时返回错误。

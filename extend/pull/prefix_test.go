@@ -43,6 +43,8 @@ func TestMarketPrefixForms(t *testing.T) {
 		{[]string{"shfcu2609", "SHF.cu2609"}, protocol.MarketFuture, "shf/cu2609"},
 		{[]string{"gfeLC2609", "GFE.LC2609"}, protocol.MarketFuture, "gfe/LC2609"},
 		{[]string{"qhzT001", "QHZ.T001"}, protocol.MarketFuture, "qhz/T001"},
+		{[]string{"qhz.IMCI", "QHZIMCI", "cn/future.qhz/IMCI"}, protocol.MarketFuture, "qhz/IMCI"},
+		{[]string{"wi.A_IXIC", "WIA_IXIC", "global/index.a_ixic"}, protocol.MarketInternationalIndex, "A_IXIC"},
 		{[]string{"CN/STOCK.SH600000", "cn/stocksh600000"}, protocol.MarketAStock, "sh600000"},
 		{[]string{"CN/INDEX.SH000001", "cn/indexsh000001"}, protocol.MarketIndex, "sh000001"},
 		{[]string{"CN/ETF.SH510300", "cn/etfsh510300"}, protocol.MarketEtfLof, "sh510300"},

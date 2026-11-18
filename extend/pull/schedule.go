@@ -39,6 +39,9 @@ func defaultSchedule(market protocol.Market) (Schedule, error) {
 	if !known {
 		return Schedule{}, fmt.Errorf("pull: 自定义市场 %s 需要显式配置 Schedule", market)
 	}
+	if info.TimeZone == "" {
+		return Schedule{}, fmt.Errorf("pull: 市场 %s 需要显式配置 Schedule", market)
+	}
 	return Schedule{TimeZone: info.TimeZone, CloseTime: info.CloseTime, Delay: 5 * time.Minute}, nil
 }
 

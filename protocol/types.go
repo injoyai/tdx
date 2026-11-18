@@ -40,6 +40,8 @@ func (e Exchange) String() string {
 		return "hkf"
 	case ExchangeUS:
 		return "us"
+	case ExchangeWI:
+		return "wi"
 	case ExchangeCSI:
 		return "csi"
 	case ExchangeCNI:
@@ -97,6 +99,8 @@ func (e Exchange) Name() string {
 		return "香港基金"
 	case ExchangeUS:
 		return "美国股票"
+	case ExchangeWI:
+		return "国际指数"
 	case ExchangeCSI:
 		return "中证指数"
 	case ExchangeCNI:
@@ -161,7 +165,7 @@ var allExchanges = []Exchange{
 	ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFEO, ExchangeGFE,
 	ExchangeHI, ExchangeOF, ExchangeSZO, ExchangeSHO,
 	ExchangeCFF, ExchangeQHZ, ExchangeNQ,
-	ExchangeHK, ExchangeHKFund, ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeCNI,
+	ExchangeHK, ExchangeHKFund, ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeWI, ExchangeCNI,
 }
 
 // isExchangeName 判断字符串是否为已知市场的字母缩写或中文名(排除纯数字)。
@@ -190,6 +194,7 @@ const (
 	ExchangeHK     Exchange = 31  //香港交易所
 	ExchangeHKFund Exchange = 49  //香港基金
 	ExchangeUS     Exchange = 74  //美国股票
+	ExchangeWI     Exchange = 12  //国际指数（扩展市场表简称 WI）
 	ExchangeCSI    Exchange = 62  //中证指数
 	ExchangeCNI    Exchange = 102 //国证指数
 	ExchangeHG     Exchange = 38  //国内宏观指标

@@ -101,7 +101,7 @@ func New(cfg *Config) (*Service, error) {
 
 	// 代码列表：一次性解析并按市场分组。
 	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
-	// Codes 为空 = 全量模式：全部注册市场各自自动发现代码。
+	// Codes 为空时，有默认调度或已经配置调度的内置市场自动发现代码。
 	overrides := map[protocol.Market][]model.Code{}
 	if len(cfg.Codes) > 0 {
 		for _, s := range cfg.Codes {
@@ -116,7 +116,7 @@ func New(cfg *Config) (*Service, error) {
 		overrides[market] = uniqueCodes(codes)
 	}
 
-	// 需要更新的市场：白名单模式取涉及的市场，全量模式取全部注册
+	// 显式指定的品种必须有可用调度；自动发现仅启用已配置调度的跨时区内置市场。
 	var units []Unit
 	if len(overrides) > 0 {
 		for m := range overrides {
@@ -127,7 +127,14 @@ func New(cfg *Config) (*Service, error) {
 			units = append(units, u)
 		}
 	} else {
-		units = Units()
+		for _, u := range Units() {
+			market := protocol.Market(u.Name())
+			info, known := market.Info()
+			if _, explicit := cfg.Schedules[market]; !explicit && known && info.TimeZone == "" {
+				continue
+			}
+			units = append(units, u)
+		}
 	}
 	if len(units) == 0 {
 		return nil, fmt.Errorf("pull: 未注册任何市场 Unit")

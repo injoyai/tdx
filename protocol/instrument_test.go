@@ -24,8 +24,13 @@ func TestParseInstrument(t *testing.T) {
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
 		{"hi.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
 		{"us.bRk.B", ExchangeUS, "BRK.B"}, {"BRK.B", ExchangeUS, "BRK.B"},
+		{"WIX", ExchangeUS, "WIX"}, {"WING", ExchangeUS, "WING"},
+		{"wi.A_IXIC", ExchangeWI, "A_IXIC"}, {"Wi/a_ndx", ExchangeWI, "A_NDX"},
+		{"wiA_SOX", ExchangeWI, "A_SOX"}, {"A_IXIC.12", ExchangeWI, "A_IXIC"},
+		{"B_SDAX.K.WI", ExchangeWI, "B_SDAX.K"},
 		{"cff.IF2609", ExchangeCFF, "IF2609"}, {"CFF/IF2609", ExchangeCFF, "IF2609"},
 		{"shf.cu2609", ExchangeSHF, "cu2609"}, {"IF2609.CFF", ExchangeCFF, "IF2609"},
+		{"qhz.IMCI", ExchangeQHZ, "IMCI"}, {"QHZIMCI", ExchangeQHZ, "IMCI"}, {"T001.QHZ", ExchangeQHZ, "T001"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			i, err := ParseInstrument(tc.input)
@@ -41,6 +46,11 @@ func TestParseInstrument(t *testing.T) {
 	for _, s := range []string{"", "hk.", "us.", "sh.12345", "sh.AAPL", "cff.IF", "IF2609", "us.A..B", "us.A-", "us.1234", "hk.123456", "hk.ABCDEFGHIJ", "us.ABCDEFGHIJ", "cff.IF$2609", "nq400001", "cffo123456", "gfeo123456", "us.股票"} {
 		if i, err := ParseInstrument(s); err == nil {
 			t.Errorf("accepted invalid/unsupported code %q as %s", s, i)
+		}
+	}
+	for _, s := range []string{"wi.", "wi.1234", "wi.A__IXIC", "wi.A_IXIC.", "wi.ABCDEFGHIJ", "qhz.1234", "qhz.IM_CI", "us.A_IXIC"} {
+		if i, err := ParseInstrument(s); err == nil {
+			t.Errorf("accepted invalid code %q as %s", s, i)
 		}
 	}
 }
@@ -85,7 +95,7 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 			t.Fatal(tc.code, market, err)
 		}
 	}
-	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketHKFund, MarketUS, MarketHKIndex} {
+	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketHKFund, MarketUS, MarketHKIndex, MarketInternationalIndex} {
 		info, ok := market.Info()
 		if !ok || info.Day.VolumeScale < 0 || info.Minute.VolumeScale < 0 || info.TickVolumeScale < 0 || info.LongVolumeScale < 0 {
 			t.Fatalf("%s has invalid volume scale: %+v", market, info)

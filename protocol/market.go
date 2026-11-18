@@ -27,6 +27,8 @@ const (
 	MarketHKFund  Market = "hk/fund"   // 香港基金（含 ETF，扩展行情市场 49）
 	MarketHKIndex Market = "hk/index"  // 港股指数（恒生系/中华系，扩展行情市场27）
 	MarketUS      Market = "us/stock"  // 美股（股票/ETF/指数混合，走扩展行情；协议层无法区分）
+
+	MarketInternationalIndex Market = "global/index" // 国际指数（扩展行情市场 12）
 )
 
 // String 实现 fmt.Stringer。
@@ -224,6 +226,11 @@ func (m Market) Info() (MarketInfo, bool) {
 			info.TimeZone, info.CloseTime = "Asia/Shanghai", "15:30"
 			info.TradePriceDivisor = 1_000
 		}
+	case MarketInternationalIndex:
+		// 同一市场包含不同地区的指数，没有共用的收盘调度。
+		info.Protocol = ProtocolExtended
+		info.Day = KlineInfo{Category: TypeKlineDay2}
+		info.Minute = KlineInfo{Category: TypeKlineMinute2}
 	default:
 		info, _ := MarketOther.Info()
 		return info, false

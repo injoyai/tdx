@@ -142,7 +142,7 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 `protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回按市场硬编码的 IANA 时区，供调用方调度使用：国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
 
-`Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。全部内置枚举项均硬编码对应时区，新增枚举项时须先查证并填写时区，不新增缺少时区的运行时校验或错误返回。
+`Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。国际指数市场 12 跨多个来源地区，`TimeZone` 和 `CloseTime` 留空。通过 pull 同步时为 `protocol.MarketInternationalIndex` 设置 `Config.Schedules`。
 
 `MarketInfo` 同时新增 `CloseTime string`（当地 `HH:MM`，不含延迟）：国内为 `15:30`，港股及港股指数为 `16:10`，美股为 `20:00`（包含盘后）。pull 统一延迟 5 分钟，收盘延迟边界之前跳过请求，之后按市场每天成功一次；不再使用整体完成标记或固定东八区 15:01 边界。`Update(true)` 仍保留市场级去重，允许提前拉取；提前标记不阻止当天收盘后的更新。`pull.Config.Workday` 已移除，调用方删除该字段，不再按中国日历过滤跨市场更新；`pull.Trade` 的历史交易日历使用不变。详情见 [pull 收盘后更新](../extend/pull/README.md#收盘后更新)。
 
@@ -351,7 +351,7 @@ HTTP 元数据客户端只提供 New 和 FetchCodes/FetchGbbq，不持有后台�
 
 `lib/zip.Encode` 拒绝源文件与目标文件相同的路径、硬链接或符号链接，检查失败不会截断源文件；压缩写入及关闭错误会返回调用方。
 
-内置 pull 代码复用协议层校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字，完整市场键须匹配品种。过去被接受的非法配置现在提前返回错误；合法代码沿用原文件名，自定义市场保留自己的代码规则。`Instrument.Market()` 将沪市 880/881 板块归为 `cn/block`，不再误归 `cn/index`。
+内置 pull 代码复用协议层校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受 `qhz.IMCI`。市场 12 的国际指数使用 `wi.A_IXIC` 等原始代码，完整市场键为 `global/index.A_IXIC`。完整市场键须匹配品种。过去被接受的非法配置现在提前返回错误；合法代码沿用原文件名，自定义市场保留自己的代码规则。`Instrument.Market()` 将沪市 880/881 板块归为 `cn/block`，不再误归 `cn/index`。
 
 边界行为修正：`Merge241(n<=0)` 原样返回；`DoIncomes` 忽略负偏移，起始日期晚于全部数据时返回空。pull 的 `DayToPeriod` / `MinuteToPeriod` / `DayToCalendar` 直接合并原始浮点量价，保留超过三位小数及负价格；不再往返整数厘。裸美股代码统一转大写参与去重和文件定位。旧的小写美股库不会自动重命名，使用前应在停机备份后合并到大写文件名，包含相应 WAL/SHM；不要直接覆盖已有大写库。
 

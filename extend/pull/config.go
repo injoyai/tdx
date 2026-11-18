@@ -14,7 +14,7 @@ import (
 // Config 拉取配置，通过代码参数传入（本库作为第三方引用，配置不落文件）。
 type Config struct {
 	Store         storage.BarStore // 自定义存储；由调用方关闭。行情同步必须显式提供
-	Codes         []string         // 拉取代码列表（自动路由市场，见 ParseCode）；空 = 全部注册市场自动发现
+	Codes         []string         // 显式代码列表（见 ParseCode）；空时自动发现，跨时区内置市场需配置调度才启用
 	Day           bool             // 是否拉日线（默认 true，见 New 归一化）
 	Minute        bool             // 是否拉1分钟线（默认 true）
 	TradeFallback bool             // 是否用历史分笔补充缺失分钟线，仅股票/ETF/LOF；默认 false
@@ -31,6 +31,7 @@ type Config struct {
 	UniverseVersion string
 	// Schedules overrides update boundaries. Custom markets must provide an entry
 	// here or implement Schedule() Schedule on their Unit.
+	// International indices require a schedule entry because they span multiple time zones.
 	Schedules  map[protocol.Market]Schedule
 	RetryDelay time.Duration // initial retry backoff; zero defaults to five seconds
 	// OnProgress receives serialized per-code completion events. Nil means no terminal output.

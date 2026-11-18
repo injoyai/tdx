@@ -1,7 +1,9 @@
 package market
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
@@ -62,7 +64,8 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 		{"hk02800", "hkf.02800"}, {"hk/fund.00823", "hkf.00823"},
 		{"cffIF2609", "cff.IF2609"}, {"czcTA2609", "czc.TA2609"},
 		{"dceM2609", "dce.M2609"}, {"shfcu2609", "shf.cu2609"},
-		{"gfeSI2609", "gfe.SI2609"}, {"qhzIFL9", "qhz.IFL9"},
+		{"gfeSI2609", "gfe.SI2609"}, {"qhzIFL9", "qhz.IFL9"}, {"qhz.IMCI", "qhz.IMCI"},
+		{"wi.A_IXIC", "wi.A_IXIC"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			amount := 9876.54321
@@ -72,8 +75,20 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer pool.Close()
-			s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{tc.input},
-				Pool: pool, ExPool: pool})
+			cfg := &pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{tc.input},
+				Pool: pool, ExPool: pool}
+			if tc.input == "wi.A_IXIC" {
+				if s, err := pull.New(cfg); err == nil || !strings.Contains(err.Error(), "显式配置 Schedule") {
+					if s != nil {
+						_ = s.Close()
+					}
+					t.Fatalf("missing schedule: %v", err)
+				}
+				cfg.Schedules = map[protocol.Market]pull.Schedule{
+					protocol.MarketInternationalIndex: {TimeZone: "America/New_York", CloseTime: "16:00", Delay: 5 * time.Minute},
+				}
+			}
+			s, err := pull.New(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}

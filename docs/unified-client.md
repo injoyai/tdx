@@ -103,10 +103,12 @@ _ = quotes; _ = err
 | `hk02800`、`02800.HK`、`hkf.02800` | 扩展香港基金 49（含 ETF） |
 | `hk.HSI`、`hkCES120`、`hi.HZ5021` | 扩展港股指数 27 |
 | `usAAPL`、`us.BRK.B`、`SHOP` | 扩展美股 74 |
+| `wi.A_IXIC`、`wi.A_NDX`、`B_SDAX.K.WI` | 扩展国际指数 12，保留协议代码中的下划线和点 |
 | `cffIF2609`、`cff.IF2609`、`cff/IF2609` | 扩展中金 47 |
-| `czc`、`dce`、`shf`、`gfe`、`qhz` + 合约代码 | 扩展 28、29、30、66、42 |
+| `czc`、`dce`、`shf`、`gfe` + 合约代码 | 扩展 28、29、30、66 |
+| `qhz.IMCI`、`qhz.T001` | 扩展期货类指数 42，支持纯字母和字母数字代码 |
 
-前缀不区分大小写，港美股主体统一大写，期货主体保留大小写。香港五位数字 ETF 按港交所分配区间自动进入市场 49；该市场中的其他基金可以显式使用 `hkf`，例如 `hkf.00823`。[港交所证券代号编配计划](https://www.hkex.com.hk/Products/Securities/Stock-Code-Allocation-Plan)`HSI/HKL/VHSI/CES100/GEM` 裸代码沿用 pull 的港股指数规则；其他有歧义的品种须显式带前缀，裸 `IF2609` 会报错。标准代码须为 6 位数字，扩展主体最多 9 个 ASCII 字节，超长或非法输入在发送前拒绝，避免底层定长字段截断。
+前缀不区分大小写，港美股和国际指数主体统一大写，期货和期货类指数主体保留大小写。国际指数推荐显式写法 `wi.A_IXIC`，裸美股代码如 `WIX` 继续进入美股市场。香港五位数字 ETF 按港交所分配区间自动进入市场 49；该市场中的其他基金可以显式使用 `hkf`，例如 `hkf.00823`。[港交所证券代号编配计划](https://www.hkex.com.hk/Products/Securities/Stock-Code-Allocation-Plan)`HSI/HKL/VHSI/CES100/GEM` 裸代码沿用 pull 的港股指数规则；其他有歧义的品种须显式带前缀，裸 `IF2609` 会报错。标准代码须为 6 位数字，扩展主体最多 9 个 ASCII 字节，超长或非法输入在发送前拒绝，避免底层定长字段截断。
 
 `protocol.ParseInstrument` 返回 `{Exchange, Code}`，`Instrument.String()` 返回点分隔代码，港股指数统一为 `hk.HSI`。统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
@@ -133,7 +135,7 @@ _ = quotes; _ = err
 
 标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。日线/一分钟的协议、分类与量单位配置下沉到 `protocol.Market.Info()`，pull 直接使用 `protocol` 的市场类型、常量和量单位换算。
 
-`Market.Info()` 保持返回 `(MarketInfo, bool)`，其中 `TimeZone` 是按市场枚举硬编码的 IANA 时区，供调用方调度使用。全部内置枚举项都已填写对应时区：
+`Market.Info()` 返回 `(MarketInfo, bool)`，单地区市场提供供调度使用的 IANA 时区。国际指数覆盖多个地区，`TimeZone` 和 `CloseTime` 为空，拉取任务由调用方配置更新边界。
 
 | 市场 | `TimeZone` | `CloseTime` |
 |---|---|---|
@@ -141,7 +143,7 @@ _ = quotes; _ = err
 | 港股、港股指数 | `Asia/Hong_Kong` | `16:10` |
 | 美股 | `America/New_York` | `20:00` |
 
-对应关系依据 [IANA 地区时区表](https://data.iana.org/time-zones/tzdb/zone1970.tab)：北京时间为 `Asia/Shanghai`，香港为 `Asia/Hong_Kong`，美国东部为 `America/New_York`；[NYSE 交易时间说明](https://www.nyse.com/trade/hours-calendars) 明确采用美国东部时间。调用方可用 [`time.LoadLocation`](https://pkg.go.dev/time#LoadLocation) 加载时区，美股由纽约时区规则处理夏令时，不使用固定 UTC 偏移。新增枚举项时应先查证并填写其对应时区，不增加缺少时区的运行时报错逻辑。
+对应关系依据 [IANA 地区时区表](https://data.iana.org/time-zones/tzdb/zone1970.tab)：北京时间为 `Asia/Shanghai`，香港为 `Asia/Hong_Kong`，美国东部为 `America/New_York`；[NYSE 交易时间说明](https://www.nyse.com/trade/hours-calendars) 明确采用美国东部时间。调用方可用 [`time.LoadLocation`](https://pkg.go.dev/time#LoadLocation) 加载时区，美股由纽约时区规则处理夏令时，不使用固定 UTC 偏移。直接查询行情无需配置调度。
 
 ```go
 info, _ := protocol.MarketUS.Info()
@@ -182,6 +184,7 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 - 标准指数的实时和历史分时、分笔使用 `Amount`（`*float64`）返回人民币成交额，公开 `Volume=0`。分时的 `Standard.Number` 每单位为 10,000 元，分笔的 `Standard.Volume` 每单位为 100 元，由 `MinuteAmountScale` 和 `TradeAmountScale` 配置。已知零金额返回零值地址，其他市场的分时和分笔 `Amount` 为 nil。原始结构及原始响应保留报文尺度。
 - 标准可转债（`cn/bond`）的日、周、月、季、年 K 线解码量 ×1000，分钟 K 线、报价、分时和分笔的解码量 ×10，统一返回张数。分钟 K 线价格与成交额直接使用源值，分时价格按其解码值 ÷100，分笔在协议解码时校准为元/张。报价价格继续按代码表精度换算。
 - 港股指数（市场 27）的 K 线返回指数点位，`Volume=0` 表示协议没有提供股数。普通 K 线取 `Extended.Amount`，区间 K 线取 `RangeExtended.Position` 的 float32 金额，统一乘 1,000,000 写入原币种 `Amount`。原始 `Trade` 为粗粒度金额，日线及日内约以千万为单位，周月季年约以十亿为单位。恒指金额对应港股市场成交额。报价、分时与分笔的成交数量接口对该市场返回错误。原始结果保留在 `Standard`、`Extended`、`RangeExtended` 及 `StandardResponse()`。
+- 国际指数 K 线返回指数点位，量为 0、金额为 nil，原始量额槽位保留在 `Extended` 或 `RangeExtended`。报价列表可经 `GetQuoteList` 获取原始字段，单品种报价、分时和分笔的统一数量接口返回错误。
 - 美股日线采用实际周期 4；AAPL 单根、多根请求对比及 MSFT 样本与独立报价确认量为股。原周期 9 的量值依请求数量变化，不能用固定乘数修复。
 - K 线 `Amount` 为指针。标准行情、港股主板（市场 31）、香港基金（市场 49）、美股（市场 74）和港股指数的日线（扩展周期 4）、1/5/15/30/60 分钟线及周、月、季、年线返回原币种成交额。扩展成交额保留源协议的 float32 精度。协议不提供金额时为 nil。期货持仓、结算价等原始字段保留在 `Extended` 中。
 - 分笔公共 `Direction` 为 1 买、-1 卖、0 中性或方向未知。港股主板和香港基金按港股标记解码，未知标记的 `NatureName` 为空。美股方向暂为 0，保留原始 `Extended.Nature`。期货继续解码开平仓性质。港股主板、香港基金、美股和国内期货合约的扩展分笔价格按市场配置以 `Extended.Price ÷ 1,000` 转为原币种或报价单位。期货指数的分笔价格尺度待确认，公开 `Price` 为 nil。原始整数保留。

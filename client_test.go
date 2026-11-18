@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,6 +113,50 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		} else if k.Close != 10.5 || k.Extended.Position != 123 || k.Extended.Price != 10.75 || k.Amount != nil {
 			t.Fatal("lost futures fields or mislabeled position as amount", k)
 		}
+	}
+}
+
+func TestMarketClientExtendedIndexRouting(t *testing.T) {
+	for _, tc := range []struct {
+		code, wire string
+		market     byte
+	}{
+		{"wi.A_IXIC", "A_IXIC", 12},
+		{"wi.B_SDAX.K", "B_SDAX.K", 12},
+		{"qhz.IMCI", "IMCI", 42},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			c := marketTestClient(t, nil, func(h, b []byte) []byte {
+				if binary.LittleEndian.Uint16(h[10:12]) != protocol.TypeExBars ||
+					b[0] != tc.market || strings.TrimRight(string(b[1:10]), "\x00") != tc.wire {
+					t.Error("wrong index request", h, b)
+				}
+				bar := testExtendedBar(20261117)
+				clear(bar[40:52])
+				if b[10] == protocol.TypeKlineMinute2 {
+					binary.LittleEndian.PutUint16(bar[20:22], (2026-2004)*2048+1117)
+					binary.LittleEndian.PutUint16(bar[22:24], 15*60)
+				}
+				return bar
+			})
+			for _, period := range []struct {
+				category, wire uint8
+				sourceTime     string
+			}{
+				{protocol.TypeKlineDay, 4, "2026-11-17"},
+				{protocol.TypeKlineMinute, 8, "2026-11-17 15:00"},
+			} {
+				r, err := c.GetKline(period.category, tc.code, 0, 1)
+				if err != nil || r.Count != 1 || r.Category != period.wire || r.Instrument.String() != tc.code {
+					t.Fatal(r, err)
+				}
+				row := r.List[0]
+				if row.Time != period.sourceTime || row.Open != 10.25 || row.Close != 10.5 ||
+					row.Volume != 0 || row.Amount != nil || row.Extended == nil {
+					t.Fatal(row)
+				}
+			}
+		})
 	}
 }
 

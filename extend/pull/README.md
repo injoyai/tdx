@@ -69,7 +69,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 ### 两种拉取模式
 
-- **全量模式**（`Codes` 为空，上例）：全部注册市场，各自自动发现代码（整市场拉取）。
+- **全量模式**（`Codes` 为空，上例）：已启用的市场各自自动发现代码。国际指数仅在配置该市场的调度后启用。
 - **白名单模式**（`Codes` 非空）：只拉列出的代码，市场由 `ParseCode` 自动路由；未涉及的市场不拉。
 
 ---
@@ -89,6 +89,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 | `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，ETF 代码自动路由 |
 | `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
+| `protocol.MarketInternationalIndex` | `global/index` | 国际指数 | 7727 | 市场编码 12，如 `wi.A_IXIC`。通过 `Config.Schedules` 配置调度 |
 
 > 市场标识统一用 `protocol.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
 
@@ -98,7 +99,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 `Market.Info()` 返回行情协议、解码分类、日线/1 分钟线请求类型，以及日线、分钟线、周月季年线、报价/分时/分笔的量价换算规则。定义集中在 [`protocol/market.go`](../../protocol/market.go)。
 
-`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。全部内置枚举项均有时区，供调用方安排任务使用；`Info()` 保持 `(MarketInfo, bool)` 接口，不增加缺少时区的运行时报错逻辑。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
+`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。国际指数跨多个地区，`Info()` 中没有统一时区和收盘边界。显式选择国际指数代码时，须为 `protocol.MarketInternationalIndex` 配置对应代码范围的更新边界。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
 
 ```go
 code, err := pull.ParseCode("hk00700")
@@ -137,7 +138,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 标准指数的日、周、月、季、年统一量均为解码量 ×100。港股主板、香港基金和美股周、月、季、年线由统一 Client 支持，香港市场量按 ×10000、美股量按 ×100，成交额使用原币种。拉取层仍只保存日线与 1 分钟线。港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
 
-> `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空 = 全量拉取所有注册市场。
+> `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空时自动发现已启用的市场。
 
 ---
 
@@ -150,7 +151,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | 字段 | 说明 | 默认值 |
 |---|---|---|
 | `Store` | 行情同步必填；仅获取元数据时可省略 | 无 |
-| `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空 = 全部注册市场自动发现 | 自动发现 |
+| `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空时自动发现已启用的市场 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
 | `Goroutines` | 并发数 | `8` |
@@ -160,7 +161,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | `OnProgress` | 串行逐证券完成回调 | 无，默认不打印进度 |
 | `OnEvent` | 串行日线／分钟阶段及市场终态回调 | 无 |
 | `UniverseVersion` | 自动证券池版本，变化后允许同窗口补拉 | 空 |
-| `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 内置市场使用原默认值 |
+| `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 单地区内置市场有默认值，国际指数须显式配置 |
 | `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
 | `ListCodes` | 标准证券自动发现回调，每轮只调用一次；指定 Codes 时跳过 | 无 |
@@ -236,7 +237,7 @@ Codes: []string{
 }
 ```
 
-内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货须同时含字母和数字；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
+内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受纯字母代码；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
 > 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
 > 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。香港基金也可直接写 `hk/fund.02800`，存储目录为 `hk/fund`。

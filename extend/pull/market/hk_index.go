@@ -1,5 +1,5 @@
 // Package market 实现各市场的拉取 Unit（可插拔）。
-// 港股指数市场（恒生系/中华系）：走扩展行情(7727) GetKline，市场编码 27。
+// 港股指数和国际指数均通过扩展行情的 GetKline 获取。
 package market
 
 import (
@@ -19,4 +19,8 @@ func init() {
 		name:    protocol.MarketHKIndex,
 		markets: []protocol.Exchange{protocol.ExchangeHI},
 	}})
+	pull.Register(&exUnit{
+		name:    protocol.MarketInternationalIndex,
+		markets: []protocol.Exchange{protocol.ExchangeWI},
+	})
 }

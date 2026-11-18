@@ -45,6 +45,8 @@ func (i Instrument) Market() (Market, error) {
 		return MarketHKIndex, nil
 	case ExchangeUS:
 		return MarketUS, nil
+	case ExchangeWI:
+		return MarketInternationalIndex, nil
 	case ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ:
 		return MarketFuture, nil
 	default:
@@ -69,7 +71,7 @@ func ParseInstrument(s string) (Instrument, error) {
 			return Instrument{}, err
 		}
 	}
-	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHKFund, ExchangeHK, ExchangeHI, ExchangeUS} {
+	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHKFund, ExchangeHK, ExchangeHI, ExchangeUS, ExchangeWI} {
 		prefix := ex.String()
 		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
 			continue
@@ -78,6 +80,9 @@ func ParseInstrument(s string) (Instrument, error) {
 		explicit := strings.HasPrefix(body, ".") || strings.HasPrefix(body, "/")
 		if explicit {
 			body = body[1:]
+		}
+		if ex == ExchangeWI && !explicit && isStockSymbol(s) {
+			continue // WIX 等裸美股代码保持原路由。
 		}
 		i, err := checkedInstrument(ex, body)
 		if err == nil || explicit {
@@ -112,7 +117,7 @@ func checkedInstrument(ex Exchange, body string) (Instrument, error) {
 			hasDigit = true
 		case c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
 			hasLetter = true
-		case ex == ExchangeUS && (c == '.' || c == '-'):
+		case ex == ExchangeUS && (c == '.' || c == '-'), ex == ExchangeWI && (c == '.' || c == '_'):
 		default:
 			valid = false
 		}
@@ -135,12 +140,18 @@ func checkedInstrument(ex Exchange, body string) (Instrument, error) {
 	case ExchangeHI:
 		valid = valid && hasLetter
 		i.Code = strings.ToUpper(body)
-	case ExchangeUS:
+	case ExchangeUS, ExchangeWI:
 		valid = valid && hasLetter
-		for _, part := range strings.Split(strings.ReplaceAll(body, ".", "-"), "-") {
+		parts := strings.ReplaceAll(body, ".", "-")
+		if ex == ExchangeWI {
+			parts = strings.ReplaceAll(parts, "_", "-")
+		}
+		for _, part := range strings.Split(parts, "-") {
 			valid = valid && part != ""
 		}
 		i.Code = strings.ToUpper(body)
+	case ExchangeQHZ:
+		valid = valid && hasLetter
 	default:
 		valid = valid && hasLetter && hasDigit
 	}
