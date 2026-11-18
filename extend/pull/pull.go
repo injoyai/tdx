@@ -118,15 +118,15 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 	// Codes 为空时，有默认调度或已经配置调度的内置市场自动发现代码。
 	overrides := map[protocol.Market][]model.Code{}
 	if len(cfg.Codes) > 0 {
-		resolve := func(symbol string) (protocol.Exchange, error) {
-			if !cfg.HKInstruments.Loaded() && !isNil(cfg.ExPool) {
+		resolve := func(lookup protocol.InstrumentLookup) (protocol.Instrument, error) {
+			if !cfg.InstrumentSnapshot.Loaded() && !isNil(cfg.ExPool) {
 				items, err := fetchInstruments(ctx, cfg.ExPool)
 				if err != nil {
-					return 0, fmt.Errorf("hk.%s 无法读取通达信品种快照（候选市场 31、49）: %w", symbol, err)
+					return protocol.Instrument{}, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), err)
 				}
-				cfg.HKInstruments = protocol.NewHKInstruments(items)
+				cfg.InstrumentSnapshot = protocol.NewInstrumentSnapshot(items)
 			}
-			return cfg.HKInstruments.Exchange(symbol)
+			return cfg.InstrumentSnapshot.Resolve(lookup)
 		}
 		for _, s := range cfg.Codes {
 			c, err := parseCode(s, resolve)
@@ -201,7 +201,7 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 
 // ParseCode resolves a code with the service's configured instrument snapshot.
 func (s *Service) ParseCode(input string) (model.Code, error) {
-	return ParseCodeWithHK(input, s.cfg.HKInstruments)
+	return ParseCodeWithSnapshot(input, s.cfg.InstrumentSnapshot)
 }
 
 // Close 停止后续业务存储操作；注入的组件均由调用方关闭。

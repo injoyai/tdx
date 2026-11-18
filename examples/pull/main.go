@@ -48,7 +48,7 @@ func run() error {
 	}
 	needsSt, needsEx := *all, *all
 	for _, raw := range inputs {
-		if _, shared := protocol.HKCode(raw); shared {
+		if _, shared := protocol.LookupInstrument(raw); shared {
 			needsEx = true
 			continue
 		}

@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-var hkTestSnapshot = protocol.NewHKInstruments([]protocol.ExInstrument{
+var hkTestSnapshot = protocol.NewInstrumentSnapshot([]protocol.ExInstrument{
 	{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"},
 })
 
@@ -57,7 +57,7 @@ func TestMarketPrefixForms(t *testing.T) {
 		for _, input := range tt.inputs {
 			t.Run(input, func(t *testing.T) {
 				code := tt.code
-				got, err := ParseCodeWithHK(input, hkTestSnapshot)
+				got, err := ParseCodeWithSnapshot(input, hkTestSnapshot)
 				if err != nil || got.Market != tt.market || got.Code != code {
 					t.Fatalf("ParseCode(%q)=%+v, %v; want %s %s", input, got, err, tt.market, code)
 				}
@@ -108,7 +108,7 @@ func TestHongKongSecurityKeys(t *testing.T) {
 			if key := code.Key(); key != tc.key {
 				t.Fatalf("Code.Key() = %q, want %q", key, tc.key)
 			}
-			if roundTrip, err := ParseCodeWithHK(code.Key(), hkTestSnapshot); err != nil || roundTrip != code {
+			if roundTrip, err := ParseCodeWithSnapshot(code.Key(), hkTestSnapshot); err != nil || roundTrip != code {
 				t.Fatalf("key changed the security: %+v, %v", roundTrip, err)
 			}
 			i, err := protocol.ParseInstrument(code.Key())
@@ -232,14 +232,14 @@ func TestSharedHongKongCodeRequiresMarketEvidence(t *testing.T) {
 	if c, err := ParseCode("hk.00823"); err == nil || !strings.Contains(err.Error(), "候选市场 31、49") {
 		t.Fatal(c, err)
 	}
-	got, err := ParseCodeWithHK("hk.00823", hkTestSnapshot)
+	got, err := ParseCodeWithSnapshot("hk.00823", hkTestSnapshot)
 	if err != nil || got.Market != protocol.MarketHKFund || got.Code != "00823" {
 		t.Fatal(got, err)
 	}
-	duplicated := protocol.NewHKInstruments([]protocol.ExInstrument{
+	duplicated := protocol.NewInstrumentSnapshot([]protocol.ExInstrument{
 		{Market: 31, Code: "00823"}, {Market: 49, Code: "00823"},
 	})
-	if c, err := ParseCodeWithHK("hk.00823", duplicated); err == nil || !strings.Contains(err.Error(), "31 和 49") {
+	if c, err := ParseCodeWithSnapshot("hk.00823", duplicated); err == nil || !strings.Contains(err.Error(), "31 和 49") {
 		t.Fatal(c, err)
 	}
 	explicit, err := ParseCode("02800.31")

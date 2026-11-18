@@ -14,15 +14,17 @@ type Market string
 func (m Market) String() string { return string(m) }
 
 type marketDefinition struct {
-	exchange     Exchange
-	prefix       string
-	name         string
-	info         MarketInfo
-	securityInfo func(SecurityKind) MarketInfo
-	parse        func(Instrument) (Instrument, bool)
-	kinds        []securityRule
-	security     SecurityKind
-	bareSymbols  []string
+	exchange      Exchange
+	prefix        string
+	name          string
+	info          MarketInfo
+	securityInfo  func(SecurityKind) MarketInfo
+	parse         func(Instrument) (Instrument, bool)
+	parseExplicit func(Instrument) (Instrument, bool)
+	lookup        snapshotRule
+	kinds         []securityRule
+	security      SecurityKind
+	bareSymbols   []string
 
 	// Shared aliases such as hk resolve to the primary market before parsing.
 	sharedPrefix     bool
@@ -37,6 +39,8 @@ var (
 	markets             []Market
 	instrumentExchanges []Exchange
 	bareInstruments     = map[string]Exchange{}
+	snapshotMarkets     []Market
+	snapshotExchanges   = map[Exchange]bool{}
 )
 
 // registerMarket is called by the file defining a built-in market during init.
@@ -61,6 +65,12 @@ func registerMarket(m Market, def marketDefinition) {
 	}
 	marketDefinitions[m] = def
 	exchangeMarkets[def.exchange] = m
+	if def.lookup.code != nil {
+		snapshotMarkets = append(snapshotMarkets, m)
+		for _, ex := range def.lookup.exchanges {
+			snapshotExchanges[ex] = true
+		}
+	}
 	markets = append(markets, m)
 	slices.Sort(markets)
 	if !def.sharedPrefix {

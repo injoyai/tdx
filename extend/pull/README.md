@@ -219,7 +219,7 @@ cfg.OnEvent = func(e pull.Event) {
 
 ### 代码自动路由
 
-`Codes` 是扁平的代码列表。构造服务时解析每个代码的市场。含 `hk.00823` 等共享简称的五位数字代码时，传入 `Config.HKInstruments` 可复用调用方已有的品种快照，否则构造函数通过 `ExPool` 读取。可以使用 `pull.NewContext` 设定读取期限。读取失败、代码缺失或同时归属 31 和 49 时，构造函数返回错误。
+`Codes` 是扁平的代码列表。构造服务时解析每个代码的市场。含 `hk.00823` 等共享简称的五位数字代码时，传入 `Config.InstrumentSnapshot` 可复用调用方已有的品种快照，否则构造函数通过 `ExPool` 读取。可以使用 `pull.NewContext` 设定读取期限。读取失败、代码缺失或同时归属 31 和 49 时，构造函数返回错误。
 
 ```go
 Codes: []string{
@@ -239,7 +239,7 @@ Codes: []string{
 
 内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受纯字母代码；`hk/index` 等完整市场键必须与实际市场匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
-服务建好后使用 `s.ParseCode` 复用同一快照得到查询存储所需的 `model.Code`。独立解析可以用 `ParseCodeWithHK` 并传入由 `protocol.NewHKInstruments` 建立的索引。
+服务建好后使用 `s.ParseCode` 复用同一快照得到查询存储所需的 `model.Code`。独立解析可以用 `ParseCodeWithSnapshot` 并传入由 `protocol.NewInstrumentSnapshot` 建立的索引。
 
 `model.Code.Key()` 对港股股票、基金和指数统一使用 `hk` 前缀，例如 `hk.00700`、`hk.02800`、`hk.HSI`。存储接口仍使用市场类别和代码主体来标识证券，如 `{hk/stock, 00700}` 和 `{hk/index, HSI}`。
 

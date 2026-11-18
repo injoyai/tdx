@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/injoyai/ios"
@@ -19,8 +20,8 @@ import (
 type ExConn struct {
 	*conn
 	*queries
-	hk         *hkState
-	requestCtx context.Context
+	instruments *instrumentState
+	requestCtx  context.Context
 }
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
@@ -144,6 +145,78 @@ const instrumentPageSize = 800
 func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
 	items, _, err := c.readInstruments(true)
 	return items, err
+}
+
+type instrumentSnapshot struct {
+	writer *frameWriter
+	codes  protocol.InstrumentSnapshot
+}
+
+type instrumentState struct {
+	gate     chan struct{}
+	snapshot atomic.Pointer[instrumentSnapshot]
+}
+
+func (c *ExConn) instrument(code string) (protocol.Instrument, protocol.MarketInfo, error) {
+	i, info, err := protocolInstrument(code, true)
+	if err != nil {
+		return i, info, err
+	}
+	lookup, needed := protocol.LookupInstrument(code)
+	if !needed {
+		return i, info, nil
+	}
+	snapshot, err := c.instrumentSnapshot()
+	if err != nil {
+		return i, info, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), err)
+	}
+	i, err = snapshot.Resolve(lookup)
+	if err != nil {
+		return i, info, err
+	}
+	info, _ = i.Info()
+	return i, info, nil
+}
+
+// readInstruments serializes a refresh with snapshot lookups.
+func (c *ExConn) readInstruments(refresh bool) ([]protocol.ExInstrument, protocol.InstrumentSnapshot, error) {
+	ctx := c.requestContext()
+	select {
+	case c.instruments.gate <- struct{}{}:
+		defer func() { <-c.instruments.gate }()
+	case <-ctx.Done():
+		return nil, protocol.InstrumentSnapshot{}, ctx.Err()
+	case <-c.Done():
+		return nil, protocol.InstrumentSnapshot{}, net.ErrClosed
+	}
+	writer := c.currentWriter()
+	if previous := c.instruments.snapshot.Load(); !refresh && previous != nil && previous.writer == writer {
+		return nil, previous.codes, nil
+	}
+	items, err := c.scanInstruments()
+	if err != nil {
+		return nil, protocol.InstrumentSnapshot{}, err
+	}
+	if c.currentWriter() != writer {
+		return nil, protocol.InstrumentSnapshot{}, errors.New("扩展行情连接在品种扫描期间变更")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, protocol.InstrumentSnapshot{}, err
+	}
+	codes := protocol.NewInstrumentSnapshot(items)
+	c.instruments.snapshot.Store(&instrumentSnapshot{writer: writer, codes: codes})
+	return items, codes, nil
+}
+
+func (c *ExConn) instrumentSnapshot() (protocol.InstrumentSnapshot, error) {
+	if err := c.requestContext().Err(); err != nil {
+		return protocol.InstrumentSnapshot{}, err
+	}
+	if snapshot := c.instruments.snapshot.Load(); snapshot != nil && snapshot.writer == c.currentWriter() {
+		return snapshot.codes, nil
+	}
+	_, codes, err := c.readInstruments(false)
+	return codes, err
 }
 
 func (c *ExConn) scanInstruments() ([]protocol.ExInstrument, error) {
@@ -491,7 +564,7 @@ func (*ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newExConn(core *conn) *ExConn {
-	c := &ExConn{conn: core, hk: &hkState{gate: make(chan struct{}, 1)}}
+	c := &ExConn{conn: core, instruments: &instrumentState{gate: make(chan struct{}, 1)}}
 	c.queries = &queries{source: c}
 	return c
 }

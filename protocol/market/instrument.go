@@ -2,6 +2,8 @@ package market
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -18,7 +20,7 @@ func (i Instrument) String() string {
 
 // QueryCode formats an instrument so another query preserves its known wire market.
 func (i Instrument) QueryCode() string {
-	if i.Exchange == ExchangeHK || i.Exchange == ExchangeHKFund {
+	if UsesInstrumentSnapshot(i.Exchange) {
 		return fmt.Sprintf("%s.%d", i.Code, i.Exchange.Uint8())
 	}
 	return i.String()
@@ -68,14 +70,51 @@ func (i Instrument) StorageCode() string {
 	return i.Code
 }
 
+type snapshotRule struct {
+	code      func(string) (string, bool)
+	exchanges []Exchange
+}
+
+// InstrumentLookup describes a code that needs a unique match in a snapshot.
+type InstrumentLookup struct {
+	Code      string
+	Exchanges []Exchange
+	prefix    string
+}
+
+func (l InstrumentLookup) String() string { return l.prefix + "." + l.Code }
+
+// Candidates returns the candidate wire market numbers.
+func (l InstrumentLookup) Candidates() string {
+	numbers := make([]string, 0, len(l.Exchanges))
+	for _, ex := range l.Exchanges {
+		numbers = append(numbers, strconv.Itoa(int(ex)))
+	}
+	return strings.Join(numbers, "、")
+}
+
+// LookupInstrument finds the snapshot rule for an input, if any.
+func LookupInstrument(input string) (InstrumentLookup, bool) {
+	for _, m := range snapshotMarkets {
+		def := marketDefinitions[m]
+		if code, ok := def.lookup.code(input); ok {
+			return InstrumentLookup{Code: code, Exchanges: slices.Clone(def.lookup.exchanges), prefix: def.prefix}, true
+		}
+	}
+	return InstrumentLookup{}, false
+}
+
+// UsesInstrumentSnapshot reports whether an exchange participates in snapshot routing.
+func UsesInstrumentSnapshot(ex Exchange) bool { return snapshotExchanges[ex] }
+
 // ParseInstrument parses a bare code within an explicit market.
 func (m Market) ParseInstrument(body string) (Instrument, error) {
 	ex, ok := m.Exchange()
 	if !ok {
 		return Instrument{}, fmt.Errorf("未定义的行情市场 %s", m)
 	}
-	if ex == ExchangeHK {
-		if i, ok := numericHKCode(Instrument{ex, body}); ok {
+	if parse := marketDefinitions[m].parseExplicit; parse != nil {
+		if i, ok := parse(Instrument{ex, body}); ok && i.Exchange == ex {
 			return i, nil
 		}
 	}
@@ -126,12 +165,8 @@ func ParseInstrument(s string) (Instrument, error) {
 	if p := strings.LastIndexByte(s, '.'); p > 0 {
 		suffix := s[p+1:]
 		if ex, err := ParseExchange(suffix); err == nil {
-			if ex == ExchangeHK && isDigits(suffix) {
-				// The numeric market is already known. Preserve it even for an ETF-shaped code.
-				if i, ok := numericHKCode(Instrument{ex, s[:p]}); ok {
-					return i, nil
-				}
-				return Instrument{}, fmt.Errorf("港股主板代码 %q 必须为五位数字", s[:p])
+			if m, ok := exchangeMarkets[ex]; ok && isDigits(suffix) {
+				return m.ParseInstrument(s[:p])
 			}
 			return checkedInstrument(ex, s[:p])
 		}

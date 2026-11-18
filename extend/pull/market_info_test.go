@@ -31,7 +31,7 @@ func TestMarketInfoRouting(t *testing.T) {
 		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
-			code, err := ParseCodeWithHK(tc.code, hkTestSnapshot)
+			code, err := ParseCodeWithSnapshot(tc.code, hkTestSnapshot)
 			if err != nil || code.Market != tc.market {
 				t.Fatal("market routing", code, err)
 			}

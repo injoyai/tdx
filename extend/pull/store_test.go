@@ -94,7 +94,7 @@ func TestParseCode(t *testing.T) {
 		{"hk/index.CES120", protocol.MarketHKIndex, "CES120"},
 	}
 	for _, c := range cases {
-		got, err := ParseCodeWithHK(c.in, hkTestSnapshot)
+		got, err := ParseCodeWithSnapshot(c.in, hkTestSnapshot)
 		if err != nil {
 			t.Errorf("ParseCode(%q) err: %v", c.in, err)
 			continue

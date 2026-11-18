@@ -10,6 +10,8 @@ const (
 func init() {
 	def := hkEquityDefinition(ExchangeHK, "hk", "香港交易所", parseHK)
 	def.security = SecurityStock
+	def.parseExplicit = numericHKCode
+	def.lookup = snapshotRule{code: hkNumericCode, exchanges: []Exchange{ExchangeHK, ExchangeHKFund}}
 	registerMarket(MarketHK, def)
 }
 
@@ -53,8 +55,7 @@ func isHKETFCode(code string) bool {
 	return false
 }
 
-// HKCode recognizes the shared Hong Kong input forms that require a wire market.
-func HKCode(input string) (string, bool) {
+func hkNumericCode(input string) (string, bool) {
 	code := strings.TrimSpace(input)
 	if len(code) >= 2 && strings.EqualFold(code[:2], "hk") {
 		code = code[2:]

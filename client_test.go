@@ -30,7 +30,7 @@ func marketTestClient(t *testing.T, std, ex func([]byte, []byte) []byte) *Market
 			}
 			native := respondingTestClient(t, index == 1, respond)
 			if ex, ok := native.protocolClient.(*ExConn); ok {
-				ex.hk.snapshot.Store(&hkSnapshot{writer: ex.currentWriter(), codes: protocol.NewHKInstruments([]protocol.ExInstrument{
+				ex.instruments.snapshot.Store(&instrumentSnapshot{writer: ex.currentWriter(), codes: protocol.NewInstrumentSnapshot([]protocol.ExInstrument{
 					{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"},
 				})})
 			}

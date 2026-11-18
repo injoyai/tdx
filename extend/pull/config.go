@@ -24,9 +24,9 @@ type Config struct {
 	Retry      int            // 每个代码的日线/分钟线各自最大尝试次数，默认 3
 	Pool       tdx.ClientPool // 标准行情(7709)连接池，由调用方关闭
 	ExPool     tdx.ClientPool // 扩展行情(7727)连接池（可选）。期货/港股/美股 Unit 使用
-	// HKInstruments optionally supplies the snapshot for explicit Hong Kong codes.
-	// When absent, NewContext fetches it from ExPool if those codes require it.
-	HKInstruments protocol.HKInstruments `json:"-"`
+	// InstrumentSnapshot optionally supplies the snapshot for codes requiring snapshot routing.
+	// When absent, NewContext fetches it from ExPool on demand.
+	InstrumentSnapshot protocol.InstrumentSnapshot `json:"-"`
 	// ListCodes supplies standard-market discovery once per Update; explicit Codes bypass it.
 	ListCodes func(context.Context) ([]model.Code, error) `json:"-"`
 	// UniverseVersion changes when an automatically discovered universe changes.

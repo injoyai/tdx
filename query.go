@@ -148,7 +148,7 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 		}
 		if out == nil {
 			out = &KlineResp{Instrument: r.Instrument, Category: r.Category}
-			code = pinHongKongCode(code, r.Instrument)
+			code = pinInstrumentCode(code, r.Instrument)
 		}
 		count := len(r.List)
 		// 服务端可能返回非末页的短页，读到空页才确认历史耗尽。
@@ -231,7 +231,7 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 		if err != nil {
 			return nil, fmt.Errorf("%s %s 查询分笔前检查日线: %w", code, date, err)
 		}
-		code = pinHongKongCode(code, days.Instrument)
+		code = pinInstrumentCode(code, days.Instrument)
 		out := &TradeResp{Instrument: days.Instrument, Date: date}
 		if len(days.List) == 0 {
 			return out, nil
@@ -278,7 +278,7 @@ func (q *queries) tradeAll(date, code string, checkDay bool) (*TradeResp, error)
 		}
 		if out == nil {
 			out = &TradeResp{Instrument: r.Instrument, Date: r.Date}
-			code = pinHongKongCode(code, r.Instrument)
+			code = pinInstrumentCode(code, r.Instrument)
 		}
 		out.List = append(r.List, out.List...)
 		out.Count = len(out.List)
@@ -312,7 +312,7 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 	if r.Count == 0 {
 		return out, nil
 	}
-	code = pinHongKongCode(code, r.Instrument)
+	code = pinInstrumentCode(code, r.Instrument)
 	firstDate, _, _ := strings.Cut(r.List[0].Time, " ")
 	first, err := time.ParseInLocation(time.DateOnly, firstDate, before.Location())
 	if err != nil {
@@ -360,9 +360,9 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 	return out, nil
 }
 
-// Pin a market determined by the first page for the rest of a multi-request query.
-func pinHongKongCode(code string, i protocol.Instrument) string {
-	if _, shared := protocol.HKCode(code); shared {
+// Pin the market determined by the first page for the rest of a multi-request query.
+func pinInstrumentCode(code string, i protocol.Instrument) string {
+	if _, shared := protocol.LookupInstrument(code); shared {
 		return i.QueryCode()
 	}
 	return code

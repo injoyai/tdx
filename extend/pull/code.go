@@ -10,7 +10,7 @@ import (
 )
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
-func parseMarketPrefix(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, bool, error) {
+func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, bool, error) {
 	var prefixes []string
 	wirePrefixes := map[string]bool{}
 	for _, m := range protocol.Markets() {
@@ -37,7 +37,7 @@ func parseMarketPrefix(s string, resolve func(string) (protocol.Exchange, error)
 		body := s[len(prefix):]
 		if wirePrefixes[prefix] {
 			code, err := parseWireCode(s, resolve)
-			_, shared := protocol.HKCode(s)
+			_, shared := protocol.LookupInstrument(s)
 			if err == nil || shared || strings.HasPrefix(body, ".") || strings.HasPrefix(body, "/") {
 				return code, true, err
 			}
@@ -84,15 +84,15 @@ func codeInMarket(prefix, body string) (model.Code, error) {
 //
 // 无法识别时返回错误。
 func ParseCode(s string) (model.Code, error) {
-	return ParseCodeWithHK(s, protocol.HKInstruments{})
+	return ParseCodeWithSnapshot(s, protocol.InstrumentSnapshot{})
 }
 
-// ParseCodeWithHK resolves shared Hong Kong symbols against an instrument snapshot.
-func ParseCodeWithHK(s string, snapshot protocol.HKInstruments) (model.Code, error) {
-	return parseCode(s, snapshot.Exchange)
+// ParseCodeWithSnapshot resolves shared market symbols against an instrument snapshot.
+func ParseCodeWithSnapshot(s string, snapshot protocol.InstrumentSnapshot) (model.Code, error) {
+	return parseCode(s, snapshot.Resolve)
 }
 
-func parseCode(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, error) {
+func parseCode(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return model.Code{}, fmt.Errorf("pull: 空代码")
@@ -103,17 +103,16 @@ func parseCode(s string, resolve func(string) (protocol.Exchange, error)) (model
 	return parseWireCode(s, resolve)
 }
 
-func parseWireCode(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, error) {
+func parseWireCode(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, error) {
 	i, err := protocol.ParseInstrument(s)
 	if err != nil {
 		return model.Code{}, err
 	}
-	if symbol, shared := protocol.HKCode(s); shared {
-		ex, err := resolve(symbol)
+	if lookup, needed := protocol.LookupInstrument(s); needed {
+		i, err = resolve(lookup)
 		if err != nil {
 			return model.Code{}, err
 		}
-		i = protocol.Instrument{Exchange: ex, Code: symbol}
 	}
 	market, err := i.Market()
 	if err != nil {
