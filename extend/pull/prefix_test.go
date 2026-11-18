@@ -193,7 +193,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 	for _, input := range []string{
 		"us.12345", "us.ABCDEFGHIJ", "ABCDEFGHIJ", "us.AAPL-", "hk.ABCDEFGHIJ", "cff.12345", "cff.ABCDEFGHI1",
 		"cn/stock.sh600000", "cn/index.sh000001", "cn/stock.sh110001", "cn/bond.sh110075", "hk/stock.HSI", "hk/index.00700",
-		"hi.HSI", "hkf.02800", "HKF02800", "02800.HKF",
+		"hi.HSI",
 		"us/stock.12345", "us/stock.ABCDEFGHIJ", "cn/future.us.AAPL", "cn/future.cff/IF2609", "unknown/IF2609",
 	} {
 		t.Run(input, func(t *testing.T) {

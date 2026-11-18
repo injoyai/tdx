@@ -151,12 +151,10 @@ func TestHongKongExchangePrefix(t *testing.T) {
 			t.Errorf("ParseExchange(%q) = %d, %v, want %d", input, ex, err, want)
 		}
 	}
-	for _, alias := range []string{"hi", "hkf", "HKF"} {
-		if _, err := ParseExchange(alias); err == nil {
-			t.Errorf("accepted removed exchange alias %q", alias)
-		}
+	if _, err := ParseExchange("hi"); err == nil {
+		t.Error("accepted removed exchange alias hi")
 	}
-	for _, input := range []string{"hi.HSI", "HSI.hi", "hiHZ5021", "hkf.02800", "HKF02800", "02800.HKF"} {
+	for _, input := range []string{"hi.HSI", "HSI.hi", "hiHZ5021"} {
 		if i, err := ParseInstrument(input); err == nil {
 			t.Errorf("accepted removed instrument prefix or suffix %q as %s", input, i)
 		}

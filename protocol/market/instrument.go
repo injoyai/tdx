@@ -96,9 +96,6 @@ func ParseInstrument(s string) (Instrument, error) {
 	if s == "" {
 		return Instrument{}, fmt.Errorf("代码不能为空")
 	}
-	if retiredHKFundCode(s) {
-		return Instrument{}, fmt.Errorf("无效的港股简称：%q", s[:3])
-	}
 	if ex, ok := bareInstruments[strings.ToUpper(s)]; ok {
 		return checkedInstrument(ex, s)
 	}
