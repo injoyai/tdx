@@ -91,6 +91,34 @@ func TestBuiltinParsersAgree(t *testing.T) {
 	}
 }
 
+func TestHongKongSecurityKeys(t *testing.T) {
+	for _, tc := range []struct {
+		input, key string
+		exchange   protocol.Exchange
+	}{
+		{"hk/stock.00700", "hk.00700", protocol.ExchangeHK},
+		{"hk/index.HSI", "hk.HSI", protocol.ExchangeHI},
+		{"hk/index.HZ5021", "hk.HZ5021", protocol.ExchangeHI},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			code, err := ParseCode(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if key := code.Key(); key != tc.key {
+				t.Fatalf("Code.Key() = %q, want %q", key, tc.key)
+			}
+			if roundTrip, err := ParseCode(code.Key()); err != nil || roundTrip != code {
+				t.Fatalf("key changed the security: %+v, %v", roundTrip, err)
+			}
+			i, err := protocol.ParseInstrument(code.Key())
+			if err != nil || i.Exchange != tc.exchange || i.Code != code.Code || i.String() != tc.key {
+				t.Fatalf("key changed the wire market or symbol: %+v, %v", i, err)
+			}
+		})
+	}
+}
+
 func TestMarketRegistryIsCaseInsensitive(t *testing.T) {
 	name := "CaseMarket"
 	u := &mockUnit{name: name}
@@ -151,6 +179,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 	for _, input := range []string{
 		"us.12345", "us.ABCDEFGHIJ", "ABCDEFGHIJ", "us.AAPL-", "hk.ABCDEFGHIJ", "cff.12345", "cff.ABCDEFGHI1",
 		"cn/stock.hk00700", "cn/index.sh600000", "cn/stock.sh110001", "hk/stock.HSI", "hk/index.00700",
+		"hi.HSI",
 		"us/stock.12345", "us/stock.ABCDEFGHIJ", "cn/future.us.AAPL", "cn/future.cff/12345", "unknown/IF2609",
 	} {
 		t.Run(input, func(t *testing.T) {

@@ -12,9 +12,6 @@ type Instrument struct {
 }
 
 func (i Instrument) String() string {
-	if i.Exchange == ExchangeHI {
-		return "hk." + i.Code
-	}
 	return i.Exchange.String() + "." + i.Code
 }
 
@@ -71,7 +68,7 @@ func ParseInstrument(s string) (Instrument, error) {
 			return Instrument{}, err
 		}
 	}
-	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHKFund, ExchangeHK, ExchangeHI, ExchangeUS, ExchangeWI} {
+	for _, ex := range []Exchange{ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeQHZ, ExchangeSZ, ExchangeSH, ExchangeBJ, ExchangeHKFund, ExchangeHK, ExchangeUS, ExchangeWI} {
 		prefix := ex.String()
 		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
 			continue

@@ -22,7 +22,7 @@ func TestParseInstrument(t *testing.T) {
 		{"hkf.00823", ExchangeHKFund, "00823"}, {"香港基金02800", ExchangeHKFund, "02800"},
 		{"HKCES120", ExchangeHI, "CES120"}, {"HKL", ExchangeHI, "HKL"},
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
-		{"hi.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
+		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
 		{"us.bRk.B", ExchangeUS, "BRK.B"}, {"BRK.B", ExchangeUS, "BRK.B"},
 		{"WIX", ExchangeUS, "WIX"}, {"WING", ExchangeUS, "WING"},
 		{"wi.A_IXIC", ExchangeWI, "A_IXIC"}, {"Wi/a_ndx", ExchangeWI, "A_NDX"},

@@ -48,12 +48,10 @@ func codeInMarket(prefix, body string) (model.Code, error) {
 	switch explicit {
 	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther, protocol.MarketFuture:
 		query = body
-	case protocol.MarketHK:
+	case protocol.MarketHK, protocol.MarketHKIndex:
 		query = "hk." + body
 	case protocol.MarketHKFund:
 		query = "hkf." + body
-	case protocol.MarketHKIndex:
-		query = "hi." + body
 	case protocol.MarketUS:
 		query = "us." + body
 	case protocol.MarketInternationalIndex:

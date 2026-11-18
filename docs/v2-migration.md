@@ -520,6 +520,7 @@ SQLite 目录标记现为 `source-time-v2`；旧 `source-time-v1` 库不能继�
 当前 v2 仍在开发，不保留旧接口兼容层：
 
 - `pull` 的市场类型、常量与 `ToShares/FromShares` 直接使用 `protocol`；解析统一为 `pull.ParseCode`。完整市场键和简称输入都规范化为同一代码与文件名，例如 `cn/stock.600000` 与 `sh600000` 均使用 `sh600000.db`，不自动搬迁旧文件。
+- 港股股票和指数的 `Exchange.String()` 均返回 `hk`，`model.Code.Key()` 返回 `hk.00700`、`hk.HSI` 等点分隔代码。旧代码 `hi.HSI` 改用 `hk.HSI`，按协议市场查询时用 `27` 指定港股指数。
 - `codes.NewSQLite/workday.NewSQLite` 已移除，使用 storage 后端读取快照，再通过 metadata.NewCodes/NewWorkday 构造查询；`DefaultCodes` 已移除。定时任务统一使用返回停止函数的 `update.StartTimer`。
 - `MQuote.Decode` 和 `ParseBlockFile` 直接返回解码错误，不保留忽略错误的包装或 `Checked` 双入口。
 - HTTP `/quote`、`/kline/*`、`/minute/*`、`/trade/*` 按证券前缀选择标准或已启用的扩展池，直接返回 Go 统一结果。`/code` 必须传 `count`，`start` 为 uint32；`/count` 返回整数。

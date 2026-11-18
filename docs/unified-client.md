@@ -101,7 +101,7 @@ _ = quotes; _ = err
 | `sh019001`、`sz131810` | 其他国内标准品种，类别 `cn/other` |
 | `hk00700`、`HK.00700`、`00700` | 扩展港股 31 |
 | `hk02800`、`02800.HK`、`hkf.02800` | 扩展香港基金 49（含 ETF） |
-| `hk.HSI`、`hkCES120`、`hi.HZ5021` | 扩展港股指数 27 |
+| `hk.HSI`、`hkCES120`、`hk.HZ5021` | 扩展港股指数 27 |
 | `usAAPL`、`us.BRK.B`、`SHOP` | 扩展美股 74 |
 | `wi.A_IXIC`、`wi.A_NDX`、`B_SDAX.K.WI` | 扩展国际指数 12，保留协议代码中的下划线和点 |
 | `cffIF2609`、`cff.IF2609`、`cff/IF2609` | 扩展中金 47 |
@@ -110,7 +110,9 @@ _ = quotes; _ = err
 
 前缀不区分大小写，港美股和国际指数主体统一大写，期货和期货类指数主体保留大小写。国际指数推荐显式写法 `wi.A_IXIC`，裸美股代码如 `WIX` 继续进入美股市场。香港五位数字 ETF 按港交所分配区间自动进入市场 49；该市场中的其他基金可以显式使用 `hkf`，例如 `hkf.00823`。[港交所证券代号编配计划](https://www.hkex.com.hk/Products/Securities/Stock-Code-Allocation-Plan)`HSI/HKL/VHSI/CES100/GEM` 裸代码沿用 pull 的港股指数规则；其他有歧义的品种须显式带前缀，裸 `IF2609` 会报错。标准代码须为 6 位数字，扩展主体最多 9 个 ASCII 字节，超长或非法输入在发送前拒绝，避免底层定长字段截断。
 
-`protocol.ParseInstrument` 返回 `{Exchange, Code}`，`Instrument.String()` 返回点分隔代码，港股指数统一为 `hk.HSI`。统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
+`protocol.ParseInstrument` 返回 `{Exchange, Code}`。`Exchange.String()` 返回证券代码前缀，`Instrument.String()` 返回点分隔代码，例如港股股票 `hk.00700` 和港股指数 `hk.HSI`。按协议市场查询时，用 `27` 指定港股指数，用 `31` 或 `hk` 指定港股股票。
+
+统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
 业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 SendFrame、Write 系列及 Done／Closed／Err／GetKey 从具体连接使用，业务接口不包含这些能力。底层 Client、Wait、Logger／Event 及 Reset／Restart／Read 等入口不再公开；日志及重连使用构造选项配置。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
 

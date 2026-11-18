@@ -20,6 +20,7 @@ type Exchange uint8
 
 func (e Exchange) Uint8() uint8 { return uint8(e) }
 
+// String 返回证券代码前缀。港股股票和指数共用 hk。
 func (e Exchange) String() string {
 	switch e {
 	case ExchangeSZ:
@@ -34,7 +35,7 @@ func (e Exchange) String() string {
 		return "sho"
 	case ExchangeSZO:
 		return "szo"
-	case ExchangeHK:
+	case ExchangeHK, ExchangeHI:
 		return "hk"
 	case ExchangeHKFund:
 		return "hkf"
@@ -58,8 +59,6 @@ func (e Exchange) String() string {
 		return "shf"
 	case ExchangeGFE:
 		return "gfe"
-	case ExchangeHI:
-		return "hi"
 	case ExchangeOF:
 		return "of"
 	case ExchangeCFFO:
@@ -143,6 +142,7 @@ func (e Exchange) Name() string {
 //   - 小写缩写: "sz"/"sh"/"bj"/"nq" 等,对应 String() 输出
 //   - 中文名称: "深圳"/"上海"/"北京"/"新三板" 等,对应 Name() 输出
 //
+// 单独传入 hk 时返回港股主板；可用 27 或港股指数指定指数市场。
 // 无法识别时返回 error。
 func ParseExchange(s string) (Exchange, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -163,9 +163,10 @@ var allExchanges = []Exchange{
 	ExchangeSZ, ExchangeSH, ExchangeBJ,
 	ExchangeCFFO, ExchangeCZCO, ExchangeDCEO, ExchangeSHFO,
 	ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFEO, ExchangeGFE,
-	ExchangeHI, ExchangeOF, ExchangeSZO, ExchangeSHO,
+	ExchangeOF, ExchangeSZO, ExchangeSHO,
 	ExchangeCFF, ExchangeQHZ, ExchangeNQ,
-	ExchangeHK, ExchangeHKFund, ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeWI, ExchangeCNI,
+	ExchangeHK, ExchangeHI, ExchangeHKFund, // 共享 hk，主板优先匹配不带证券代码的 hk。
+	ExchangeCSI, ExchangeHG, ExchangeUS, ExchangeWI, ExchangeCNI,
 }
 
 // isExchangeName 判断字符串是否为已知市场的字母缩写或中文名(排除纯数字)。
