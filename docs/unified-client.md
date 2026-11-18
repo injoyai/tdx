@@ -181,9 +181,9 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 - 按市场区分的量价规则集中在 `protocol.Market.Info()`。`Day.VolumeScale`、`Minute.VolumeScale` 和 `LongVolumeScale` 分别对应日线、分钟线和周月季年线，`KlineVolumeScale(category)` 按周期选用，`HasKlineVolume(category)` 标记可用的成交数量。`TickVolumeScale` 用于报价（含五档）以及数量槽位确认为成交量的分时和分笔。国内其他未细分品种的默认 ×100 仍待逐接口校准。成交量转换拒绝零/负倍率、负数量和整数溢出。
 - 标准指数的实时和历史分时、分笔使用 `Amount`（`*float64`）返回人民币成交额，公开 `Volume=0`。分时的 `Standard.Number` 每单位为 10,000 元，分笔的 `Standard.Volume` 每单位为 100 元，由 `MinuteAmountScale` 和 `TradeAmountScale` 配置。已知零金额返回零值地址，其他市场的分时和分笔 `Amount` 为 nil。原始结构及原始响应保留报文尺度。
 - 标准可转债（`cn/bond`）的日、周、月、季、年 K 线解码量 ×1000，分钟 K 线、报价、分时和分笔的解码量 ×10，统一返回张数。分钟 K 线价格与成交额直接使用源值，分时价格按其解码值 ÷100，分笔在协议解码时校准为元/张。报价价格继续按代码表精度换算。
-- 港股指数样本中的量字段含成交额口径，缺少可核对的股数依据；配置采用正倍率 1 表示保留原值，统一成交数量接口仍报错，不把金额冒充股数。原始 `SendFrame` 可用于研究此类数据。`Standard`、`Extended`、`RangeExtended` 及 `StandardResponse()` 保留各自的原单位。
+- 港股指数（市场 27）的 K 线返回指数点位，`Volume=0` 表示协议没有提供股数。普通 K 线取 `Extended.Amount`，区间 K 线取 `RangeExtended.Position` 的 float32 金额，统一乘 1,000,000 写入原币种 `Amount`。原始 `Trade` 为粗粒度金额，日线及日内约以千万为单位，周月季年约以十亿为单位。恒指金额对应港股市场成交额。报价、分时与分笔的成交数量接口对该市场返回错误。原始结果保留在 `Standard`、`Extended`、`RangeExtended` 及 `StandardResponse()`。
 - 美股日线采用实际周期 4；AAPL 单根、多根请求对比及 MSFT 样本与独立报价确认量为股。原周期 9 的量值依请求数量变化，不能用固定乘数修复。
-- K 线 `Amount` 为指针。标准行情、港股主板（市场 31）、香港基金（市场 49）和美股（市场 74）的日线（周期 4）、1/5/15/30/60 分钟线及周、月、季、年线返回原币种成交额。港美股保留源协议的 float32 精度。其他扩展 K 线的统一成交额为 nil。期货持仓、结算价等原始字段保留在 `Extended` 中。
+- K 线 `Amount` 为指针。标准行情、港股主板（市场 31）、香港基金（市场 49）、美股（市场 74）和港股指数的日线（扩展周期 4）、1/5/15/30/60 分钟线及周、月、季、年线返回原币种成交额。扩展成交额保留源协议的 float32 精度。协议不提供金额时为 nil。期货持仓、结算价等原始字段保留在 `Extended` 中。
 - 分笔公共 `Direction` 为 1 买、-1 卖、0 中性或方向未知。港股主板和香港基金按港股标记解码，未知标记的 `NatureName` 为空。美股方向暂为 0，保留原始 `Extended.Nature`。期货继续解码开平仓性质。港股主板、香港基金、美股和国内期货合约的扩展分笔价格按市场配置以 `Extended.Price ÷ 1,000` 转为原币种或报价单位。期货指数的分笔价格尺度待确认，公开 `Price` 为 nil。原始整数保留。
 - 每条数据的 `Standard` 或 `Extended` 保留完整的对应底层结构，避免丢失涨跌家数、均价、持仓、增仓、开平性质等特有信息。
 - K 线 `Time` 保留源精度：日及更长周期为 `YYYY-MM-DD`，日内周期为 `YYYY-MM-DD HH:MM`；分时／分笔为 `HH:MM`／`HH:MM:SS`。不为日线补造 15:00。K 线不再附加 `TradingDate`；历史分笔的 `Date` 仍是请求交易日期，不等同于夜盘自然日。

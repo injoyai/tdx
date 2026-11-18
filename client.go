@@ -27,7 +27,7 @@ type Kline struct {
 	High          float64  // 最高价，原币种/报价单位
 	Low           float64  // 最低价，原币种/报价单位
 	Close         float64  // 收盘价/该周期最新价，原币种/报价单位
-	Volume        int64    // 股票为股，可转债和期货为张；标准指数日内缺少可用成交量时为 0
+	Volume        int64    // 股票为股，可转债和期货为张；无可用成交量时为 0
 	Amount        *float64 // 原币种成交额；nil 表示该市场和周期的成交额不可用
 	Standard      *protocol.Kline
 	Extended      *protocol.ExKline

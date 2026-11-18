@@ -40,16 +40,18 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	hasAmount := info.HasExtendedKlineAmount(out.Category)
+	amountScale := info.ExtendedKlineAmountScale(out.Category)
 	for j := range bars {
 		k := &bars[j]
-		volume, err := scaleVolume(int64(k.Trade), scale)
-		if err != nil {
-			return nil, err
+		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Extended: k}
+		if scale > 0 {
+			row.Volume, err = scaleVolume(int64(k.Trade), scale)
+			if err != nil {
+				return nil, err
+			}
 		}
-		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, Extended: k}
-		if hasAmount {
-			amount := k.Amount
+		if amountScale > 0 {
+			amount := k.Amount * amountScale
 			row.Amount = &amount
 		}
 		out.List = append(out.List, row)
@@ -293,16 +295,18 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 		return nil, err
 	}
 	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute}
-	hasAmount := info.HasExtendedKlineAmount(out.Category)
+	amountScale := info.ExtendedKlineAmountScale(out.Category)
 	for j := range r {
 		k := &r[j]
-		volume, err := scaleVolume(int64(k.Trade), scale)
-		if err != nil {
-			return nil, err
+		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, RangeExtended: k}
+		if scale > 0 {
+			row.Volume, err = scaleVolume(int64(k.Trade), scale)
+			if err != nil {
+				return nil, err
+			}
 		}
-		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: volume, RangeExtended: k}
-		if hasAmount {
-			amount := float64(math.Float32frombits(k.Position))
+		if amountScale > 0 {
+			amount := float64(math.Float32frombits(k.Position)) * amountScale
 			row.Amount = &amount
 		}
 		out.List = append(out.List, row)

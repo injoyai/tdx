@@ -22,12 +22,12 @@ func TestMarketInfoRouting(t *testing.T) {
 		{"sh019001", protocol.MarketOther, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
 		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.SharesPerLot, 1},
+		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.SharesPerLot, 0},
 		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"hk02800", protocol.MarketHKFund, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, 1, 1},
-		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 0, 0},
 		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
@@ -81,11 +81,17 @@ func TestStandardIndexDayAndMinuteVolume(t *testing.T) {
 		if err != nil || len(bars.List) != 1 {
 			t.Fatal(bars, err)
 		}
-		// 指数日线报文量经过解码后是手，再由配置换算。分钟线保留解码量。
-		want := int64(123400)
-		if spec.Category == protocol.TypeKlineDay {
-			want = 1_234_000_000
+		if protocol.IsIntraday(spec.Category) {
+			// 分钟线保留原始金额槽位，成交量配置禁止把它转成股数。
+			if bars.List[0].Volume != 123400 || info.HasKlineVolume(spec.Category) {
+				t.Fatalf("category %d: unexpected minute volume %d, config %+v", spec.Category, bars.List[0].Volume, spec)
+			}
+			if _, err := spec.ToStorageVolume(bars.List[0].Volume); err == nil {
+				t.Fatal("minute amount slot was accepted as share volume")
+			}
+			continue
 		}
+		const want = 1_234_000_000
 		if got, err := spec.ToStorageVolume(bars.List[0].Volume); err != nil || got != want {
 			t.Fatalf("category %d: stored volume %d, want %d", spec.Category, got, want)
 		}

@@ -43,7 +43,7 @@ const (
 // KlineInfo 记录请求类型及原始解码量转为最小单位的倍率。
 type KlineInfo struct {
 	Category    uint8
-	VolumeScale int64 // 必须为正；国内未校准品种默认100，已确认股数/张数为1
+	VolumeScale int64 // 转为股数或张数的倍率，0 表示协议不提供成交量
 }
 
 // ToStorageVolume 换算为最小单位；禁止零/负倍率、负数量和整数溢出。
@@ -60,18 +60,16 @@ type MarketInfo struct {
 	TimeZone                    string // 已确定的市场 IANA 时区，供调度使用；不用于解释行情源时间
 	CloseTime                   string // 当地收盘边界 HH:MM；不含拉取延迟，美股包含盘后时段
 	Kind                        string // 标准行情的解码分类（KindStock / KindIndex）；扩展行情不用此字段
-	TickVolumeScale             int64  // 报价（含五档）、分时和分笔的成交量倍率，必须为正
+	TickVolumeScale             int64  // 报价（含五档）、分时和分笔的成交量倍率，0 表示协议不提供成交量
 	MinuteAmountScale           int64  // 分时数量槽位存金额时的换算倍率，0 表示仍按量处理
 	TradeAmountScale            int64  // 分笔数量槽位存金额时的换算倍率，0 表示仍按量处理
 	Day                         KlineInfo
 	Minute                      KlineInfo
-	LongVolumeScale             int64 // 周、月、季、年 K 线换算倍率
-	VolumeUnconfirmed           bool  // 量字段口径未确认，只通过原始协议提供
+	LongVolumeScale             int64 // 周、月、季、年 K 线成交量倍率，0 表示协议不提供成交量
 	QuoteUsesCodeDecimals       bool
 	MinutePriceDivisor          float64 // 分时解码值再除以此倍率
 	TradePriceDivisor           float64 // 标准分笔的附加除数，或扩展分笔原始价除数；0 表示未知
-	extendedKlineAmount         bool
-	intradayVolumeUnavailable   bool
+	extendedKlineAmountScale    float64
 	standardMinuteVolumeDivisor int64
 	financeSharesScale          float64
 	financeAmountScale          float64
@@ -91,7 +89,7 @@ func (m MarketInfo) KlineVolumeScale(category uint8) int64 {
 
 // HasKlineVolume 报告该市场及周期是否提供可用的成交数量。
 func (m MarketInfo) HasKlineVolume(category uint8) bool {
-	return !m.VolumeUnconfirmed && !(m.intradayVolumeUnavailable && IsIntraday(category))
+	return m.KlineVolumeScale(category) > 0
 }
 
 // QuotePriceScale 将标准报价解码值校准到代码表提供的价格精度。
@@ -113,12 +111,19 @@ func (m MarketInfo) ExtendedTradePrice(ex Exchange, raw uint32) (float64, bool) 
 
 // HasExtendedKlineAmount 报告该市场和周期的扩展协议金额是否可用。
 func (m MarketInfo) HasExtendedKlineAmount(category uint8) bool {
+	return m.ExtendedKlineAmountScale(category) > 0
+}
+
+// ExtendedKlineAmountScale 返回扩展 K 线金额转为原币种的倍率，0 表示协议不提供金额。
+func (m MarketInfo) ExtendedKlineAmountScale(category uint8) float64 {
 	switch category {
 	case TypeKlineDay2, TypeKlineWeek, TypeKlineMonth, TypeKlineQuarter, TypeKlineYear:
-		return m.extendedKlineAmount
-	default:
-		return m.extendedKlineAmount && IsIntraday(category)
+		return m.extendedKlineAmountScale
 	}
+	if IsIntraday(category) {
+		return m.extendedKlineAmountScale
+	}
+	return 0
 }
 
 func (m MarketInfo) standardKlineVolume(volume int64, category uint8, kind string) int64 {
@@ -171,17 +176,16 @@ func (m Market) Info() (MarketInfo, bool) {
 		// 标准财务协议的股本为万股，资产、收入和现金流等金额以千元编码。
 		info.financeSharesScale, info.financeAmountScale = 10_000, 1_000
 		switch m {
-		case MarketIndex, MarketBlock:
+		case MarketIndex:
+			info.Kind = KindIndex
+			// 标准指数分钟线的数量槽位是成交额的缩放值。
+			info.Minute.VolumeScale = 0
+			// 分时为万元，分笔为百元；报价和 K 线另有独立量字段。
+			info.MinuteAmountScale, info.TradeAmountScale = 10_000, 100
+		case MarketBlock:
 			info.Kind = KindIndex
 			info.Minute.VolumeScale = 1
-			if m == MarketIndex {
-				// 标准指数分钟线的数量槽位近似成交额的缩放值。
-				info.intradayVolumeUnavailable = true
-				// 分时为万元，分笔为百元；报价和 K 线另有独立量字段。
-				info.MinuteAmountScale, info.TradeAmountScale = 10_000, 100
-			} else {
-				info.Day.VolumeScale, info.LongVolumeScale = 1, 1
-			}
+			info.Day.VolumeScale, info.LongVolumeScale = 1, 1
 		case MarketBond:
 			info.TickVolumeScale, info.Minute.VolumeScale = BondsPerLot, BondsPerLot
 			// 日线及更长周期的解码量每单位为 100 手。
@@ -205,15 +209,17 @@ func (m Market) Info() (MarketInfo, bool) {
 			info.TradePriceDivisor = 1_000
 			info.Day.VolumeScale, info.Minute.VolumeScale = SharesPerLot, SharesPerLot
 			info.LongVolumeScale = 10_000
-			info.extendedKlineAmount = true
+			info.extendedKlineAmountScale = 1
 		case MarketHKIndex:
 			info.TimeZone, info.CloseTime = "Asia/Hong_Kong", "16:10"
-			info.VolumeUnconfirmed = true // 量字段含成交额口径。
+			// 指数报文的量槽位用于金额，K 线金额以原币种的百万为单位。
+			info.Day.VolumeScale, info.Minute.VolumeScale, info.LongVolumeScale, info.TickVolumeScale = 0, 0, 0, 0
+			info.extendedKlineAmountScale = 1_000_000
 		case MarketUS:
 			info.TimeZone, info.CloseTime = "America/New_York", "20:00"
 			info.TradePriceDivisor = 1_000
 			info.LongVolumeScale = 100
-			info.extendedKlineAmount = true
+			info.extendedKlineAmountScale = 1
 		case MarketFuture:
 			info.TimeZone, info.CloseTime = "Asia/Shanghai", "15:30"
 			info.TradePriceDivisor = 1_000

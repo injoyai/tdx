@@ -88,18 +88,61 @@ func TestScaleVolumeBounds(t *testing.T) {
 	}
 }
 
-func TestForeignIndexVolumeRejected(t *testing.T) {
+func TestForeignIndexTickVolumeRejected(t *testing.T) {
 	for _, code := range []string{"hk.HSI", "hk.CES120"} {
-		i, info, err := instrumentInfo(code)
+		i, _, err := instrumentInfo(code)
 		if err != nil {
 			t.Fatal(err)
-		}
-		if _, err := klineVolumeScale(i, info.Day.Category, info); err == nil {
-			t.Fatal("unconfirmed Kline unit accepted", code)
 		}
 		if _, err := volumeScale(i); err == nil {
 			t.Fatal("unconfirmed tick unit accepted", code)
 		}
+	}
+}
+
+func TestHKIndexKlineWithoutVolume(t *testing.T) {
+	const rawAmount float32 = 198051.5625 // 恒指 2026-11-17 日线的报文金额，单位百万港元。
+	c := marketTestClient(t, nil, func(h, b []byte) []byte {
+		if b[0] != byte(protocol.ExchangeHI) {
+			t.Errorf("request routed to wrong market: %d", b[0])
+		}
+		bar := testExtendedBar(20261117)
+		binary.LittleEndian.PutUint32(bar[40:44], math.Float32bits(rawAmount))
+		binary.LittleEndian.PutUint32(bar[44:48], 19805)
+		if protocol.IsIntraday(b[10]) {
+			binary.LittleEndian.PutUint16(bar[20:22], (2026-2004)*2048+1117)
+			binary.LittleEndian.PutUint16(bar[22:24], 16*60)
+		}
+		if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeExBarsRange {
+			return bar[6:]
+		}
+		return bar
+	})
+	for _, code := range []string{"hk.HSI", "hk.CES120", "hk.CES100"} {
+		check := func(r *KlineResp, err error) {
+			t.Helper()
+			if err != nil || r.Count != 1 {
+				t.Fatal(code, r, err)
+			}
+			row := r.List[0]
+			if row.Open != 10.25 || row.Close != 10.5 || row.Volume != 0 {
+				t.Fatal(code, row)
+			}
+			if row.Amount == nil || *row.Amount != 198051562500 {
+				t.Fatalf("%s amount = %v, want %d", code, row.Amount, int64(198051562500))
+			}
+			if row.Extended != nil {
+				if row.Extended.Trade != 19805 || row.Extended.Amount != float64(rawAmount) {
+					t.Fatal(row.Extended)
+				}
+			} else if row.RangeExtended == nil || row.RangeExtended.Trade != 19805 || row.RangeExtended.Position != math.Float32bits(rawAmount) {
+				t.Fatal(row.RangeExtended)
+			}
+		}
+		check(c.GetKlineDay(code, 0, 1))
+		check(c.GetKlineMinute(code, 0, 1))
+		check(c.GetKlineWeek(code, 0, 1))
+		check(c.GetKlineRange(code, "20261117", "20261117"))
 	}
 }
 
@@ -186,15 +229,18 @@ func TestConvertibleBondUnits(t *testing.T) {
 
 func TestIndexKlineVolumeScaleByPeriod(t *testing.T) {
 	for _, tc := range []struct {
-		code string
-		day  int64
+		code     string
+		day      int64
+		intraday int64
 	}{
-		{"sh000001", 100},
-		{"sh000012", 100},
-		{"sz399001", 100},
-		{"bj899050", 100},
-		{"sh880001", 1},
-		{"sh881001", 1},
+		{"sh000001", 100, 0},
+		{"sh000012", 100, 0},
+		{"sz399001", 100, 0},
+		{"bj899050", 100, 0},
+		{"sh880001", 1, 1},
+		{"sh881001", 1, 1},
+		{"hk.HSI", 0, 0},
+		{"hk.CES120", 0, 0},
 	} {
 		i, info, err := instrumentInfo(tc.code)
 		if err != nil {
@@ -207,9 +253,9 @@ func TestIndexKlineVolumeScaleByPeriod(t *testing.T) {
 			if category == protocol.TypeKlineDay2 || category == protocol.TypeKlineMinute2 {
 				continue // 公开入口先将周期别名映射到市场的实际周期。
 			}
-			want := int64(1)
-			if !protocol.IsIntraday(category) {
-				want = tc.day
+			want := tc.day
+			if protocol.IsIntraday(category) {
+				want = tc.intraday
 			}
 			if got, err := klineVolumeScale(i, category, info); err != nil || got != want {
 				t.Fatalf("%s category %d: scale=%d err=%v, want %d", tc.code, category, got, err, want)

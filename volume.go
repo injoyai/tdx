@@ -13,17 +13,18 @@ func volumeScale(i protocol.Instrument) (int64, error) {
 		return 0, err
 	}
 	info, ok := m.Info()
-	if ok && !info.VolumeUnconfirmed && info.TickVolumeScale > 0 {
+	if ok && info.TickVolumeScale > 0 {
 		return info.TickVolumeScale, nil
 	}
-	return 0, fmt.Errorf("%s 的报价、分时或分笔字段不能确认为成交数量，不能转换为最小单位", i)
+	return 0, fmt.Errorf("%s 的市场配置不提供报价、分时或分笔的成交数量", i)
 }
 
+// klineVolumeScale 返回 0 表示该周期的 K 线没有可用成交量。
 func klineVolumeScale(i protocol.Instrument, category uint8, info protocol.MarketInfo) (int64, error) {
-	if scale := info.KlineVolumeScale(category); scale > 0 && !info.VolumeUnconfirmed {
+	if scale := info.KlineVolumeScale(category); scale >= 0 {
 		return scale, nil
 	}
-	return 0, fmt.Errorf("%s 周期 %d 的成交量单位尚未确认，不能转换为最小单位", i, category)
+	return 0, fmt.Errorf("%s 周期 %d 的成交量倍率无效", i, category)
 }
 
 func scaleVolume(volume, scale int64) (int64, error) {

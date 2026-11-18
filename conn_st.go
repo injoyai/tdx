@@ -49,10 +49,9 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	hasVolume := info.HasKlineVolume(out.Category)
 	for _, k := range r.List {
 		v := standardKline(k)
-		if hasVolume {
+		if scale > 0 {
 			v.Volume, err = scaleVolume(k.Volume, scale)
 			if err != nil {
 				return nil, err

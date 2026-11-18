@@ -87,8 +87,8 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 	}
 	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketHKFund, MarketUS, MarketHKIndex} {
 		info, ok := market.Info()
-		if !ok || info.Day.VolumeScale <= 0 || info.Minute.VolumeScale <= 0 || info.TickVolumeScale <= 0 {
-			t.Fatalf("%s has nonpositive volume scale: %+v", market, info)
+		if !ok || info.Day.VolumeScale < 0 || info.Minute.VolumeScale < 0 || info.TickVolumeScale < 0 || info.LongVolumeScale < 0 {
+			t.Fatalf("%s has invalid volume scale: %+v", market, info)
 		}
 	}
 }
