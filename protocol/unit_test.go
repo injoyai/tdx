@@ -141,20 +141,22 @@ func TestParseExchange(t *testing.T) {
 }
 
 func TestHongKongExchangePrefix(t *testing.T) {
-	for _, ex := range []Exchange{ExchangeHK, ExchangeHI} {
+	for _, ex := range []Exchange{ExchangeHK, ExchangeHKFund, ExchangeHI} {
 		if got := ex.String(); got != "hk" {
 			t.Errorf("market %d prefix = %q, want hk", ex, got)
 		}
 	}
-	for input, want := range map[string]Exchange{"hk": ExchangeHK, "27": ExchangeHI, "港股指数": ExchangeHI} {
+	for input, want := range map[string]Exchange{"hk": ExchangeHK, "27": ExchangeHI, "49": ExchangeHKFund, "香港基金": ExchangeHKFund, "港股指数": ExchangeHI} {
 		if ex, err := ParseExchange(input); err != nil || ex != want {
 			t.Errorf("ParseExchange(%q) = %d, %v, want %d", input, ex, err, want)
 		}
 	}
-	if _, err := ParseExchange("hi"); err == nil {
-		t.Error("accepted removed exchange alias hi")
+	for _, alias := range []string{"hi", "hkf", "HKF"} {
+		if _, err := ParseExchange(alias); err == nil {
+			t.Errorf("accepted removed exchange alias %q", alias)
+		}
 	}
-	for _, input := range []string{"hi.HSI", "HSI.hi", "hiHZ5021"} {
+	for _, input := range []string{"hi.HSI", "HSI.hi", "hiHZ5021", "hkf.02800", "HKF02800", "02800.HKF"} {
 		if i, err := ParseInstrument(input); err == nil {
 			t.Errorf("accepted removed instrument prefix or suffix %q as %s", input, i)
 		}

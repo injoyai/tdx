@@ -46,7 +46,7 @@ type Factory func(*testing.T) Fixture
 // ORM, file layout, or network source. Skipped fault tests are not verified passes.
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	run := func(name string, test func(*testing.T, Fixture)) {
 		t.Run(name, func(t *testing.T) {
 			f := factory(t)
@@ -216,8 +216,8 @@ func Run(t *testing.T, factory Factory) {
 	})
 	run("isolation", func(t *testing.T, f Fixture) {
 		s := f.Store
-		codes := []model.Code{c, {Market: protocol.MarketIndex, Code: c.Code}, {Market: c.Market, Code: "sz000002"},
-			{Market: protocol.MarketFuture, Code: "cff/IF2609"}, {Market: protocol.MarketFuture, Code: "cff/if2609"},
+		codes := []model.Code{c, {Market: protocol.MarketSH, Code: "sh000001"}, {Market: c.Market, Code: "sz000002"},
+			{Market: protocol.MarketCFF, Code: "IF2609"}, {Market: protocol.MarketCFF, Code: "if2609"},
 			{Market: "custom", Code: "A"}, {Market: "custom", Code: "a"}, {Market: "Custom", Code: "a"},
 			{Market: "custom", Code: "~41"}, {Market: "custom", Code: "é"}, {Market: "custom", Code: "e\u0301"}}
 		for i, code := range codes {

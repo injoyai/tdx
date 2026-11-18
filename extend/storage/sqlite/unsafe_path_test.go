@@ -31,7 +31,8 @@ func TestUnsafeCodesCannotReadOrOverwriteAnotherSecurity(t *testing.T) {
 		{Market: "custom", Code: "A*"}, {Market: "custom", Code: "A[1]"},
 		{Market: "custom", Code: "A."}, {Market: "custom", Code: "CON"},
 		{Market: "", Code: "A"}, {Market: "custom", Code: ""},
-		{Market: protocol.MarketFuture, Code: "cff-IF2609"},
+		{Market: protocol.MarketCFF, Code: "cff-IF2609"},
+		{Market: protocol.MarketSH, Code: "sz000001"},
 	} {
 		t.Run(bad.Market.String()+":"+bad.Code, func(t *testing.T) {
 			if err := s.SaveDay(bad, "", day); err == nil {
@@ -81,7 +82,7 @@ func TestUnsafeCodesCannotReadOrOverwriteAnotherSecurity(t *testing.T) {
 
 func TestMinutePathsRejectWrappedYears(t *testing.T) {
 	s := testStore(t)
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	for _, year := range []int{-1, 0, 10000} {
 		if _, err := s.LastMinuteTime(c, year); err == nil || s.MinuteFile(c, year) != "" {
 			t.Fatal("invalid year mapped to another year", year, err)

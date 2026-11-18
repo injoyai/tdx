@@ -20,15 +20,10 @@ func validateCode(c model.Code) error {
 			return fmt.Errorf("sqlite: 无效市场路径 %q", market)
 		}
 	}
-	if c.Market == protocol.MarketFuture {
-		i, err := protocol.ParseInstrument(c.Code)
-		if err == nil {
-			m, marketErr := i.Market()
-			if marketErr == nil && m == c.Market && i.Exchange.String()+"/"+i.Code == c.Code {
-				return nil
-			}
+	if _, builtin := c.Market.Exchange(); builtin {
+		if _, err := c.Instrument(); err != nil {
+			return err
 		}
-		return fmt.Errorf("sqlite: 期货代码须为规范的交易所/合约形式: %q", c.Code)
 	}
 	if !safeName(c.Code) {
 		return fmt.Errorf("sqlite: 代码不能安全映射为文件名: %q", c.Code)
@@ -72,7 +67,7 @@ func dayFile(c model.Code, dir string) string {
 	if validateCode(c) != nil {
 		return ""
 	}
-	return filepath.Join(dir, marketPath(c.Market), "day", fileName(strings.ReplaceAll(c.Code, "/", "-"))+".db")
+	return filepath.Join(dir, marketPath(c.Market), "day", fileName(c.Code)+".db")
 }
 
 // MinuteFile 该代码指定年份的1分钟线 sqlite 文件路径。
@@ -82,7 +77,7 @@ func minuteFile(c model.Code, dir string, year int) string {
 		return ""
 	}
 	y := yearToString(year)
-	name := fileName(strings.ReplaceAll(c.Code, "/", "-"))
+	name := fileName(c.Code)
 	return filepath.Join(dir, marketPath(c.Market), "min", name, name+"-"+y+".db")
 }
 

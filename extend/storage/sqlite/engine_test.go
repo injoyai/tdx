@@ -19,7 +19,7 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	}
 	defer service.Close()
 
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	if last, err := s.LastMinuteTime(c, 2025); err != nil || last != "" || s.MinuteExists(c, 2025) {
 		t.Fatalf("读取空库创建了文件或返回异常: %s %v", last, err)
 	}
@@ -80,14 +80,14 @@ func TestMinuteCoverageRollback(t *testing.T) {
 func TestEngineLimitAndBorrow(t *testing.T) {
 	s := testStore(t)
 	s.engineLimit = 2
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	db, release, err := s.openDay(c)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
 	for i := 0; i < 8; i++ {
-		if err := s.SaveDay(model.Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i+10)}, "", []*model.KlineDay{{Time: "2026-01-05"}}); err != nil {
+		if err := s.SaveDay(model.Code{Market: protocol.MarketSZ, Code: fmt.Sprintf("sz%06d", i+10)}, "", []*model.KlineDay{{Time: "2026-01-05"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -120,7 +120,7 @@ func TestEngineConcurrentEviction(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			c := model.Code{Market: protocol.MarketAStock, Code: fmt.Sprintf("sz%06d", i)}
+			c := model.Code{Market: protocol.MarketSZ, Code: fmt.Sprintf("sz%06d", i)}
 			for j := 0; j < 3; j++ {
 				if err := s.SaveDay(c, "", []*model.KlineDay{{Time: "2026-01-05", Close: float64(i)}}); err != nil {
 					t.Error(err)

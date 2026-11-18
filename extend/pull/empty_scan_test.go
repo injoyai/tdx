@@ -10,7 +10,7 @@ import (
 
 func TestEmptyMinuteScanExpiryScopeAndRange(t *testing.T) {
 	s := testService(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	from := time.Date(2024, 3, 1, 0, 0, 0, 0, time.Local).Format("2006-01-02 15:04")
 	if err := s.SaveMinuteEmptyScan(code, 2024, from, now); err != nil {
@@ -31,7 +31,7 @@ func TestEmptyMinuteScanExpiryScopeAndRange(t *testing.T) {
 		{"later start", code, 2024, "2024-03-01 00:01", now, true},
 		{"other year", code, 2025, from, now, false},
 		{"other code", model.Code{Market: code.Market, Code: "sz000002"}, 2024, from, now, false},
-		{"other market", model.Code{Market: protocol.MarketIndex, Code: code.Code}, 2024, from, now, false},
+		{"other market", model.Code{Market: protocol.MarketSH, Code: "sh000001"}, 2024, from, now, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := s.MinuteYearRecentlyEmpty(tt.code, tt.year, tt.from, tt.now)

@@ -214,7 +214,7 @@ func TestExLive(t *testing.T) {
 		t.Logf("instr cat=%d mkt=%d %s %s", x.Category, x.Market, x.Code, x.Name)
 	}
 
-	quotesResp, err := cli.GetQuote("hk00700") // 港股腾讯
+	quotesResp, err := cli.GetQuote("00700.31") // 港股腾讯
 	if err != nil || len(quotesResp) != 1 {
 		t.Fatalf("GetQuote: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestExLive(t *testing.T) {
 		t.Errorf("HK quote price invalid: %.2f", q.Price)
 	}
 
-	bars, err := cli.GetKline(protocol.TypeKlineDay, "hk00700", 0, 5) // 港股日K，Trade 为百股
+	bars, err := cli.GetKline(protocol.TypeKlineDay, "00700.31", 0, 5) // 港股日K，Trade 为百股
 	if err != nil || len(bars.List) == 0 {
 		t.Fatalf("GetKline: n=%d err=%v", len(bars.List), err)
 	}
@@ -242,22 +242,22 @@ func TestExLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	date, _ := strconv.ParseUint(latest.Format("20060102"), 10, 32)
-	minute, err := cli.GetMinute("hk00700")
+	minute, err := cli.GetMinute("00700.31")
 	if err != nil {
 		t.Fatal("GetMinute", err)
 	}
 	t.Logf("GetMinute=%d", len(minute.List))
-	historyMinute, err := cli.GetHistoryMinute(latest.Format("20060102"), "hk00700")
+	historyMinute, err := cli.GetHistoryMinute(latest.Format("20060102"), "00700.31")
 	if err != nil {
 		t.Fatal("GetHistoryMinute", err)
 	}
 	t.Logf("GetHistoryMinute date=%d count=%d", date, len(historyMinute.List))
-	trades, err := cli.GetTrade("hk00700", 0, 5)
+	trades, err := cli.GetTrade("00700.31", 0, 5)
 	if err != nil {
 		t.Fatal("GetTrade", err)
 	}
 	t.Logf("GetTrade=%d", len(trades.List))
-	historyTrades, err := cli.GetHistoryTrade(latest.Format("20060102"), "hk00700", 0, 5)
+	historyTrades, err := cli.GetHistoryTrade(latest.Format("20060102"), "00700.31", 0, 5)
 	if err != nil {
 		t.Fatal("GetHistoryTrade", err)
 	}
@@ -267,7 +267,7 @@ func TestExLive(t *testing.T) {
 		t.Fatal("GetQuoteList", len(quotes), err)
 	}
 	t.Logf("GetQuoteList=%d first=%s price=%.3f", len(quotes), quotes[0].Code, quotes[0].Price)
-	ranges, err := cli.GetKlineRange("hk00700", latest.Format("20060102"), latest.Format("20060102"))
+	ranges, err := cli.GetKlineRange("00700.31", latest.Format("20060102"), latest.Format("20060102"))
 	if err != nil {
 		t.Fatal("GetKlineRange", err)
 	}
@@ -303,7 +303,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	ex := liveTestClient(t, true, false)
-	bars, err := ex.GetKline(protocol.TypeKlineDay, "hk00700", 0, 5)
+	bars, err := ex.GetKline(protocol.TypeKlineDay, "00700.31", 0, 5)
 	if err != nil || len(bars.List) != 5 {
 		t.Fatal("extended daily sample", bars, err)
 	}
@@ -312,7 +312,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		rawBars = append(rawBars, *k.Extended)
 	}
 	samples["hk_day"] = rawBars
-	quote, err := ex.GetQuote("hk00700")
+	quote, err := ex.GetQuote("00700.31")
 	if err != nil || len(quote) != 1 || quote[0].Price <= 0 {
 		t.Fatal("extended quote sample", quote, err)
 	}
@@ -322,7 +322,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	date, _ := strconv.ParseUint(latest.Format("20060102"), 10, 32)
-	minute, err := ex.GetHistoryMinute(latest.Format("20060102"), "hk00700")
+	minute, err := ex.GetHistoryMinute(latest.Format("20060102"), "00700.31")
 	if err != nil || len(minute.List) == 0 {
 		t.Fatal("extended historical minute sample", err)
 	}
@@ -332,7 +332,7 @@ func TestCrossValidationSamplesLive(t *testing.T) {
 		rawMinute = append(rawMinute, *k.Extended)
 	}
 	samples["hk_minute"] = rawMinute
-	rangeResult, err := ex.GetKlineRange("hk00700", latest.Format("20060102"), latest.Format("20060102"))
+	rangeResult, err := ex.GetKlineRange("00700.31", latest.Format("20060102"), latest.Format("20060102"))
 	ranges := []protocol.ExRangeKline{}
 	if err == nil {
 		for _, k := range rangeResult.List {

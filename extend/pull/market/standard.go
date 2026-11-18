@@ -1,5 +1,3 @@
-// Package market 实现各市场的拉取 Unit（可插拔）。
-// 标准行情(7709)：沪深股票/ETF/LOF/指数/板块；扩展行情(7727)：期货/港股/美股。
 package market
 
 import (
@@ -32,6 +30,13 @@ func (u *stdUnit) Codes(s *pull.Service) ([]model.Code, error) {
 			out = append(out, code)
 		}
 	}
+	if u.name.DiscoversBlocks() {
+		blocks, err := u.blockCodes(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, blocks...)
+	}
 	return out, nil
 }
 
@@ -44,7 +49,11 @@ func (u *stdUnit) pool(s *pull.Service) (tdx.ClientPool, error) {
 }
 
 func (u *stdUnit) dayUntil(c tdx.Client, code, from string) ([]tdx.Kline, error) {
-	info, ok := u.name.Info()
+	i, err := protocol.ParseInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	info, ok := i.Info()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
@@ -57,14 +66,17 @@ func (u *stdUnit) dayUntil(c tdx.Client, code, from string) ([]tdx.Kline, error)
 
 // minUntil 仅股票/ETF 拆分竞价；结果直接使用统一 Client 的股数，不再转换原始协议量。
 func (u *stdUnit) minUntil(c tdx.Client, code string, from string) ([]tdx.Kline, error) {
-	info, ok := u.name.Info()
+	i, err := protocol.ParseInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	info, ok := i.Info()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
 	stop := func(k tdx.Kline) bool { return k.Time <= from }
 	var resp *tdx.KlineResp
-	var err error
-	if u.name == protocol.MarketAStock || u.name == protocol.MarketEtfLof {
+	if info.SplitAuction {
 		resp, err = c.GetKlineMinute241Until(code, stop)
 	} else {
 		resp, err = c.GetKlineUntil(info.Minute.Category, code, stop)
@@ -75,39 +87,6 @@ func (u *stdUnit) minUntil(c tdx.Client, code string, from string) ([]tdx.Kline,
 	return resp.List, nil
 }
 
-// --- 具体市场 ---
-
-// AStock 沪深股票市场。
-type AStock struct{ stdUnit }
-
-// Index 指数市场（含板块指数 880xxx/881xxx）。
-type Index struct{ stdUnit }
-
-// EtfLof ETF/LOF 市场。
-type EtfLof struct{ stdUnit }
-
-// Bond 可转债市场，成交量暂按国内默认100换算。
-type Bond struct{ stdUnit }
-
-// Other 其他国内标准品种，不冒用股票分类或股本数据。
-type Other struct{ stdUnit }
-
-var (
-	_ pull.Unit = (*AStock)(nil)
-	_ pull.Unit = (*Index)(nil)
-	_ pull.Unit = (*EtfLof)(nil)
-	_ pull.Unit = (*Bond)(nil)
-	_ pull.Unit = (*Other)(nil)
-)
-
-func init() {
-	pull.Register(&AStock{stdUnit{name: protocol.MarketAStock}})
-	pull.Register(&Index{stdUnit{name: protocol.MarketIndex}})
-	pull.Register(&EtfLof{stdUnit{name: protocol.MarketEtfLof}})
-	pull.Register(&Bond{stdUnit{name: protocol.MarketBond}})
-	pull.Register(&Other{stdUnit{name: protocol.MarketOther}})
-}
-
 // ---- FetchDay 通用实现：仅保存原始行情 ----
 
 func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
@@ -116,6 +95,12 @@ func (u *stdUnit) FetchDay(s *pull.Service, code model.Code) error {
 }
 
 func (u *stdUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
+	if code.Market != u.name {
+		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 证券 %s 不属于市场 %s", code.Key(), u.name)
+	}
+	if _, err := code.Instrument(); err != nil {
+		return pull.FetchResult{Known: true}, err
+	}
 	pool, err := u.pool(s)
 	if err != nil {
 		return pull.FetchResult{Known: true}, err
@@ -161,12 +146,20 @@ func (u *stdUnit) FetchMinute(s *pull.Service, code model.Code) error {
 }
 
 func (u *stdUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
+	if code.Market != u.name {
+		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 证券 %s 不属于市场 %s", code.Key(), u.name)
+	}
 	pool, err := u.pool(s)
 	if err != nil {
 		return pull.FetchResult{Known: true}, err
 	}
 	var fallback *minuteFallback
-	if s.TradeFallbackEnabled() && (u.name == protocol.MarketAStock || u.name == protocol.MarketEtfLof) {
+	i, err := code.Instrument()
+	if err != nil {
+		return pull.FetchResult{Known: true}, err
+	}
+	info, _ := i.Info()
+	if s.TradeFallbackEnabled() && info.SplitAuction {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {
 				var days []tdx.Kline

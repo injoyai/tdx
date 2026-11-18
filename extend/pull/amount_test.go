@@ -12,7 +12,7 @@ func testAmount(v float64) *float64 { return &v }
 
 func TestAmountPreservesStoredValue(t *testing.T) {
 	s := testService(t)
-	c := model.Code{Market: protocol.MarketFuture, Code: "cff/IF2609"}
+	c := model.Code{Market: protocol.MarketCFF, Code: "IF2609"}
 	at := time.Date(2026, 10, 20, 15, 0, 0, 0, protocol.Location())
 	if err := s.SaveDay(c, "", []*model.KlineDay{{Time: at.Format(time.DateOnly), Amount: testAmount(123)}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly), Amount: testAmount(456)}}); err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestAmountPreservesStoredValue(t *testing.T) {
 
 func TestAmountStorageAndAggregation(t *testing.T) {
 	s := testService(t)
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	at := time.Date(2026, 10, 19, 9, 31, 0, 0, protocol.Location())
 	days := []*model.KlineDay{{Time: at.Format(time.DateOnly), Amount: testAmount(100)}, {Time: at.AddDate(0, 0, 1).Format(time.DateOnly), Amount: testAmount(0)}}
 	minutes := []*model.KlineMinute{{Time: at.Format("2006-01-02 15:04"), Amount: testAmount(100)}, {Time: at.Add(time.Minute).Format("2006-01-02 15:04"), Amount: testAmount(0)}}

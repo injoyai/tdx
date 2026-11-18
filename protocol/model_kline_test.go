@@ -49,7 +49,7 @@ func TestNormalizeKlineVolume(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			info := standardMarketInfo(test.cache.Code)
-			if got := info.standardKlineVolume(test.volume, test.cache.Type, test.cache.Kind); got != test.want {
+			if got := info.StandardKlineVolume(test.volume, test.cache.Type, test.cache.Kind); got != test.want {
 				t.Fatalf("standardKlineVolume() = %d, want %d", got, test.want)
 			}
 		})

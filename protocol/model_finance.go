@@ -79,7 +79,7 @@ func (finance) Decode(bs []byte) (*FinanceInfo, error) {
 	}
 	pos += 7
 	info := standardMarketInfo(Exchange(fi.Market).String() + fi.Code)
-	shares, amount := info.financeSharesScale, info.financeAmountScale
+	shares, amount := info.FinanceScales()
 	fi.LiuTongGuBen = f32(bs[pos:pos+4]) * shares
 	fi.Province = binary.LittleEndian.Uint16(bs[pos+4 : pos+6])
 	fi.Industry = binary.LittleEndian.Uint16(bs[pos+6 : pos+8])

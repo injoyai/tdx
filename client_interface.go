@@ -45,7 +45,7 @@ type Client interface {
 	GetCode(exchange protocol.Exchange, start uint32, count uint16) (*CodeResp, error)
 	// GetCodeAll 获取指定市场的品种列表；扩展市场按 GetInstruments 的返回范围过滤，北交所使用报表来源。
 	GetCodeAll(exchange protocol.Exchange) (*CodeResp, error)
-	// GetInstruments 获取扩展服务器可分页提供的全局品种表，不按市场过滤、不跨查询缓存。
+	// GetInstruments 重新扫描扩展服务器的全局品种表并刷新港股路由索引。
 	// 报告总数高于实读数时，SDK 复查尾部后可返回实读列表并记录告警；其他缺页报错。
 	// 标准连接返回不支持错误。
 	GetInstruments() ([]protocol.ExInstrument, error)

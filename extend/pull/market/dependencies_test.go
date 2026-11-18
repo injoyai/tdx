@@ -42,6 +42,10 @@ func (*metadataClient) GetKlineUntil(uint8, string, func(tdx.Kline) bool) (*tdx.
 	}}, nil
 }
 
+func (*metadataClient) GetBlockDataWithIndex(string) ([]*protocol.Block, error) {
+	return []*protocol.Block{{Index: "880001", Name: "板块"}}, nil
+}
+
 func TestDirectMetadataDependencies(t *testing.T) {
 	pool := &metadataPool{c: &metadataClient{}}
 	index, err := metadata.NewCodes(nil)
@@ -80,25 +84,32 @@ func TestDirectMetadataDependencies(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	for _, tc := range []struct {
 		market protocol.Market
-		code   string
+		codes  []string
 	}{
-		{protocol.MarketAStock, "sz000001"},
-		{protocol.MarketIndex, "sh000001"},
-		{protocol.MarketEtfLof, "sh510300"},
-		{protocol.MarketBond, "sh110075"},
-		{protocol.MarketOther, "sh019001"},
+		{protocol.MarketSZ, []string{"sz000001"}},
+		{protocol.MarketSH, []string{"sh000001", "sh510300", "sh110075", "sh019001", "sh880001"}},
 	} {
 		u, _ := pull.Get(tc.market.String())
 		list, err := u.Codes(s)
-		if err != nil || len(list) != 1 || list[0].Code != tc.code || list[0].Name == "" {
+		if err != nil || len(list) != len(tc.codes) {
 			t.Fatalf("discovery %s: codes=%v err=%v", tc.market, list, err)
 		}
-		if err := u.FetchDay(s, list[0]); err != nil {
-			t.Fatal(err)
+		want := map[string]bool{}
+		for _, code := range tc.codes {
+			want[code] = true
 		}
-		rows, err := s.QueryDay(list[0], "", "")
-		if err != nil || len(rows) != 2 {
-			t.Fatal(rows, err)
+		for _, code := range list {
+			if !want[code.Code] || code.Name == "" {
+				t.Fatal("unexpected security", code)
+			}
+			delete(want, code.Code)
+			if err := u.FetchDay(s, code); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := s.QueryDay(code, "", "")
+			if err != nil || len(rows) != 2 {
+				t.Fatal(rows, err)
+			}
 		}
 	}
 
@@ -106,9 +117,9 @@ func TestDirectMetadataDependencies(t *testing.T) {
 	if err := cache.Update([]*model.CodeModel{{Exchange: "sh", Code: "600000", Name: "新股票"}}); err != nil {
 		t.Error(err)
 	}
-	u, _ := pull.Get(protocol.MarketAStock.String())
+	u, _ := pull.Get(protocol.MarketSH.String())
 	list, err := u.Codes(s)
-	if err != nil || len(list) != 1 || list[0].Code != "sh600000" {
+	if err != nil || len(list) != 2 || list[0].Code != "sh600000" {
 		t.Fatal("did not reuse refreshed metadata", list, err)
 	}
 	if err := s.Close(); err != nil {
@@ -125,15 +136,14 @@ func TestMissingStandardDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, market := range []protocol.Market{protocol.MarketAStock, protocol.MarketIndex,
-		protocol.MarketEtfLof, protocol.MarketBond, protocol.MarketOther} {
+	for _, market := range []protocol.Market{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
 		u, _ := pull.Get(market.String())
 		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "ListCodes") {
 			t.Fatalf("missing cache %s: %v", market, err)
 		}
 	}
-	u, _ := pull.Get(protocol.MarketAStock.String())
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	u, _ := pull.Get(protocol.MarketSZ.String())
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	if err := u.FetchDay(s, code); err == nil || !strings.Contains(err.Error(), "Pool") {
 		t.Fatal("missing pool", err)
 	}

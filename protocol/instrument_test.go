@@ -19,7 +19,7 @@ func TestParseInstrument(t *testing.T) {
 		{"hk03499", ExchangeHKFund, "03499"}, {"hk03500", ExchangeHK, "03500"},
 		{"hk09801", ExchangeHKFund, "09801"}, {"hk09850", ExchangeHK, "09850"},
 		{"hk82800", ExchangeHKFund, "82800"}, {"hk83200", ExchangeHK, "83200"},
-		{"hkf.00823", ExchangeHKFund, "00823"}, {"香港基金02800", ExchangeHKFund, "02800"},
+		{"hk.02800", ExchangeHKFund, "02800"}, {"香港基金02800", ExchangeHKFund, "02800"},
 		{"HKCES120", ExchangeHI, "CES120"}, {"HKL", ExchangeHI, "HKL"},
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
 		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
@@ -62,7 +62,7 @@ func TestInstrumentBlockMarket(t *testing.T) {
 			t.Fatal(err)
 		}
 		market, err := i.Market()
-		if err != nil || market != MarketBlock {
+		if err != nil || market != MarketSH || i.Kind() != SecurityBlock {
 			t.Fatal(code, market, err)
 		}
 	}
@@ -72,7 +72,7 @@ func TestInstrumentBlockMarket(t *testing.T) {
 			t.Fatal(err)
 		}
 		market, err := i.Market()
-		if err != nil || market == MarketBlock {
+		if err != nil || i.Kind() == SecurityBlock {
 			t.Fatal(code, market, err)
 		}
 	}
@@ -82,20 +82,23 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 	for _, tc := range []struct {
 		code   string
 		market Market
+		kind   SecurityKind
 	}{
-		{"sh110075", MarketBond}, {"sz123126", MarketBond},
-		{"sh118001", MarketBond}, {"sh019001", MarketOther},
-		{"sz131810", MarketOther}, {"sz000001", MarketAStock},
+		{"sh110075", MarketSH, SecurityBond}, {"sz123126", MarketSZ, SecurityBond},
+		{"sh118001", MarketSH, SecurityBond}, {"sh019001", MarketSH, SecurityOther},
+		{"sz131810", MarketSZ, SecurityOther}, {"sz000001", MarketSZ, SecurityStock},
+		{"sh000001", MarketSH, SecurityIndex}, {"sh510300", MarketSH, SecurityFund},
+		{"bj920001", MarketBJ, SecurityStock}, {"bj899050", MarketBJ, SecurityIndex},
 	} {
 		i, err := ParseInstrument(tc.code)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if market, err := i.Market(); err != nil || market != tc.market {
-			t.Fatal(tc.code, market, err)
+		if market, err := i.Market(); err != nil || market != tc.market || i.Kind() != tc.kind {
+			t.Fatal(tc.code, market, i.Kind(), err)
 		}
 	}
-	for _, market := range []Market{MarketAStock, MarketEtfLof, MarketIndex, MarketBlock, MarketBond, MarketOther, MarketFuture, MarketHK, MarketHKFund, MarketUS, MarketHKIndex, MarketInternationalIndex} {
+	for _, market := range Markets() {
 		info, ok := market.Info()
 		if !ok || info.Day.VolumeScale < 0 || info.Minute.VolumeScale < 0 || info.TickVolumeScale < 0 || info.LongVolumeScale < 0 {
 			t.Fatalf("%s has invalid volume scale: %+v", market, info)
@@ -110,7 +113,7 @@ func TestExtendedTradePriceScale(t *testing.T) {
 			t.Fatal(ex, err)
 		}
 		info, _ := market.Info()
-		got, ok := info.ExtendedTradePrice(ex, 23660)
+		got, ok := info.ExtendedTradePrice(23660)
 		if ex == ExchangeHI || ex == ExchangeQHZ {
 			if ok {
 				t.Fatal("unconfirmed price scale", ex, got)
@@ -118,5 +121,12 @@ func TestExtendedTradePriceScale(t *testing.T) {
 		} else if !ok || got != 23.66 {
 			t.Fatal(ex, got, ok)
 		}
+	}
+}
+
+func TestHongKongFundWithKnownExchange(t *testing.T) {
+	i, err := ParseInstrument("00823.49")
+	if err != nil || i.Exchange != ExchangeHKFund || i.String() != "hk.00823" {
+		t.Fatalf("known market 49: %+v, %v", i, err)
 	}
 }

@@ -21,6 +21,10 @@ type unifiedClient struct {
 
 func (*unifiedClient) Close() error { return nil }
 
+func (*unifiedClient) GetInstruments() ([]protocol.ExInstrument, error) {
+	return []protocol.ExInstrument{{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"}}, nil
+}
+
 func (c *unifiedClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
 	c.code = code
 	at := "2026-01-05"
@@ -48,7 +52,7 @@ func (c *unifiedClient) GetKlineMinute241Until(code string, stop func(tdx.Kline)
 
 func TestStandardMinuteBeyondUint16(t *testing.T) {
 	c := &unifiedClient{count: 65536}
-	u := &stdUnit{name: protocol.MarketAStock}
+	u := &stdUnit{name: protocol.MarketSZ}
 	rows, err := u.minUntil(c, "sz000001", "2026-01-01 00:00")
 	if err != nil || len(rows) != c.count || rows[0].Volume != 12345 {
 		t.Fatalf("unified history truncated or rescaled: count=%d err=%v", len(rows), err)
@@ -60,8 +64,8 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 		{"sz000001", "sz000001"}, {"sh000001", "sh000001"},
 		{"sh510300", "sh510300"}, {"sh880001", "sh880001"},
 		{"sh110075", "sh110075"}, {"sh019001", "sh019001"},
-		{"hk00700", "hk.00700"}, {"hk.HSI", "hk.HSI"}, {"usAAPL", "us.AAPL"},
-		{"hk02800", "hkf.02800"}, {"hk/fund.00823", "hkf.00823"},
+		{"hk00700", "00700.31"}, {"hk.HSI", "hk.HSI"}, {"usAAPL", "us.AAPL"},
+		{"hk02800", "02800.49"}, {"hk.00823", "00823.49"}, {"hk/fund.00823", "00823.49"},
 		{"cffIF2609", "cff.IF2609"}, {"czcTA2609", "czc.TA2609"},
 		{"dceM2609", "dce.M2609"}, {"shfcu2609", "shf.cu2609"},
 		{"gfeSI2609", "gfe.SI2609"}, {"qhzIFL9", "qhz.IFL9"}, {"qhz.IMCI", "qhz.IMCI"},
@@ -93,7 +97,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer s.Close()
-			code, err := pull.ParseCode(tc.input)
+			code, err := s.ParseCode(tc.input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,13 +138,12 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 }
 
 func TestExtendedMarketPrefixValidation(t *testing.T) {
-	u := &exUnit{name: protocol.MarketFuture, markets: []protocol.Exchange{protocol.ExchangeCFF}}
 	for _, code := range []string{"unknown/IF2609", "47/IF2609", "CFF/IF2609", "us/AAPL", "czc/TA2609"} {
-		if _, _, err := u.marketOf(model.Code{Code: code}); err == nil {
-			t.Errorf("accepted unsupported or noncanonical prefix: %q", code)
+		if _, err := (model.Code{Market: protocol.MarketCFF, Code: code}).Instrument(); err == nil {
+			t.Errorf("accepted noncanonical storage code: %q", code)
 		}
 	}
-	if _, _, err := (&exUnit{}).marketOf(model.Code{Code: "AAPL"}); err == nil {
-		t.Fatal("accepted a unit without exchanges")
+	if _, err := (model.Code{Code: "AAPL"}).Instrument(); err == nil {
+		t.Fatal("accepted a code without a market")
 	}
 }

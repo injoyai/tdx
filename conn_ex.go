@@ -19,19 +19,22 @@ import (
 type ExConn struct {
 	*conn
 	*queries
+	hk         *hkState
 	requestCtx context.Context
 }
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
 func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
-	out, info, err := klineRequest(code, category, count)
+	out, _, err := klineRequest(code, category, count)
 	if err != nil {
 		return nil, err
 	}
-	i, info, err := protocolInstrument(code, true)
+	i, info, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
+	out.Instrument = i
+	out.Category = klineCategory(info, category)
 	scale, err := klineVolumeScale(i, out.Category, info)
 	if err != nil {
 		return nil, err
@@ -67,7 +70,7 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 	instruments := make([]protocol.Instrument, len(codes))
 	for j, code := range codes {
-		i, _, err := protocolInstrument(code, true)
+		i, _, err := c.instrument(code)
 		if err != nil {
 			return nil, err
 		}
@@ -139,6 +142,11 @@ const instrumentPageSize = 800
 // GetInstruments 读取扩展服务器可分页提供的全局品种表。
 // 报告总数与实读数之间的尾部差异经同一连接复查后允许返回，其他缺页报错。
 func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
+	items, _, err := c.readInstruments(true)
+	return items, err
+}
+
+func (c *ExConn) scanInstruments() ([]protocol.ExInstrument, error) {
 	writer := c.currentWriter()
 	total, err := c.getExtendedCount()
 	if err != nil {
@@ -201,7 +209,7 @@ func (c *ExConn) GetCount(ex protocol.Exchange) (int, error) {
 }
 
 func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
-	i, _, err := protocolInstrument(code, true)
+	i, _, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +241,7 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 }
 
 func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, error) {
-	i, info, err := protocolInstrument(code, true)
+	i, info, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +267,7 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 			return nil, err
 		}
 		var price *float64
-		if value, ok := info.ExtendedTradePrice(i.Exchange, k.Price); ok {
+		if value, ok := info.ExtendedTradePrice(k.Price); ok {
 			price = &value
 		}
 		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Price: price, Volume: volume, Direction: k.Direction, Extended: k})
@@ -282,7 +290,7 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 	if err != nil {
 		return nil, err
 	}
-	i, info, err := protocolInstrument(code, true)
+	i, info, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +339,12 @@ func (c *ExConn) GetMarkets() ([]Exchange, error) {
 	out := make([]Exchange, 0, len(r))
 	for j := range r {
 		m := &r[j]
-		out = append(out, Exchange{Market: m.Market, Name: m.Name, ShortName: m.ShortName, Protocol: protocol.ProtocolExtended, Extended: m})
+		shortName := m.ShortName
+		ex := protocol.Exchange(m.Market)
+		if _, err := (protocol.Instrument{Exchange: ex}).Market(); err == nil {
+			shortName = ex.String()
+		}
+		out = append(out, Exchange{Market: m.Market, Name: m.Name, ShortName: shortName, Protocol: protocol.ProtocolExtended, Extended: m})
 	}
 	return out, nil
 }
@@ -478,7 +491,7 @@ func (*ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newExConn(core *conn) *ExConn {
-	c := &ExConn{conn: core}
+	c := &ExConn{conn: core, hk: &hkState{gate: make(chan struct{}, 1)}}
 	c.queries = &queries{source: c}
 	return c
 }

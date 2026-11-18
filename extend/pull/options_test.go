@@ -17,7 +17,7 @@ func TestUpdateOptionsIndependentControls(t *testing.T) {
 				for _, before := range []bool{false, true} {
 					t.Run(fmt.Sprintf("early=%t/recheck=%t/marked=%t/before=%t", early, recheck, marked, before), func(t *testing.T) {
 						s := testService(t)
-						u := &scheduledTestUnit{market: protocol.MarketAStock}
+						u := &scheduledTestUnit{market: protocol.MarketSZ}
 						s.units, s.goro = []Unit{u}, 1
 						now := time.Date(2026, 1, 15, 16, 0, 0, 0, protocol.Location())
 						if before {
@@ -61,7 +61,7 @@ func TestUpdateOptionsIndependentControls(t *testing.T) {
 
 func TestRecheckPreservesErrorsAndCompletion(t *testing.T) {
 	s := testService(t)
-	u := &scheduledTestUnit{market: protocol.MarketAStock}
+	u := &scheduledTestUnit{market: protocol.MarketSZ}
 	s.units, s.goro = []Unit{u}, 1
 	now := time.Date(2026, 1, 15, 16, 0, 0, 0, protocol.Location())
 	if err := s.update(now, false); err != nil {

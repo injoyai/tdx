@@ -1,10 +1,7 @@
-// Package market 实现各市场的拉取 Unit（可插拔）。
-// 期货市场：走扩展行情(7727) GetKline 拉取日线/分钟线。
 package market
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/injoyai/tdx/v2"
@@ -13,14 +10,8 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// exUnit 扩展行情(7727)市场的基础实现：通过 pull.Service.ExPool 取连接。
-// 品种代码列表中，同一 Unit 可能覆盖多个扩展市场（如期货多个交易所），
-// 此时交易所简称作为 Code.Code 前缀（"cff/IF2609"），由 marketOf 解析。
-type exUnit struct {
-	name protocol.Market // 市场标识（protocol.Market 枚举）
-	// markets 该 Unit 覆盖的扩展市场编码（用于从 GetInstruments 过滤）
-	markets []protocol.Exchange
-}
+// exUnit pulls markets using the extended quote protocol.
+type exUnit struct{ name protocol.Market }
 
 func (u *exUnit) Name() string { return u.name.String() }
 
@@ -33,67 +24,41 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.ClientPool, error) {
 	return p, nil
 }
 
-// Codes 从 GetInstruments 分页拉取品种列表，过滤出本 Unit 覆盖的市场编码。
-// 多交易所市场（期货）时 Code.Code 带交易所前缀，如 "cff/IF2609"。
+// Codes filters the shared instrument inventory to this market's wire exchange.
 func (u *exUnit) Codes(s *pull.Service) ([]model.Code, error) {
+	ex, ok := u.name.Exchange()
+	if !ok {
+		return nil, fmt.Errorf("pull: 未定义的扩展市场 %s", u.name)
+	}
 	ins, err := s.GetInstruments()
 	if err != nil {
 		return nil, err
 	}
 	out := []model.Code{}
-	for _, it := range ins {
-		exchange := protocol.Exchange(it.Market)
-		if !u.isMarket(exchange) {
+	for _, item := range ins {
+		if protocol.Exchange(item.Market) != ex {
 			continue
 		}
-		code := it.Code
-		if u.multiMarket() {
-			code = exchange.String() + "/" + it.Code
+		code := item.Code
+		if i, err := u.name.ParseInstrument(code); err == nil {
+			code = i.StorageCode()
 		}
-		out = append(out, model.Code{Market: u.name, Code: code, Name: it.Name})
+		// Per-security fetch validates the code, so one malformed row cannot prevent discovery of the rest.
+		out = append(out, model.Code{Market: u.name, Code: code, Name: item.Name})
 	}
-
 	return out, nil
-}
-
-// isMarket 判断市场编码是否属于本 Unit。
-func (u *exUnit) isMarket(m protocol.Exchange) bool {
-	for _, x := range u.markets {
-		if x == m {
-			return true
-		}
-	}
-	return false
-}
-
-// multiMarket 是否覆盖多个扩展市场（需要交易所前缀区分）。
-func (u *exUnit) multiMarket() bool { return len(u.markets) > 1 }
-
-// marketOf 解析 Code 的市场编码与裸代码（去掉交易所前缀）。
-func (u *exUnit) marketOf(code model.Code) (protocol.Exchange, string, error) {
-	codeStr := code.Code
-	if i := strings.IndexByte(codeStr, '/'); i > 0 {
-		prefix := codeStr[:i]
-		exchange, err := protocol.ParseExchange(prefix)
-		// Code.Code 已由 pull 归一化，只接受本 Unit 的规范交易所简称。
-		if err == nil && prefix == exchange.String() && u.isMarket(exchange) {
-			return exchange, codeStr[i+1:], nil
-		}
-		return 0, "", fmt.Errorf("pull: 未知的扩展市场前缀 %q", codeStr[:i])
-	}
-	if len(u.markets) == 0 {
-		return 0, "", fmt.Errorf("pull: 市场 %s 未配置扩展市场编码", u.name)
-	}
-	return u.markets[0], codeStr, nil
 }
 
 // bars 复用客户端分页；过滤 Until 包含的界外停止记录。
 func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from string) ([]tdx.Kline, error) {
+	if code.Market != u.name {
+		return nil, fmt.Errorf("pull: 证券 %s 不属于市场 %s", code.Key(), u.name)
+	}
 	p, err := u.Ex(s)
 	if err != nil {
 		return nil, err
 	}
-	market, bare, err := u.marketOf(code)
+	i, err := code.Instrument()
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +66,7 @@ func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from str
 	err = p.DoContext(s.Context(), func(c tdx.Client) error {
 		c = tdx.WithContext(s.Context(), c)
 		var parseErr error
-		r, err := c.GetKlineUntil(category, (protocol.Instrument{Exchange: market, Code: bare}).String(), func(k tdx.Kline) bool {
+		r, err := c.GetKlineUntil(category, i.QueryCode(), func(k tdx.Kline) bool {
 			layout := protocol.TimeLayout
 			if !protocol.IsIntraday(category) {
 				layout = time.DateOnly
@@ -199,16 +164,4 @@ func (u *exUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.Fetch
 		}
 		return out, nil
 	}, nil)
-}
-
-// Future 期货市场（中金/郑商/大商/上期/广期/期货指数）。
-type Future struct{ exUnit }
-
-var _ pull.Unit = (*Future)(nil)
-
-func init() {
-	pull.Register(&Future{exUnit{
-		name:    protocol.MarketFuture,
-		markets: []protocol.Exchange{protocol.ExchangeCFF, protocol.ExchangeCZC, protocol.ExchangeDCE, protocol.ExchangeSHF, protocol.ExchangeGFE, protocol.ExchangeQHZ},
-	}})
 }

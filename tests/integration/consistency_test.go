@@ -3,7 +3,9 @@ package integration_test
 import (
 	"encoding/binary"
 	"math"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,12 +16,17 @@ import (
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
+	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type consistencyClient struct{ tdx.Client }
 
 func (*consistencyClient) Close() error { return nil }
+
+func (*consistencyClient) GetInstruments() ([]protocol.ExInstrument, error) {
+	return []protocol.ExInstrument{{Market: 49, Code: "00823"}}, nil
+}
 
 func (*consistencyClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
 	i, _ := protocol.ParseInstrument(code)
@@ -76,7 +83,7 @@ func TestConsistencyAdjustmentCodeForms(t *testing.T) {
 }
 
 func TestConsistencyCalendarReverseSameWindow(t *testing.T) {
-	w, err := metadata.NewWorkday(model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2026-10-19", Through: "2026-10-21", Dates: []string{"2026-10-19", "2026-10-20", "2026-10-21"}})
+	w, err := metadata.NewWorkday(model.WorkdaySnapshot{Market: protocol.MarketSH, Source: "fixture", From: "2026-10-19", Through: "2026-10-21", Dates: []string{"2026-10-19", "2026-10-20", "2026-10-21"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +196,42 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 	}
 	if len(minutes) != 1 || minutes[0].Amount != nil {
 		t.Fatal("unconfirmed minute amount stored", minutes)
+	}
+}
+
+func TestConsistencyHongKongFundStorage(t *testing.T) {
+	p, err := tdx.NewPool(func() (tdx.Client, error) { return &consistencyClient{}, nil }, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	store, err := sqlite.NewPull(t.TempDir(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s, err := pull.New(&pull.Config{Store: store, Codes: []string{"hk.00823"}, StartAt: "20261019", Day: true, ExPool: p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	code, err := s.ParseCode("hk.00823")
+	if err != nil || code.Market != protocol.MarketHKFund {
+		t.Fatal(code, err)
+	}
+	if err := s.Update(true); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.QueryDay(code, "", "")
+	if err != nil || len(rows) != 1 || rows[0].Close != 10 {
+		t.Fatal(rows, err)
+	}
+	if got := store.DayFile(code); !strings.HasSuffix(got, filepath.Join("hk", "fund", "day", "00823.db")) {
+		t.Fatal(got)
+	}
+	stock, err := s.QueryDay(model.Code{Market: protocol.MarketHK, Code: "00823"}, "", "")
+	if err != nil || len(stock) != 0 {
+		t.Fatal("stored in wrong market", stock, err)
 	}
 }
 

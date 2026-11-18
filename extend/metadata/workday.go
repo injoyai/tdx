@@ -17,7 +17,7 @@ type Workday struct {
 
 // NewWorkday validates and copies a calendar. Absence outside its coverage is unknown.
 func NewWorkday(snapshot model.WorkdaySnapshot) (*Workday, error) {
-	if snapshot.Market != protocol.MarketAStock {
+	if snapshot.Market != protocol.MarketSH {
 		return nil, fmt.Errorf("workday: unsupported calendar market %s", snapshot.Market)
 	}
 	if err := snapshot.Validate(); err != nil {

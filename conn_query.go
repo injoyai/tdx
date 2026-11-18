@@ -59,13 +59,18 @@ func klineRequest(code string, category uint8, count uint16) (*KlineResp, protoc
 	if category > protocol.TypeKlineYear || count == 0 || count > 800 {
 		return nil, info, errors.New("K线周期必须为0..11，单次数量必须为1..800")
 	}
+	return &KlineResp{Instrument: i, Category: klineCategory(info, category)}, info, nil
+}
+
+func klineCategory(info protocol.MarketInfo, category uint8) uint8 {
 	switch category {
 	case protocol.TypeKlineDay, protocol.TypeKlineDay2:
-		category = info.Day.Category
+		return info.Day.Category
 	case protocol.TypeKlineMinute, protocol.TypeKlineMinute2:
-		category = info.Minute.Category
+		return info.Minute.Category
+	default:
+		return category
 	}
-	return &KlineResp{Instrument: i, Category: category}, info, nil
 }
 
 func codePage(out *CodeResp, start uint32, count uint16) *CodeResp {
@@ -108,11 +113,14 @@ func filterKlineRange(out *KlineResp, fromDay, toDay string) *KlineResp {
 }
 
 func standardMarkets() []Exchange {
-	return []Exchange{
-		{Market: uint16(protocol.ExchangeSZ), Name: "深圳", ShortName: "sz", Protocol: protocol.ProtocolStandard},
-		{Market: uint16(protocol.ExchangeSH), Name: "上海", ShortName: "sh", Protocol: protocol.ProtocolStandard},
-		{Market: uint16(protocol.ExchangeBJ), Name: "北京", ShortName: "bj", Protocol: protocol.ProtocolStandard},
+	exchanges := protocol.StandardExchanges()
+	out := make([]Exchange, 0, len(exchanges))
+	for _, ex := range exchanges {
+		out = append(out, Exchange{
+			Market: uint16(ex), Name: ex.Name(), ShortName: ex.String(), Protocol: protocol.ProtocolStandard,
+		})
 	}
+	return out
 }
 
 func codePageBounds(ex protocol.Exchange, start uint32, count uint16) error {

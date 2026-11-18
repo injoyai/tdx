@@ -70,7 +70,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 ### 两种拉取模式
 
 - **全量模式**（`Codes` 为空，上例）：已启用的市场各自自动发现代码。国际指数仅在配置该市场的调度后启用。
-- **白名单模式**（`Codes` 非空）：只拉列出的代码，市场由 `ParseCode` 自动路由；未涉及的市场不拉。
+- **白名单模式**（`Codes` 非空）：只拉列出的代码，市场由服务构造时解析；未涉及的市场不拉。
 
 ---
 
@@ -78,35 +78,36 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 | 枚举常量 | 值（即存储目录） | 市场 | 连接 | 说明 |
 |---|---|---|---|---|
-| `protocol.MarketAStock` | `cn/stock` | 沪深股票 | 7709 | `GetKline*` |
-| `protocol.MarketIndex` | `cn/index` | 沪深指数 | 7709 | `GetKline*` 自动选择指数解码（含 `sh000001` 等） |
-| `protocol.MarketEtfLof` | `cn/etf` | ETF/LOF | 7709 | `GetKline*` |
-| `protocol.MarketBond` | `cn/bond` | 可转债 | 7709 | 普通 K 线，成交量按张返回 |
-| `protocol.MarketOther` | `cn/other` | 其他国内品种，含尚未细分的普通债券 | 7709 | 普通 K 线，按国内默认倍率 |
-| `protocol.MarketBlock` | `cn/block` | 板块指数 | 7709 | `880xxx/881xxx`，来自 `block_zs.dat` |
-| `protocol.MarketFuture` | `cn/future` | 期货（中金所/郑商所/大商所/上期所等） | 7727 | `GetKline` |
+| `protocol.MarketSH` | `sh` | 上海 | 7709 | 含股票、指数、基金、转债和板块指数 |
+| `protocol.MarketSZ` | `sz` | 深圳 | 7709 | 含股票、指数、基金和转债 |
+| `protocol.MarketBJ` | `bj` | 北京 | 7709 | 按证券代码选择品种规则 |
+| `protocol.MarketCFF`、`MarketCZC`、`MarketDCE`、`MarketSHF`、`MarketGFE`、`MarketQHZ` | `cff`、`czc`、`dce`、`shf`、`gfe`、`qhz` | 各期货交易所及期货类指数 | 7727 | 合约代码保留大小写 |
 | `protocol.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
 | `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，ETF 代码自动路由 |
 | `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
 | `protocol.MarketInternationalIndex` | `global/index` | 国际指数 | 7727 | 市场编码 12，如 `wi.A_IXIC`。通过 `Config.Schedules` 配置调度 |
 
-> 市场标识统一用 `protocol.Market`（`type Market string`）枚举，替代裸字符串；**枚举值即两级「地区/资产」存储目录路径**（`Code.DirName()` 直接返回枚举值），自定义市场可扩展自己的 Market 值。
+市场键由 `protocol.Market` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
 
-内置扩展市场的交易所编号、简称及前缀解析复用 `protocol.Exchange`。通过 `pull.ParseCode` 构造 `Code`；拉取适配器只接受当前 Unit 支持的规范交易所前缀，期货仍保留 `cff/IF2609` 等代码形式及对应存储文件名。
+内置市场在 [`protocol/market/`](../../protocol/market) 逐个声明。增加复用现有报文格式的市场时，在一个文件注册市场键、协议编号、代码规则、量价单位和调度。导入 `extend/pull/market` 后，通用拉取适配器根据定义自动注册。
 
 ### 市场 K 线配置
 
-`Market.Info()` 返回行情协议、解码分类、日线/1 分钟线请求类型，以及日线、分钟线、周月季年线、报价/分时/分笔的量价换算规则。定义集中在 [`protocol/market.go`](../../protocol/market.go)。
+`Market.Info()` 用于协议和调度等市场设置。`Instrument.Kind()` 返回证券品种，`Instrument.Info()` 返回当前证券的行情类型、周期和量价换算。
 
-`Market.Info().TimeZone` 按市场枚举硬编码：国内市场（含当前国内期货）为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。国际指数跨多个地区，`Info()` 中没有统一时区和收盘边界。显式选择国际指数代码时，须为 `protocol.MarketInternationalIndex` 配置对应代码范围的更新边界。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
+`Market.Info().TimeZone` 读取市场定义。国内市场和当前国内期货为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。国际指数跨多个地区，`Info()` 中没有统一时区和收盘边界。显式选择国际指数代码时，须为 `protocol.MarketInternationalIndex` 配置对应代码范围的更新边界。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
 
 ```go
-code, err := pull.ParseCode("hk00700")
+code, err := pull.ParseCode("hk/stock.00700")
 if err != nil {
     panic(err)
 }
-info, ok := code.Market.Info()
+instrument, err := code.Instrument()
+if err != nil {
+    panic(err)
+}
+info, ok := instrument.Info()
 if !ok {
     panic("没有内置市场配置")
 }
@@ -119,10 +120,10 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | 市场 | 日线类型 / 解码量单位 | 1 分钟类型 / 解码量单位 |
 |---|---|---|
 | 股票、ETF/LOF | 9 / 百股 | 7 / 百股 |
-| 可转债（`cn/bond`） | 9 / ×1000 转张 | 7 / ×10 转张 |
+| 可转债 | 9 / ×1000 转张 | 7 / ×10 转张 |
 | 其他国内品种 | 9 / 默认 ×100 | 7 / 默认 ×100 |
-| 标准指数（`cn/index`） | 9 / 解码量 ×100，与统一报价口径一致 | 7 / 成交量不可用，统一 Volume 为 0 |
-| 板块指数（`cn/block`） | 9 / 保留解码量，单位未统一校准 | 7 / 保留解码量，单位未统一校准 |
+| 标准指数 | 9 / 解码量 ×100，与统一报价口径一致 | 7 / 成交量不可用，统一 Volume 为 0 |
+| 板块指数 | 9 / 保留解码量，单位未统一校准 | 7 / 保留解码量，单位未统一校准 |
 | 港股主板、香港基金 | 4 / 解码量 ×100 | 8 / 解码量 ×100 |
 | 期货 | 4 / 张（×1） | 8 / 张（×1） |
 | 美股 | 4 / 股（×1） | 8 / 股（×1） |
@@ -130,9 +131,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 
 `VolumeScale=0` 表示协议不提供成交量，`VolumeScale=1` 保留解码量，`100` 为百股换算或国内默认倍率。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数 K 线保留点位，报文金额 ×1,000,000 转为原币种。未匹配市场（含空值）的 `Info()` 也填充标准行情配置：股票解码、日线类型 9、分钟线类型 7，所有成交量倍率默认 100；布尔值仍返回 `false` 标明非内置市场，自定义 `Unit` 可按实际协议声明配置。
 
-期货、美股旧存储采用默认 ×100，新数据采用 ×1；已有数据库不自动修改，不能混用新旧数值。应保留旧库后重新拉取，或先核实来源再迁移。
-
-旧版 SDK 存入的 `cn/index` 日线、分钟线及 `cn/bond` 日线、分钟线可能仍是旧量口径，需要按受影响区间重拉。可转债历史分笔和合成分钟线 CSV 的数量列为张。
+沪深北及期货按新的交易所目录写入。旧 `cn/*` 数据目录不参与当前读写。可转债历史分笔和合成分钟线 CSV 的数量列为张。
 
 标准行情由 `GetKline*` 按代码选择解码类型。股票/ETF 分钟拉取使用 `GetKlineMinute241Until` 保留竞价拆分；可转债、其他国内品种及指数走普通分页，不套用股票竞价拆分。K 线与报价/分时/分笔使用各自声明的倍率，本地文件仍遵循自身协议单位。
 
@@ -151,7 +150,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | 字段 | 说明 | 默认值 |
 |---|---|---|
 | `Store` | 行情同步必填；仅获取元数据时可省略 | 无 |
-| `Codes` | 拉取代码列表（自动路由市场，见 `pull.ParseCode`）；空时自动发现已启用的市场 | 自动发现 |
+| `Codes` | 拉取代码列表（构造服务时解析市场）；空时自动发现已启用的市场 | 自动发现 |
 | `Day` / `Minute` | 是否拉日线 / 1分钟线 | 两者都 true |
 | `TradeFallback` | 用历史分笔补充缺失分钟线，仅股票/ETF/LOF | `false` |
 | `Goroutines` | 并发数 | `8` |
@@ -220,7 +219,7 @@ cfg.OnEvent = func(e pull.Event) {
 
 ### 代码自动路由
 
-`Codes` 是扁平的代码列表，无需按市场分组——`pull.ParseCode` 自动识别所属市场：
+`Codes` 是扁平的代码列表。构造服务时解析每个代码的市场。含 `hk.00823` 等共享简称的五位数字代码时，传入 `Config.HKInstruments` 可复用调用方已有的品种快照，否则构造函数通过 `ExPool` 读取。可以使用 `pull.NewContext` 设定读取期限。读取失败、代码缺失或同时归属 31 和 49 时，构造函数返回错误。
 
 ```go
 Codes: []string{
@@ -229,7 +228,8 @@ Codes: []string{
     "510300",   // ETF（自动补前缀并分类）
     "399001",   // 深证成指（指数）
     "880001",   // 板块指数
-    "00700",    // 港股（5 位数字）
+    "00700",    // 港股，以品种清单确认协议市场
+    "hk.00823", // 领展，清单中的协议市场为 49
     "hk02800",  // 盈富基金（香港 ETF，市场 49）
     "HSI",      // 恒生指数（知名港股指数白名单）
     "AAPL",     // 美股（纯字母）
@@ -237,12 +237,14 @@ Codes: []string{
 }
 ```
 
-内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受纯字母代码；`cn/stock` 等完整市场键必须与实际品种匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
+内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受纯字母代码；`hk/index` 等完整市场键必须与实际市场匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
-`model.Code.Key()` 对港股股票和指数统一使用 `hk` 前缀，例如 `hk.00700` 和 `hk.HSI`。存储接口仍使用市场类别和代码主体来标识证券，如 `{hk/stock, 00700}` 和 `{hk/index, HSI}`。
+服务建好后使用 `s.ParseCode` 复用同一快照得到查询存储所需的 `model.Code`。独立解析可以用 `ParseCodeWithHK` 并传入由 `protocol.NewHKInstruments` 建立的索引。
+
+`model.Code.Key()` 对港股股票、基金和指数统一使用 `hk` 前缀，例如 `hk.00700`、`hk.02800`、`hk.HSI`。存储接口仍使用市场类别和代码主体来标识证券，如 `{hk/stock, 00700}` 和 `{hk/index, HSI}`。
 
 > 注意：`000001` 按股票（平安银行 `sz000001`）路由；上证指数需带前缀写 `sh000001`。
-> 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。香港基金也可直接写 `hk/fund.02800`，存储目录为 `hk/fund`。
+> 其余港股指数（HZ50xx/CESxxx 等）用完整键指定，如 `hk/index.CES120`。香港基金的存储目录为 `hk/fund`。
 
 ---
 
@@ -393,16 +395,16 @@ func init() { pull.Register(&MyUnit{}) }
 
 `Service` 提供调度、去重、查询和存储能力；Unit 负责调用协议、确定增量边界并调用 Save。
 自定义历史分钟补全可使用 `MinuteYearComplete`/`SaveMinuteComplete`，只能在完整扫描成功后写完成标记。
-参考实现：[`market/hk.go`](market/hk.go)（扩展行情）、[`market/a_stock.go`](market/a_stock.go)（标准行情）。
+参考实现：[`market/extended.go`](market/extended.go)（扩展行情）、[`market/standard.go`](market/standard.go)（标准行情）。
 
 ---
 
 ## 🧪 测试
 
 ```bash
-go test ./pull/... -count=1
+go test ./extend/pull/... -count=1
 ```
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/pull`。
 
-内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键与简称使用相同的规范化文件名，例如 `cn/stock.600000` 和 `sh600000` 均使用 `sh600000.db`。
+内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键与简称使用相同的规范化文件名，例如 `sh.600000` 和 `sh600000` 的日线均使用 `sh/day/sh600000.db`。

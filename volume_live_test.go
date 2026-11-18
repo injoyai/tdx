@@ -34,7 +34,7 @@ func TestForeignVolumeSamplesLive(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	codes := []string{"hk00700", "usAAPL", "hk.HSI", "hk.CES120"}
+	codes := []string{"00700.31", "usAAPL", "hk.HSI", "hk.CES120"}
 	if os.Getenv("TDX_VOLUME_VARIANTS") == "1" {
 		codes = []string{"usAAPL", "hk.HSI", "hk.CES120"}
 	}

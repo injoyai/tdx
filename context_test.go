@@ -131,7 +131,7 @@ func TestContextStopsPagination(t *testing.T) {
 		return data
 	})
 	bound := WithContext(ctx, c.protocolClient)
-	_, err := bound.GetKlineUntil(protocol.TypeKlineDay, "hk00700", func(Kline) bool { cancel(); return false })
+	_, err := bound.GetKlineUntil(protocol.TypeKlineDay, "00700.31", func(Kline) bool { cancel(); return false })
 	if !errors.Is(err, context.Canceled) || pages.Load() != 1 {
 		t.Fatal("continued canceled pagination", pages.Load(), err)
 	}

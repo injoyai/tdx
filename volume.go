@@ -8,11 +8,7 @@ import (
 
 // volumeScale 使用独立的报价/分时/分笔配置；国内默认100由配置显式声明。
 func volumeScale(i protocol.Instrument) (int64, error) {
-	m, err := i.Market()
-	if err != nil {
-		return 0, err
-	}
-	info, ok := m.Info()
+	info, ok := i.Info()
 	if ok && info.TickVolumeScale > 0 {
 		return info.TickVolumeScale, nil
 	}

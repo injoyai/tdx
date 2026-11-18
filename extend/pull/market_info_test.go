@@ -18,24 +18,28 @@ func TestMarketInfoRouting(t *testing.T) {
 		day, min           uint8
 		dayScale, minScale int64
 	}{
-		{"sh110075", protocol.MarketBond, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 1000, 10},
-		{"sh019001", protocol.MarketOther, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
-		{"sz000001", protocol.MarketAStock, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"sh510300", protocol.MarketEtfLof, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"sh000001", protocol.MarketIndex, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.SharesPerLot, 0},
-		{"sh880001", protocol.MarketBlock, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
+		{"sh110075", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 1000, 10},
+		{"sh019001", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindStock, 9, 7, 100, 100},
+		{"sz000001", protocol.MarketSZ, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"sh510300", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindStock, 9, 7, protocol.SharesPerLot, protocol.SharesPerLot},
+		{"sh000001", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, protocol.SharesPerLot, 0},
+		{"sh880001", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"hk02800", protocol.MarketHKFund, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"cffIF2609", protocol.MarketFuture, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"cffIF2609", protocol.MarketCFF, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 0, 0},
 		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
-			code, err := ParseCode(tc.code)
+			code, err := ParseCodeWithHK(tc.code, hkTestSnapshot)
 			if err != nil || code.Market != tc.market {
 				t.Fatal("market routing", code, err)
 			}
-			info, ok := code.Market.Info()
+			i, err := code.Instrument()
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, ok := i.Info()
 			if !ok || info.Protocol != tc.protocol || info.Kind != tc.kind ||
 				info.Day != (protocol.KlineInfo{Category: tc.day, VolumeScale: tc.dayScale}) || info.Minute != (protocol.KlineInfo{Category: tc.min, VolumeScale: tc.minScale}) {
 				t.Fatal("unexpected market configuration", info, ok)
@@ -59,7 +63,7 @@ func TestMarketInfoRouting(t *testing.T) {
 			t.Fatal("default conversion", scale, got)
 		}
 	}
-	for _, market := range []protocol.Market{protocol.MarketFuture, protocol.MarketUS} {
+	for _, market := range []protocol.Market{protocol.MarketCFF, protocol.MarketUS} {
 		info, _ := market.Info()
 		for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 			if got, err := spec.ToStorageVolume(123); err != nil || got != 123 {
@@ -70,7 +74,11 @@ func TestMarketInfoRouting(t *testing.T) {
 }
 
 func TestStandardIndexDayAndMinuteVolume(t *testing.T) {
-	info, _ := protocol.MarketIndex.Info()
+	i, err := protocol.ParseInstrument("sh000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := i.Info()
 	for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 		// 一条指数记录：价格差值为零，原始量 123400，额和涨跌家数为零。
 		data := make([]byte, 22)

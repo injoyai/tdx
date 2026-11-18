@@ -71,11 +71,7 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 	if err != nil {
 		return err
 	}
-	market, err := instrument.Market()
-	if err != nil {
-		return err
-	}
-	info, _ := market.Info()
+	info, _ := instrument.Info()
 
 	tss := []tdx.Trade{}
 	kss1 := protocol.Klines(nil)

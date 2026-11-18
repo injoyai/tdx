@@ -74,7 +74,7 @@ func TestHistoryTradeRequiresDailyKline(t *testing.T) {
 					})
 					code := "sz000001"
 					if extended {
-						code = "hk00700"
+						code = "00700.31"
 					}
 					var r *TradeResp
 					var err error
@@ -206,7 +206,7 @@ func TestOtherPaginationLimits(t *testing.T) {
 			var err error
 			switch mode {
 			case "extended":
-				_, err = c.GetKlineAll(protocol.TypeKlineDay, "hk00700")
+				_, err = c.GetKlineAll(protocol.TypeKlineDay, "00700.31")
 			case "code":
 				_, err = c.GetCodeAll(protocol.ExchangeSZ)
 			case "index":
@@ -276,7 +276,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 			var sent atomic.Int32
 			code := "sh000001"
 			if extended {
-				code = "hk00700"
+				code = "00700.31"
 			}
 			c := respondingTestClient(t, extended, func(h, b []byte) []byte {
 				sent.Add(1)
@@ -369,7 +369,7 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 			if _, err = c.GetKlineUntil(9, code, nil); err == nil {
 				t.Fatal("nil stop accepted")
 			}
-			wrong := "hk00700"
+			wrong := "00700.31"
 			if extended {
 				wrong = "sz000001"
 			}
@@ -476,9 +476,9 @@ func TestExtendedKlineShortPage(t *testing.T) {
 			var err error
 			if tc.name == "until" {
 				boundary := oldest.AddDate(0, 0, 1).Format(time.DateOnly)
-				r, err = c.GetKlineDayUntil("hk00700", func(k Kline) bool { return k.Time <= boundary })
+				r, err = c.GetKlineDayUntil("00700.31", func(k Kline) bool { return k.Time <= boundary })
 			} else {
-				r, err = c.GetKlineDayAll("hk00700")
+				r, err = c.GetKlineDayAll("00700.31")
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -565,7 +565,7 @@ func TestUnifiedTradePaging(t *testing.T) {
 				})
 				code := "sz000001"
 				if extended {
-					code = "hk00700"
+					code = "00700.31"
 				}
 				var r *TradeResp
 				var err error
@@ -645,14 +645,14 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 	})
 	days := []time.Time{time.Date(2026, 10, 8, 0, 0, 0, 0, time.FixedZone("caller", 8*3600)), time.Date(2026, 10, 9, 0, 0, 0, 0, time.FixedZone("caller", 8*3600))}
 	calendar := completionCalendar{append([]time.Time{days[0].AddDate(0, 0, -1)}, days...)}
-	r, err := c.GetHistoryTradeBefore("hk00700", calendar, days[1].AddDate(0, 0, 1))
+	r, err := c.GetHistoryTradeBefore("00700.31", calendar, days[1].AddDate(0, 0, 1))
 	if err != nil || r.Count != 2 || r.List[0].Date != "20261008" || r.List[1].Date != "20261009" {
 		t.Fatal(r, err)
 	}
 	if daily.Load() != 2 {
 		t.Fatal("repeated daily guard", daily.Load())
 	}
-	if _, err = c.GetHistoryTradeFull("hk00700", nil); err == nil {
+	if _, err = c.GetHistoryTradeFull("00700.31", nil); err == nil {
 		t.Fatal("nil calendar accepted")
 	}
 	failed := respondingTestClient(t, true, func(h, b []byte) []byte {
@@ -675,7 +675,7 @@ func TestUnifiedHistoryCalendar(t *testing.T) {
 		binary.LittleEndian.PutUint16(r[14:], 1)
 		return r
 	})
-	if r, err = failed.GetHistoryTradeBefore("hk00700", calendar, days[1].AddDate(0, 0, 1)); r != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+	if r, err = failed.GetHistoryTradeBefore("00700.31", calendar, days[1].AddDate(0, 0, 1)); r != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatal("failed day returned partial history", r, err)
 	}
 }
@@ -701,7 +701,7 @@ func TestUnifiedAuctionMinute(t *testing.T) {
 		t.Fatal("auction amount units changed", r)
 	}
 	before := c.native.Info.WriteCount
-	for _, code := range []string{"hk00700", "sh000001", "sz123126"} {
+	for _, code := range []string{"00700.31", "sh000001", "sz123126"} {
 		if _, err = c.GetKlineMinute241Until(code, func(Kline) bool { return false }); err == nil || c.native.Info.WriteCount != before {
 			t.Fatal("unsupported auction sent request", code, err)
 		}

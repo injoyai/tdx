@@ -44,7 +44,16 @@ type Service struct {
 }
 
 // New 构建拉取服务。配置通过代码参数传入（本库作为第三方引用，不写配置文件）。
-func New(cfg *Config) (*Service, error) {
+func New(cfg *Config) (*Service, error) { return NewContext(context.Background(), cfg) }
+
+// NewContext constructs the service and bounds any required Hong Kong snapshot fetch.
+func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("pull: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if cfg == nil {
 		return nil, fmt.Errorf("pull: 配置不能为 nil")
 	}
@@ -67,6 +76,11 @@ func New(cfg *Config) (*Service, error) {
 	snapshot.Codes = append([]string(nil), cfg.Codes...)
 	snapshot.Schedules = make(map[protocol.Market]Schedule, len(cfg.Schedules))
 	for market, schedule := range cfg.Schedules {
+		if _, builtin := market.Exchange(); !builtin {
+			if u, ok := Get(market.String()); !ok || u.Name() != market.String() {
+				return nil, fmt.Errorf("pull: 未定义的调度市场 %q", market)
+			}
+		}
 		if _, err := schedule.boundary(time.Now()); err != nil {
 			return nil, fmt.Errorf("pull: 市场 %s 调度: %w", market, err)
 		}
@@ -104,8 +118,18 @@ func New(cfg *Config) (*Service, error) {
 	// Codes 为空时，有默认调度或已经配置调度的内置市场自动发现代码。
 	overrides := map[protocol.Market][]model.Code{}
 	if len(cfg.Codes) > 0 {
+		resolve := func(symbol string) (protocol.Exchange, error) {
+			if !cfg.HKInstruments.Loaded() && !isNil(cfg.ExPool) {
+				items, err := fetchInstruments(ctx, cfg.ExPool)
+				if err != nil {
+					return 0, fmt.Errorf("hk.%s 无法读取通达信品种快照（候选市场 31、49）: %w", symbol, err)
+				}
+				cfg.HKInstruments = protocol.NewHKInstruments(items)
+			}
+			return cfg.HKInstruments.Exchange(symbol)
+		}
 		for _, s := range cfg.Codes {
-			c, err := ParseCode(s)
+			c, err := parseCode(s, resolve)
 			if err != nil {
 				return nil, err
 			}
@@ -173,6 +197,11 @@ func New(cfg *Config) (*Service, error) {
 		}
 	}
 	return service, nil
+}
+
+// ParseCode resolves a code with the service's configured instrument snapshot.
+func (s *Service) ParseCode(input string) (model.Code, error) {
+	return ParseCodeWithHK(input, s.cfg.HKInstruments)
 }
 
 // Close 停止后续业务存储操作；注入的组件均由调用方关闭。

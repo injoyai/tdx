@@ -9,7 +9,7 @@ import (
 )
 
 func TestCalendarCoverageAndOwnership(t *testing.T) {
-	snapshot := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2026-01-02", Through: "2026-01-05", Dates: []string{"2026-01-02", "2026-01-05"}}
+	snapshot := model.WorkdaySnapshot{Market: protocol.MarketSH, Source: "fixture", From: "2026-01-02", Through: "2026-01-05", Dates: []string{"2026-01-02", "2026-01-05"}}
 	w, err := NewWorkday(snapshot)
 	if err != nil {
 		t.Fatal(err)

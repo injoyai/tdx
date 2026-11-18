@@ -28,7 +28,13 @@ func marketTestClient(t *testing.T, std, ex func([]byte, []byte) []byte) *Market
 				t.Error("unexpected connection")
 				return nil, errors.New("unexpected connection")
 			}
-			return respondingTestClient(t, index == 1, respond), nil
+			native := respondingTestClient(t, index == 1, respond)
+			if ex, ok := native.protocolClient.(*ExConn); ok {
+				ex.hk.snapshot.Store(&hkSnapshot{writer: ex.currentWriter(), codes: protocol.NewHKInstruments([]protocol.ExInstrument{
+					{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"},
+				})})
+			}
+			return native, nil
 		}
 	}
 	t.Cleanup(func() { c.Close() })
@@ -76,7 +82,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			t.Error("wrong day category", b)
 		}
 		bar := testExtendedBar(20261009)
-		if string(b[1:6]) == "02800" && b[0] != byte(protocol.ExchangeHKFund) {
+		if code := string(b[1:6]); (code == "02800" || code == "00823") && b[0] != byte(protocol.ExchangeHKFund) {
 			t.Error("Hong Kong fund sent to wrong market", b[0])
 		}
 		if b[0] == byte(protocol.ExchangeHK) || b[0] == byte(protocol.ExchangeHKFund) || b[0] == byte(protocol.ExchangeUS) {
@@ -92,6 +98,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		{"sh000001", 1000000},
 		{"hk00700", 45600},
 		{"hk02800", 45600},
+		{"00823.49", 45600},
 		{"cffIF2609", 456}, {"usAAPL", 456},
 	} {
 		r, err := c.GetKlineDay(tc.code, 0, 1)
@@ -106,7 +113,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
 			}
-		} else if tc.code == "hk00700" || tc.code == "hk02800" || tc.code == "usAAPL" {
+		} else if tc.code == "hk00700" || tc.code == "hk02800" || tc.code == "00823.49" || tc.code == "usAAPL" {
 			if k.Close != 10.5 || k.Amount == nil || *k.Amount != 478800 {
 				t.Fatal(tc.code, "daily amount missing or incorrect", k)
 			}
@@ -557,7 +564,7 @@ func TestMarketClientExtendedKlineAmount(t *testing.T) {
 		{"hk00700", protocol.TypeKlineQuarter, false, true, 4_560_000},
 		{"hk00700", protocol.TypeKlineYear, false, true, 4_560_000},
 		{"hk02800", protocol.TypeKlineMinute, true, true, 45_600},
-		{"hkf.02800", protocol.TypeKlineWeek, false, true, 4_560_000},
+		{"hk.02800", protocol.TypeKlineWeek, false, true, 4_560_000},
 		{"usAAPL", protocol.TypeKlineMinute2, true, true, 456},
 		{"usAAPL", protocol.TypeKline30Minute, false, true, 456},
 		{"usAAPL", protocol.TypeKline60Minute, false, true, 456},
@@ -626,7 +633,7 @@ func TestMarketClientSlowDialKeepsOtherProtocolUsable(t *testing.T) {
 		<-release
 		return nil, io.ErrClosedPipe
 	}
-	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
+	go func() { _, err := c.GetKlineDay("00700.31", 0, 1); dialDone <- err }()
 	<-started
 	t.Cleanup(func() { close(release); <-dialDone; c.Close() })
 	queryDone := make(chan error, 1)
@@ -659,7 +666,7 @@ func TestMarketClientCloseDuringDialDiscardsLateConnection(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	dialDone := make(chan error, 1)
 	c.dial[1] = func(_ context.Context) (protocolClient, error) { close(started); <-release; return ex, nil }
-	go func() { _, err := c.GetKlineDay("hk00700", 0, 1); dialDone <- err }()
+	go func() { _, err := c.GetKlineDay("00700.31", 0, 1); dialDone <- err }()
 	<-started
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- c.Close() }()
@@ -839,7 +846,7 @@ func testClientInterfaceRoutesStandardCapabilities(t *testing.T, i protocol.Inst
 		}), nil
 	}
 	api.SetTimeout(time.Second)
-	quotes, err := api.GetQuote("sz000001", "hk00700")
+	quotes, err := api.GetQuote("sz000001", "00700.31")
 	if err != nil || len(quotes) != 2 {
 		t.Fatal(quotes, err)
 	}
@@ -1064,6 +1071,31 @@ func TestUnifiedMarketDiscovery(t *testing.T) {
 	failed.dial[1] = func(_ context.Context) (protocolClient, error) { return nil, io.ErrUnexpectedEOF }
 	if r, err = failed.GetMarkets(); !errors.Is(err, io.ErrUnexpectedEOF) || r != nil {
 		t.Fatal("returned incomplete discovery", r, err)
+	}
+}
+
+func TestUnifiedHongKongMarketAbbreviations(t *testing.T) {
+	exchanges := []protocol.Exchange{protocol.ExchangeHK, protocol.ExchangeHKFund, protocol.ExchangeHI}
+	wireNames := []string{"HK", "HF", "HI"}
+	c := marketTestClient(t, nil, func(_, _ []byte) []byte {
+		data := make([]byte, 2+64*len(exchanges))
+		binary.LittleEndian.PutUint16(data, uint16(len(exchanges)))
+		for n, ex := range exchanges {
+			entry := data[2+n*64:]
+			entry[0], entry[33] = 13, ex.Uint8()
+			copy(entry[34:36], wireNames[n])
+		}
+		return data
+	})
+	got, err := c.GetMarkets()
+	if err != nil || len(got) != 3+len(exchanges) {
+		t.Fatal(got, err)
+	}
+	for n, ex := range exchanges {
+		row := got[3+n]
+		if row.Market != uint16(ex) || row.ShortName != "hk" || row.Extended.ShortName != wireNames[n] {
+			t.Fatalf("abbreviation for %d: %+v", ex, row)
+		}
 	}
 }
 

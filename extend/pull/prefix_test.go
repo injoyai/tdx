@@ -8,6 +8,10 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+var hkTestSnapshot = protocol.NewHKInstruments([]protocol.ExInstrument{
+	{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"},
+})
+
 func TestMarketPrefixForms(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	for _, tt := range []struct {
@@ -15,50 +19,45 @@ func TestMarketPrefixForms(t *testing.T) {
 		market protocol.Market
 		code   string
 	}{
-		{[]string{"sh600000", "sh.600000", "SH.600000"}, protocol.MarketAStock, "sh600000"},
-		{[]string{"sz000001", "Sz.000001"}, protocol.MarketAStock, "sz000001"},
-		{[]string{"000001.SZ", "000001.sz"}, protocol.MarketAStock, "sz000001"},
-		{[]string{"上海600000", "600000.SH"}, protocol.MarketAStock, "sh600000"},
-		{[]string{"bj920001", "BJ.920001"}, protocol.MarketAStock, "bj920001"},
-		{[]string{"sh000001", "SH.000001"}, protocol.MarketIndex, "sh000001"},
-		{[]string{"sz399001", "sz.399001"}, protocol.MarketIndex, "sz399001"},
-		{[]string{"bj899050", "bj.899050"}, protocol.MarketIndex, "bj899050"},
-		{[]string{"sh510300", "sh.510300"}, protocol.MarketEtfLof, "sh510300"},
-		{[]string{"sh110075", "sh.110075", "cn/bond.sh110075", "CN/BOND.SH110075"}, protocol.MarketBond, "sh110075"},
-		{[]string{"sz123126", "sz.123126"}, protocol.MarketBond, "sz123126"},
-		{[]string{"sh019001", "cn/other.sh019001"}, protocol.MarketOther, "sh019001"},
-		{[]string{"sh880001", "sh.880001"}, protocol.MarketBlock, "sh880001"},
+		{[]string{"sh600000", "sh.600000", "SH.600000"}, protocol.MarketSH, "sh600000"},
+		{[]string{"sz000001", "Sz.000001"}, protocol.MarketSZ, "sz000001"},
+		{[]string{"000001.SZ", "000001.sz"}, protocol.MarketSZ, "sz000001"},
+		{[]string{"上海600000", "600000.SH"}, protocol.MarketSH, "sh600000"},
+		{[]string{"bj920001", "BJ.920001"}, protocol.MarketBJ, "bj920001"},
+		{[]string{"sh000001", "SH.000001"}, protocol.MarketSH, "sh000001"},
+		{[]string{"sz399001", "sz.399001"}, protocol.MarketSZ, "sz399001"},
+		{[]string{"bj899050", "bj.899050"}, protocol.MarketBJ, "bj899050"},
+		{[]string{"sh510300", "sh.510300"}, protocol.MarketSH, "sh510300"},
+		{[]string{"sh110075", "sh.110075"}, protocol.MarketSH, "sh110075"},
+		{[]string{"sz123126", "sz.123126"}, protocol.MarketSZ, "sz123126"},
+		{[]string{"sh019001"}, protocol.MarketSH, "sh019001"},
+		{[]string{"sh880001", "sh.880001"}, protocol.MarketSH, "sh880001"},
 		{[]string{"hk00700", "HK00700", "hk.00700", "HK.00700"}, protocol.MarketHK, "00700"},
-		{[]string{"hk02800", "02800", "02800.HK", "hkf02800", "HKF.02800", "hk/fund.02800"}, protocol.MarketHKFund, "02800"},
-		{[]string{"hkf.00823", "hk/fund.00823"}, protocol.MarketHKFund, "00823"},
+		{[]string{"hk02800", "02800", "02800.HK", "hk/fund.02800"}, protocol.MarketHKFund, "02800"},
+		{[]string{"hk.00823", "hk/fund.00823"}, protocol.MarketHKFund, "00823"},
 		{[]string{"hkHSI", "hk.HSI", "HK.HSI", "Hk.hsi", " hk.HSI "}, protocol.MarketHKIndex, "HSI"},
 		{[]string{"hkCES120", "HK.CES120"}, protocol.MarketHKIndex, "CES120"},
 		{[]string{"hk.HZ5021", "hkHZ5021"}, protocol.MarketHKIndex, "HZ5021"},
 		{[]string{"usAAPL", "US.AAPL", "Us.aapl"}, protocol.MarketUS, "AAPL"},
 		{[]string{"usBRK.B", "us.BRK.B", "US.BRK.B", "BRK.B", "brk.b"}, protocol.MarketUS, "BRK.B"},
 		{[]string{"usABC1", "us.ABC1", "US.abc1"}, protocol.MarketUS, "ABC1"},
-		{[]string{"cffIF2609", "CFF.IF2609", "cff/IF2609"}, protocol.MarketFuture, "cff/IF2609"},
-		{[]string{"czcSR2609", "CZC.SR2609"}, protocol.MarketFuture, "czc/SR2609"},
-		{[]string{"dceA2609", "DCE.A2609"}, protocol.MarketFuture, "dce/A2609"},
-		{[]string{"shfcu2609", "SHF.cu2609"}, protocol.MarketFuture, "shf/cu2609"},
-		{[]string{"gfeLC2609", "GFE.LC2609"}, protocol.MarketFuture, "gfe/LC2609"},
-		{[]string{"qhzT001", "QHZ.T001"}, protocol.MarketFuture, "qhz/T001"},
-		{[]string{"qhz.IMCI", "QHZIMCI", "cn/future.qhz/IMCI"}, protocol.MarketFuture, "qhz/IMCI"},
+		{[]string{"cffIF2609", "CFF.IF2609", "cff/IF2609"}, protocol.MarketCFF, "IF2609"},
+		{[]string{"czcSR2609", "CZC.SR2609"}, protocol.MarketCZC, "SR2609"},
+		{[]string{"dceA2609", "DCE.A2609"}, protocol.MarketDCE, "A2609"},
+		{[]string{"shfcu2609", "SHF.cu2609"}, protocol.MarketSHF, "cu2609"},
+		{[]string{"gfeLC2609", "GFE.LC2609"}, protocol.MarketGFE, "LC2609"},
+		{[]string{"qhzT001", "QHZ.T001"}, protocol.MarketQHZ, "T001"},
+		{[]string{"qhz.IMCI", "QHZIMCI"}, protocol.MarketQHZ, "IMCI"},
 		{[]string{"wi.A_IXIC", "WIA_IXIC", "global/index.a_ixic"}, protocol.MarketInternationalIndex, "A_IXIC"},
-		{[]string{"CN/STOCK.SH600000", "cn/stocksh600000"}, protocol.MarketAStock, "sh600000"},
-		{[]string{"CN/INDEX.SH000001", "cn/indexsh000001"}, protocol.MarketIndex, "sh000001"},
-		{[]string{"CN/ETF.SH510300", "cn/etfsh510300"}, protocol.MarketEtfLof, "sh510300"},
-		{[]string{"CN/BLOCK.SH880001", "cn/blocksh880001"}, protocol.MarketBlock, "sh880001"},
 		{[]string{"HK/STOCK.00700", "hk/stock00700"}, protocol.MarketHK, "00700"},
 		{[]string{"HK/INDEX.HSI", "hk/indexHSI"}, protocol.MarketHKIndex, "HSI"},
 		{[]string{"US/STOCK.AAPL", "us/stockAAPL"}, protocol.MarketUS, "AAPL"},
-		{[]string{"CN/FUTURE.CFF/IF2609", "cn/futurecff/IF2609"}, protocol.MarketFuture, "cff/IF2609"},
 		{[]string{"TeSt.one", "TESTone"}, "test", "one"},
 	} {
 		for _, input := range tt.inputs {
 			t.Run(input, func(t *testing.T) {
 				code := tt.code
-				got, err := ParseCode(input)
+				got, err := ParseCodeWithHK(input, hkTestSnapshot)
 				if err != nil || got.Market != tt.market || got.Code != code {
 					t.Fatalf("ParseCode(%q)=%+v, %v; want %s %s", input, got, err, tt.market, code)
 				}
@@ -98,6 +97,7 @@ func TestHongKongSecurityKeys(t *testing.T) {
 	}{
 		{"hk/stock.00700", "hk.00700", protocol.ExchangeHK},
 		{"hk/index.HSI", "hk.HSI", protocol.ExchangeHI},
+		{"hk/fund.02800", "hk.02800", protocol.ExchangeHKFund},
 		{"hk/index.HZ5021", "hk.HZ5021", protocol.ExchangeHI},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestHongKongSecurityKeys(t *testing.T) {
 			if key := code.Key(); key != tc.key {
 				t.Fatalf("Code.Key() = %q, want %q", key, tc.key)
 			}
-			if roundTrip, err := ParseCode(code.Key()); err != nil || roundTrip != code {
+			if roundTrip, err := ParseCodeWithHK(code.Key(), hkTestSnapshot); err != nil || roundTrip != code {
 				t.Fatalf("key changed the security: %+v, %v", roundTrip, err)
 			}
 			i, err := protocol.ParseInstrument(code.Key())
@@ -158,6 +158,20 @@ func TestRegisterRejectsReservedMarketAlias(t *testing.T) {
 	}
 }
 
+func TestLongerBuiltinMarketPrefixWins(t *testing.T) {
+	u := &mockUnit{name: "s"}
+	Register(u)
+	t.Cleanup(func() {
+		registry.Lock()
+		delete(registry.units, u.name)
+		registry.Unlock()
+	})
+	got, err := ParseCode("SH.600000")
+	if err != nil || got.Market != protocol.MarketSH || got.Code != "sh600000" {
+		t.Fatal("built-in market lost to a shorter custom prefix", got, err)
+	}
+}
+
 func TestMarketPrefixDoesNotStripBareSymbols(t *testing.T) {
 	for _, input := range []string{"SHOP", "SHY", "BJK", "SZL"} {
 		code, err := ParseCode(input)
@@ -178,9 +192,9 @@ func TestMarketPrefixDoesNotStripBareSymbols(t *testing.T) {
 func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 	for _, input := range []string{
 		"us.12345", "us.ABCDEFGHIJ", "ABCDEFGHIJ", "us.AAPL-", "hk.ABCDEFGHIJ", "cff.12345", "cff.ABCDEFGHI1",
-		"cn/stock.hk00700", "cn/index.sh600000", "cn/stock.sh110001", "hk/stock.HSI", "hk/index.00700",
-		"hi.HSI",
-		"us/stock.12345", "us/stock.ABCDEFGHIJ", "cn/future.us.AAPL", "cn/future.cff/12345", "unknown/IF2609",
+		"cn/stock.sh600000", "cn/index.sh000001", "cn/stock.sh110001", "cn/bond.sh110075", "hk/stock.HSI", "hk/index.00700",
+		"hi.HSI", "hkf.02800", "HKF02800", "02800.HKF",
+		"us/stock.12345", "us/stock.ABCDEFGHIJ", "cn/future.us.AAPL", "cn/future.cff/IF2609", "unknown/IF2609",
 	} {
 		t.Run(input, func(t *testing.T) {
 			if got, err := ParseCode(input); err == nil {
@@ -188,8 +202,8 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 			}
 		})
 	}
-	got, err := ParseCode("CN/STOCK.600000")
-	if err != nil || got.Market != protocol.MarketAStock {
+	got, err := ParseCode("SH.600000")
+	if err != nil || got.Market != protocol.MarketSH {
 		t.Fatal("market code was not normalized", got, err)
 	}
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
@@ -211,5 +225,28 @@ func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
 	files, err := os.ReadDir(dir)
 	if err != nil || len(files) != 0 {
 		t.Fatal("invalid codes created files", files, err)
+	}
+}
+
+func TestSharedHongKongCodeRequiresMarketEvidence(t *testing.T) {
+	if c, err := ParseCode("hk.00823"); err == nil || !strings.Contains(err.Error(), "候选市场 31、49") {
+		t.Fatal(c, err)
+	}
+	got, err := ParseCodeWithHK("hk.00823", hkTestSnapshot)
+	if err != nil || got.Market != protocol.MarketHKFund || got.Code != "00823" {
+		t.Fatal(got, err)
+	}
+	duplicated := protocol.NewHKInstruments([]protocol.ExInstrument{
+		{Market: 31, Code: "00823"}, {Market: 49, Code: "00823"},
+	})
+	if c, err := ParseCodeWithHK("hk.00823", duplicated); err == nil || !strings.Contains(err.Error(), "31 和 49") {
+		t.Fatal(c, err)
+	}
+	explicit, err := ParseCode("02800.31")
+	if err != nil || explicit.Market != protocol.MarketHK {
+		t.Fatal(explicit, err)
+	}
+	if _, err := explicit.Instrument(); err != nil {
+		t.Fatal(err)
 	}
 }

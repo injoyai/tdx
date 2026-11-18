@@ -15,7 +15,7 @@ func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	old := &model.KlineDay{Time: s.Start().Add(15 * time.Hour).Format("2006-01-02"), Close: 10}
 	if err := s.SaveDay(code, "", []*model.KlineDay{old}); err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestSaveDaysFiltersStartAndEmptyResult(t *testing.T) {
 	}
 	defer s.Close()
 	from := s.Start().Format("2006-01-02")
-	code := model.Code{Market: protocol.MarketIndex, Code: "sh000001"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh000001"}
 	if err := saveDays(s, code, from, []*model.KlineDay{{Time: "2025-12-31"}, {Time: from, Close: 10}}); err != nil {
 		t.Fatal(err)
 	}

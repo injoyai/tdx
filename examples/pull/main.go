@@ -48,6 +48,10 @@ func run() error {
 	}
 	needsSt, needsEx := *all, *all
 	for _, raw := range inputs {
+		if _, shared := protocol.HKCode(raw); shared {
+			needsEx = true
+			continue
+		}
 		code, err := pull.ParseCode(raw)
 		if err != nil {
 			return err
@@ -100,7 +104,9 @@ func run() error {
 		defer ex.Close()
 		cfg.ExPool = ex
 	}
-	s, err := pull.New(cfg)
+	setup, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	s, err := pull.NewContext(setup, cfg)
 	if err != nil {
 		return err
 	}
@@ -124,7 +130,7 @@ func run() error {
 	}
 	if *day {
 		for _, raw := range inputs {
-			code, err := pull.ParseCode(raw)
+			code, err := s.ParseCode(raw)
 			if err != nil {
 				return err
 			}

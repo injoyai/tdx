@@ -9,12 +9,12 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// Unit 代表一个可拉取的独立市场/品种类别（可插拔）。
+// Unit 代表一个可拉取的独立市场（可插拔）。
 //
-// 新增一个市场需实现并 Register；自定义市场还须通过 Config.Schedules
+// 内置市场由 market 包按协议定义注册。自定义市场需实现并 Register，且须通过 Config.Schedules
 // 或可选的 Schedule() Schedule 方法声明更新边界。
 type Unit interface {
-	// Name 唯一标识（protocol.Market 枚举值，如 protocol.MarketAStock、protocol.MarketHK、protocol.MarketFuture），用于日志/进度条/去重。
+	// Name 唯一标识（protocol.Market 枚举值，如 protocol.MarketSH、protocol.MarketHK、protocol.MarketCFF），用于日志/进度条/去重。
 	Name() string
 
 	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。
@@ -39,7 +39,12 @@ func init() {
 }
 
 // Register 注册一个市场 Unit；忽略大小写后重名 panic。
-func Register(u Unit) {
+func Register(u Unit) { register(u, false) }
+
+// RegisterMarket installs the pull adapter for an exact built-in market key.
+func RegisterMarket(u Unit) { register(u, true) }
+
+func register(u Unit, builtin bool) {
 	if u == nil {
 		panic("pull: 注册的市场 Unit 不能为 nil")
 	}
@@ -47,9 +52,16 @@ func Register(u Unit) {
 	if name == "" {
 		panic("pull: 注册的市场 Unit 缺少 Name")
 	}
-	if ex, err := protocol.ParseExchange(name); err == nil && strings.EqualFold(name, ex.String()) {
-		if _, err := (protocol.Instrument{Exchange: ex}).Market(); err == nil {
-			panic(fmt.Sprintf("pull: 市场 Unit %q 占用内置简称", name))
+	if builtin {
+		if _, ok := protocol.Market(name).Exchange(); !ok {
+			panic(fmt.Sprintf("pull: 未定义的内置市场 %q", name))
+		}
+	} else {
+		for _, m := range protocol.Markets() {
+			ex, _ := m.Exchange()
+			if strings.EqualFold(name, m.String()) || strings.EqualFold(name, ex.String()) {
+				panic(fmt.Sprintf("pull: 市场 Unit %q 占用内置市场名称", name))
+			}
 		}
 	}
 	registry.Lock()

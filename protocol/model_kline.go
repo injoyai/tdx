@@ -190,7 +190,7 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 			年: 不需要操作
 
 		*/
-		k.Volume = info.standardKlineVolume(int64(float32Value(d.uint32())), c.Type, c.Kind)
+		k.Volume = info.StandardKlineVolume(int64(float32Value(d.uint32())), c.Type, c.Kind)
 		k.Amount = float32Value(d.uint32())
 
 		switch c.Kind {

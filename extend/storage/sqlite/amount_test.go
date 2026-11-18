@@ -9,7 +9,7 @@ import (
 
 func TestNullableAmountAndLegacyZero(t *testing.T) {
 	s := testStore(t)
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	// Existing numeric zero must keep its original interpretation on reopen.
 	db, release, err := s.openDay(c)
 	if err != nil {

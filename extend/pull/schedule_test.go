@@ -21,8 +21,8 @@ func TestMarketUpdateTime(t *testing.T) {
 		market    protocol.Market
 		now, want string
 	}{
-		{protocol.MarketAStock, "2026-01-15T00:00:00Z", "2026-01-15T07:35:00Z"},
-		{protocol.MarketFuture, "2026-01-15T00:00:00Z", "2026-01-15T07:35:00Z"},
+		{protocol.MarketSZ, "2026-01-15T00:00:00Z", "2026-01-15T07:35:00Z"},
+		{protocol.MarketCFF, "2026-01-15T00:00:00Z", "2026-01-15T07:35:00Z"},
 		{protocol.MarketHK, "2026-01-15T00:00:00Z", "2026-01-15T08:15:00Z"},
 		{protocol.MarketHKIndex, "2026-01-15T00:00:00Z", "2026-01-15T08:15:00Z"},
 		{protocol.MarketUS, "2026-01-16T00:00:00Z", "2026-01-16T01:05:00Z"},
@@ -41,7 +41,7 @@ func TestMarketUpdateTime(t *testing.T) {
 func TestUpdateMarketsAfterClose(t *testing.T) {
 	s := testService(t)
 	s.goro = 1
-	cn := &scheduledTestUnit{market: protocol.MarketAStock}
+	cn := &scheduledTestUnit{market: protocol.MarketSZ}
 	hk := &scheduledTestUnit{market: protocol.MarketHK}
 	us := &scheduledTestUnit{market: protocol.MarketUS}
 	s.units = []Unit{cn, hk, us}
@@ -94,7 +94,7 @@ func TestUpdateCompletionBoundary(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := testService(t)
-			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			u := &scheduledTestUnit{market: protocol.MarketSZ}
 			s.units, s.goro = []Unit{u}, 1
 			key := s.updateKey("pull:" + u.Name())
 			if tc.has {
@@ -135,7 +135,7 @@ func TestUpdateMarkerErrorsRemainRetryable(t *testing.T) {
 	for _, stage := range []string{"load", "save"} {
 		t.Run(stage, func(t *testing.T) {
 			s := testService(t)
-			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			u := &scheduledTestUnit{market: protocol.MarketSZ}
 			s.units, s.goro = []Unit{u}, 1
 			want := errors.New("marker " + stage + " failed")
 			store := &markerErrorStore{BarStore: s.store}
@@ -176,7 +176,7 @@ func TestUpdateFailedMarketRetriesIndependently(t *testing.T) {
 	s := testService(t)
 	s.goro, s.retry = 1, 1
 	want := errors.New("fetch failed")
-	cn := &scheduledTestUnit{market: protocol.MarketAStock, updateTestUnit: updateTestUnit{failDay: true, err: want}}
+	cn := &scheduledTestUnit{market: protocol.MarketSZ, updateTestUnit: updateTestUnit{failDay: true, err: want}}
 	hk := &scheduledTestUnit{market: protocol.MarketHK}
 	s.units = []Unit{cn, hk}
 	now, _ := time.Parse(time.RFC3339, "2026-01-15T16:15:00+08:00")
@@ -198,7 +198,7 @@ func TestUpdateFailedMarketRetriesIndependently(t *testing.T) {
 func TestEarlyUpdateDoesNotSuppressAfterClose(t *testing.T) {
 	s := testService(t)
 	s.goro = 1
-	u := &scheduledTestUnit{market: protocol.MarketAStock}
+	u := &scheduledTestUnit{market: protocol.MarketSZ}
 	s.units = []Unit{u}
 	for i, at := range []string{"2026-01-15T14:00:00+08:00", "2026-01-15T15:35:00+08:00"} {
 		now, _ := time.Parse(time.RFC3339, at)
@@ -224,7 +224,7 @@ func TestUpdateMarksOnlyItsSelectedWindow(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := testService(t)
-			u := &scheduledTestUnit{market: protocol.MarketAStock}
+			u := &scheduledTestUnit{market: protocol.MarketSZ}
 			s.units = []Unit{u}
 			now, _ := time.Parse(time.RFC3339, tc.at)
 			want, _ := time.Parse(time.RFC3339, tc.want)

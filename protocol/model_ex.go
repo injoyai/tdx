@@ -3,6 +3,8 @@ package protocol
 import (
 	"encoding/binary"
 	"io"
+
+	"github.com/injoyai/tdx/v2/protocol/market"
 )
 
 // 扩展行情协议(TdxExHq)——期货/期权/港股/外汇/全球指数。
@@ -431,7 +433,7 @@ func (exHq) DecodeHistTrade(bs []byte, c ExTradeCache) ([]ExTradeTick, error) {
 	return decodeExTrade(bs, c.Market)
 }
 
-func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
+func decodeExTrade(bs []byte, exchange uint8) ([]ExTradeTick, error) {
 	if len(bs) < 16 {
 		return nil, io.ErrUnexpectedEOF
 	}
@@ -441,7 +443,7 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 	out := make([]ExTradeTick, 0, num)
-	tradeMarket := extendedTradeMarket(Exchange(market))
+	tradeNature := market.ExtendedTradeNature(Exchange(exchange))
 	for i := 0; i < num; i++ {
 		raw := int(r.u16())
 		price := r.u32()
@@ -452,7 +454,11 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 		if second > 59 {
 			second = 0
 		}
-		dir, name := exTradeNature(tradeMarket, direction, volume, zengcang)
+		var dir int
+		var name string
+		if tradeNature != nil {
+			dir, name = tradeNature(direction, volume, zengcang)
+		}
 		out = append(out, ExTradeTick{
 			Hour: raw / 60, Minute: raw % 60, Second: second,
 			Price: price, Volume: volume, ZengCang: zengcang,
@@ -460,79 +466,6 @@ func decodeExTrade(bs []byte, market uint8) ([]ExTradeTick, error) {
 		})
 	}
 	return out, nil
-}
-
-// exTradeNature 还原买卖方向与开平性质,移植自 pytdx。
-func exTradeNature(market Market, direction uint16, volume uint32, zengcang int32) (int, string) {
-	switch market {
-	case MarketHK, MarketHKFund:
-		switch direction {
-		case 0:
-			return 1, "B"
-		case 256:
-			return -1, "S"
-		default:
-			return 0, ""
-		}
-	case MarketFuture:
-	default:
-		return 0, ""
-	}
-	value := int(direction) / 10000
-	vol := int32(volume)
-	switch value {
-	case 0:
-		if zengcang > 0 {
-			if vol > zengcang {
-				return 1, "多开"
-			}
-			if vol == zengcang {
-				return 1, "双开"
-			}
-			return 1, "多开"
-		} else if zengcang == 0 {
-			return 1, "多换"
-		}
-		if vol == -zengcang {
-			return 1, "双平"
-		}
-		return 1, "空平"
-	case 1:
-		if zengcang > 0 {
-			if vol > zengcang {
-				return -1, "空开"
-			}
-			if vol == zengcang {
-				return -1, "双开"
-			}
-			return -1, "空开"
-		} else if zengcang == 0 {
-			return -1, "空换"
-		}
-		if vol == -zengcang {
-			return -1, "双平"
-		}
-		return -1, "多平"
-	default:
-		if zengcang > 0 {
-			if vol > zengcang {
-				return 0, "开仓"
-			}
-			if vol == zengcang {
-				return 0, "双开"
-			}
-			return 0, "开仓"
-		} else if zengcang < 0 {
-			if vol > -zengcang {
-				return 0, "平仓"
-			}
-			if vol == -zengcang {
-				return 0, "双平"
-			}
-			return 0, "平仓"
-		}
-		return 0, "换手"
-	}
 }
 
 // ---- 历史K线区间 ----

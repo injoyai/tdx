@@ -274,11 +274,10 @@ func instrumentInfo(code string) (protocol.Instrument, protocol.MarketInfo, erro
 	if err != nil {
 		return i, protocol.MarketInfo{}, err
 	}
-	m, err := i.Market()
-	if err != nil {
-		return i, protocol.MarketInfo{}, err
+	info, ok := i.Info()
+	if !ok {
+		return i, info, fmt.Errorf("行情市场 %d 尚未接入统一 Client", i.Exchange)
 	}
-	info, _ := m.Info()
 	return i, info, nil
 }
 

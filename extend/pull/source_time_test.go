@@ -28,7 +28,7 @@ func TestSourceClockStoredWithoutTimezoneConversion(t *testing.T) {
 
 func TestSourceTimeValidation(t *testing.T) {
 	s := testService(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	row := &model.KlineMinute{Time: "2026-01-05 09:31", Close: 10}
 	if err := s.SaveMinute(code, 2026, "", []*model.KlineMinute{row}); err != nil {
 		t.Fatal(err)

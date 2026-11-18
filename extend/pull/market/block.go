@@ -1,5 +1,3 @@
-// Package market 实现各市场的拉取 Unit（可插拔）。
-// 板块市场：拉取板块指数(880xxx/881xxx)的日线/分钟线。
 package market
 
 import (
@@ -9,19 +7,9 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// Block 板块市场：板块指数(880xxx/881xxx) 走标准行情 GetIndex 拉取。
-// 成分代码（板块内个股）不在此拉取，可在 Config.Codes 中以普通股票代码指定。
-type Block struct{ stdUnit }
-
-var _ pull.Unit = (*Block)(nil)
-
-func init() {
-	pull.Register(&Block{stdUnit{name: protocol.MarketBlock}})
-}
-
-// Codes 从板块文件(block_zs.dat)拉取板块指数代码列表。
+// blockCodes 从板块文件(block_zs.dat)拉取板块指数代码列表。
 // 板块指数代码如 880xxx/881xxx，归 sh 市场。
-func (u *Block) Codes(s *pull.Service) ([]model.Code, error) {
+func (u *stdUnit) blockCodes(s *pull.Service) ([]model.Code, error) {
 	pool, err := u.pool(s)
 	if err != nil {
 		return nil, err
@@ -49,14 +37,4 @@ func (u *Block) Codes(s *pull.Service) ([]model.Code, error) {
 		})
 	}
 	return out, nil
-}
-
-// FetchDay 板块指数日线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchDay(s *pull.Service, code model.Code) error {
-	return u.stdUnit.FetchDay(s, code)
-}
-
-// FetchMinute 板块指数分钟线：走 stdUnit 的 index 逻辑。
-func (u *Block) FetchMinute(s *pull.Service, code model.Code) error {
-	return u.stdUnit.FetchMinute(s, code)
 }

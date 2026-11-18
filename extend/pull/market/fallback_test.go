@@ -92,7 +92,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	day := s.Start()
 	day2 := day.AddDate(0, 0, 1)
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
@@ -176,7 +176,7 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	now := s.Start().AddDate(0, 0, 2).Add(16 * time.Hour)
 	calls := 0
 	fallback := &minuteFallback{
@@ -220,7 +220,7 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	day := s.Start()
 	now := day.AddDate(0, 0, 4).Add(16 * time.Hour)
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
@@ -275,7 +275,7 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 	if got := s.Config(); !got.TradeFallback || got.Codes[0] != "sz000001" {
 		t.Fatal("Service 配置被调用方修改", got)
 	}
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	day := s.Start()
 	ks, err := tradesToMinutes(day, fallbackTrades(day))
 	if err != nil {
@@ -306,7 +306,7 @@ func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	day := s.Start()
 	now := time.Date(2026, 1, 6, 16, 0, 0, 0, protocol.Location())
 	if err := s.SaveMinuteEmptyScan(code, 2025, day.Format("2006-01-02 15:04"), now); err != nil {

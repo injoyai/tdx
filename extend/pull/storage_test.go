@@ -114,7 +114,7 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 	p := &probeStore{identity: "dataset-a"}
 	dir := filepath.Join(t.TempDir(), "must-not-be-created")
 	s := customService(t, p, dir)
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	if err := s.SaveDay(c, "2025-01-01", []*model.KlineDay{{Time: "2025-01-02", Close: 3}}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestCustomStoreNoLocalFilesAndOwnership(t *testing.T) {
 func TestCustomStoreValidationFailureAndNamespace(t *testing.T) {
 	p := &probeStore{identity: "dataset-a"}
 	s := customService(t, p, "") // Dir is optional for custom storage.
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	if err := s.SaveDay(c, "", []*model.KlineDay{{Time: "bad"}}); err == nil {
 		t.Fatal("invalid source date reached store")
 	}

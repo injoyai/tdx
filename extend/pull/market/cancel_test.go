@@ -58,7 +58,7 @@ func TestCanceledFetchDoesNotSaveBarsOrCompletion(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatal("canceled fetch reported success", minute, err)
 		}
-		code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+		code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 		days, err := store.QueryDay(code, "", "")
 		if err != nil || len(days) != 0 {
 			t.Fatal("canceled fetch saved days", days, err)

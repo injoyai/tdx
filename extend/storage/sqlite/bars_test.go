@@ -14,7 +14,7 @@ func testAmount(v float64) *float64 { return &v }
 
 func TestStoreDay(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 
 	// 首次插入 3 根
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
@@ -69,7 +69,7 @@ func TestStoreDay(t *testing.T) {
 
 func TestStoreDayUpsert(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketIndex, Code: "sh000001"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh000001"}
 
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)
 	ks := []*model.KlineDay{
@@ -111,7 +111,7 @@ func TestStoreDayUpsert(t *testing.T) {
 
 func TestStoreMinute(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 
 	year := 2026
 	base := time.Date(year, 1, 5, 9, 31, 0, 0, time.Local)
@@ -167,19 +167,19 @@ func TestDirCreation(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 	if err := s.SaveDay(code, "", []*model.KlineDay{{Time: "2026-01-05", Open: 1, Close: 1, Volume: 100}}); err != nil {
 		t.Fatalf("SaveDay: %v", err)
 	}
 	// 地区/资产两级目录应自动创建
-	if _, err := os.Stat(filepath.Join(dir, "cn", "stock", "day", "sh600000.db")); err != nil {
-		t.Errorf("地区/资产/day 目录/文件未创建: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "sh", "day", "sh600000.db")); err != nil {
+		t.Errorf("市场/day 目录/文件未创建: %v", err)
 	}
 }
 
 func TestQueryDay(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 
 	// 未建库：返回空且不创建文件
 	ls, err := s.QueryDay(code, "", "")
@@ -224,7 +224,7 @@ func TestQueryDay(t *testing.T) {
 
 func TestQueryMinute(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 
 	year := 2025
 	base := time.Date(year, 1, 5, 9, 31, 0, 0, time.Local)
@@ -261,7 +261,7 @@ func TestQueryMinute(t *testing.T) {
 
 func TestEngineCache(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 
 	db1, release1, err := s.openDay(code)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestEngineCache(t *testing.T) {
 
 func TestSaveEmptySkipsWrite(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 
 	// 空数据写入应跳过，不创建库文件
 	if err := s.SaveDay(code, "", nil); err != nil {
@@ -304,7 +304,7 @@ func TestSaveEmptySkipsWrite(t *testing.T) {
 
 func TestInsertBatchOverLimit(t *testing.T) {
 	s := testStore(t)
-	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
 
 	// 200 根日线 × 10 字段 = 2000 变量 > 999，必然触发分批
 	base := time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local)

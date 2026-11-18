@@ -116,7 +116,7 @@ func TestCodeListsAndReports(t *testing.T) {
 
 func TestProtocolClientQueries(t *testing.T) {
 	for _, extended := range []bool{false, true} {
-		name, code, wrong := "standard", "sz000001", "hk00700"
+		name, code, wrong := "standard", "sz000001", "00700.31"
 		if extended {
 			name, code, wrong = "extended", wrong, code
 		}
@@ -395,7 +395,7 @@ func TestBlockDownloadIntegrity(t *testing.T) {
 
 func TestClientUnifiedQueries(t *testing.T) {
 	for _, extended := range []bool{false, true} {
-		name, code, wrong := "standard", "sz000001", "hk00700"
+		name, code, wrong := "standard", "sz000001", "00700.31"
 		if extended {
 			name, code, wrong = "extended", wrong, code
 		}

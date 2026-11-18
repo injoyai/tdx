@@ -57,14 +57,22 @@ func migrationPool(t *testing.T, extended, hasDaily bool) *tdx.Pool {
 				}
 			case protocol.TypeExCount:
 				data = make([]byte, 23)
-				binary.LittleEndian.PutUint32(data[19:], 3)
+				binary.LittleEndian.PutUint32(data[19:], 5)
 			case protocol.TypeExInstrument:
-				data = make([]byte, 70)
-				data[4] = 1
-				data[6], data[7] = 13, 74
-				copy(data[11:], "AAPL")
-				copy(data[20:], "Apple")
-				copy(data[37:], "desc")
+				codes := []struct {
+					market byte
+					code   string
+				}{{74, "AAPL"}, {74, "MSFT"}, {74, "NVDA"}, {31, "00700"}, {49, "00823"}}
+				start := min(int(binary.LittleEndian.Uint32(b)), len(codes))
+				count := int(binary.LittleEndian.Uint16(b[4:]))
+				codes = codes[start:min(start+count, len(codes))]
+				data = make([]byte, 6+64*len(codes))
+				binary.LittleEndian.PutUint16(data[4:], uint16(len(codes)))
+				for n, code := range codes {
+					offset := 6 + 64*n
+					data[offset], data[offset+1] = 13, code.market
+					copy(data[offset+5:offset+14], code.code)
+				}
 			case protocol.TypeExMarkets:
 				data = make([]byte, 66)
 				data[0], data[2], data[35] = 1, 13, 74
@@ -191,8 +199,8 @@ func TestUnifiedHTTPQueries(t *testing.T) {
 	s := &Server{pool: migrationPool(t, false, true), exPool: migrationPool(t, true, true)}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
-	quotes := httpData[[]tdx.Quote](t, mux, "/quote?codes=hk00700,sz000001,hk00700")
-	if len(quotes) != 3 || quotes[0].Price != 10 || quotes[0].Extended == nil || quotes[1].Price != 10 || quotes[1].Standard.Kline.Close != 10 || quotes[2].Instrument != quotes[0].Instrument {
+	quotes := httpData[[]tdx.Quote](t, mux, "/quote?codes=hk00700,sz000001,hk00700,hk.00823")
+	if len(quotes) != 4 || quotes[3].Instrument.Exchange != protocol.ExchangeHKFund || quotes[0].Price != 10 || quotes[0].Extended == nil || quotes[1].Price != 10 || quotes[1].Standard.Kline.Close != 10 || quotes[2].Instrument != quotes[0].Instrument {
 		t.Fatal("mixed quotes lost order, price or raw data", quotes)
 	}
 	for _, code := range []string{"sz000001", "hk00700"} {
@@ -268,11 +276,11 @@ func TestUnifiedHTTPCodes(t *testing.T) {
 		t.Fatal(markets)
 	}
 	// These raw endpoints expose distinct global discovery, rather than per-market queries.
-	if n := httpData[int](t, mux, "/ex/count"); n != 3 {
+	if n := httpData[int](t, mux, "/ex/count"); n != 5 {
 		t.Fatal(n)
 	}
 	raw := httpData[[]protocol.ExInstrument](t, mux, "/ex/instruments?start=1&count=1")
-	if len(raw) != 1 || raw[0].Code != "AAPL" {
+	if len(raw) != 1 || raw[0].Code != "MSFT" {
 		t.Fatal(raw)
 	}
 }

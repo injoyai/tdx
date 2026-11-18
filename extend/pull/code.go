@@ -9,18 +9,25 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-var marketPrefixes = []string{
-	protocol.MarketAStock.String(), protocol.MarketIndex.String(), protocol.MarketEtfLof.String(), protocol.MarketBlock.String(),
-	protocol.MarketFuture.String(), protocol.MarketHK.String(), protocol.MarketHKFund.String(), protocol.MarketHKIndex.String(), protocol.MarketUS.String(),
-	protocol.MarketBond.String(), protocol.MarketOther.String(),
-	protocol.MarketInternationalIndex.String(),
-}
-
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
-func parseMarketPrefix(s string) (model.Code, bool, error) {
-	prefixes := append([]string(nil), marketPrefixes...)
+func parseMarketPrefix(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, bool, error) {
+	var prefixes []string
+	wirePrefixes := map[string]bool{}
+	for _, m := range protocol.Markets() {
+		ex, _ := m.Exchange()
+		prefix := ex.String()
+		if !wirePrefixes[prefix] {
+			wirePrefixes[prefix] = true
+			prefixes = append(prefixes, prefix)
+		}
+		if m.String() != prefix {
+			prefixes = append(prefixes, m.String())
+		}
+	}
 	for _, u := range Units() {
-		prefixes = append(prefixes, u.Name())
+		if _, builtin := protocol.Market(u.Name()).Exchange(); !builtin {
+			prefixes = append(prefixes, u.Name())
+		}
 	}
 	sort.SliceStable(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
 	for _, prefix := range prefixes {
@@ -28,6 +35,14 @@ func parseMarketPrefix(s string) (model.Code, bool, error) {
 			continue
 		}
 		body := s[len(prefix):]
+		if wirePrefixes[prefix] {
+			code, err := parseWireCode(s, resolve)
+			_, shared := protocol.HKCode(s)
+			if err == nil || shared || strings.HasPrefix(body, ".") || strings.HasPrefix(body, "/") {
+				return code, true, err
+			}
+			continue
+		}
 		dotted := strings.HasPrefix(body, ".")
 		if dotted {
 			body = body[1:]
@@ -42,49 +57,18 @@ func parseMarketPrefix(s string) (model.Code, bool, error) {
 }
 
 func codeInMarket(prefix, body string) (model.Code, error) {
-	lower := strings.ToLower(prefix)
-	query := lower + "." + body
-	explicit := protocol.Market(lower)
-	switch explicit {
-	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther, protocol.MarketFuture:
-		query = body
-	case protocol.MarketHK, protocol.MarketHKIndex:
-		query = "hk." + body
-	case protocol.MarketHKFund:
-		query = "hkf." + body
-	case protocol.MarketUS:
-		query = "us." + body
-	case protocol.MarketInternationalIndex:
-		query = "wi." + body
-	default:
-		if body == "" {
-			return model.Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
+	market := protocol.Market(prefix)
+	if _, builtin := market.Exchange(); builtin {
+		i, err := market.ParseInstrument(body)
+		if err != nil {
+			return model.Code{}, err
 		}
-		return model.Code{Market: protocol.Market(prefix), Code: body}, nil
+		return model.Code{Market: market, Code: i.StorageCode()}, nil
 	}
-	i, err := protocol.ParseInstrument(query)
-	if err != nil {
-		return model.Code{}, err
+	if body == "" {
+		return model.Code{}, fmt.Errorf("pull: 市场 %s 缺少代码", prefix)
 	}
-	return codeForInstrument(i, explicit, body)
-}
-
-func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body string) (model.Code, error) {
-	market, err := i.Market()
-	if err != nil {
-		return model.Code{}, err
-	}
-	code := i.Code
-	switch market {
-	case protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof, protocol.MarketBlock, protocol.MarketBond, protocol.MarketOther:
-		code = i.Exchange.String() + i.Code
-	case protocol.MarketFuture:
-		code = i.Exchange.String() + "/" + i.Code
-	}
-	if explicit != "" && explicit != market {
-		return model.Code{}, fmt.Errorf("pull: 代码 %q 不属于市场 %s", body, explicit)
-	}
-	return model.Code{Market: market, Code: code}, nil
+	return model.Code{Market: market, Code: body}, nil
 }
 
 // ParseCode 将用户输入的代码字符串自动路由为 Code（识别所属市场）。
@@ -96,20 +80,44 @@ func codeForInstrument(i protocol.Instrument, explicit protocol.Market, body str
 //	usAAPL / us.BRK.B / AAPL              美股
 //	cffIF2609 / cff.IF2609 / cff/IF2609   期货
 //	wi.A_IXIC / global/index.A_IXIC      国际指数
-//	cn/future.cff/IF2609 / hk/stock.00700 / hk/fund.02800 / US.AAPL / hk/index.HSI  完整市场键
+//	hk/stock.00700 / hk/fund.02800 / hk/index.HSI  完整市场键
 //
 // 无法识别时返回错误。
 func ParseCode(s string) (model.Code, error) {
+	return ParseCodeWithHK(s, protocol.HKInstruments{})
+}
+
+// ParseCodeWithHK resolves shared Hong Kong symbols against an instrument snapshot.
+func ParseCodeWithHK(s string, snapshot protocol.HKInstruments) (model.Code, error) {
+	return parseCode(s, snapshot.Exchange)
+}
+
+func parseCode(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return model.Code{}, fmt.Errorf("pull: 空代码")
 	}
-	if code, ok, err := parseMarketPrefix(s); ok {
+	if code, ok, err := parseMarketPrefix(s, resolve); ok {
 		return code, err
 	}
+	return parseWireCode(s, resolve)
+}
+
+func parseWireCode(s string, resolve func(string) (protocol.Exchange, error)) (model.Code, error) {
 	i, err := protocol.ParseInstrument(s)
 	if err != nil {
 		return model.Code{}, err
 	}
-	return codeForInstrument(i, "", s)
+	if symbol, shared := protocol.HKCode(s); shared {
+		ex, err := resolve(symbol)
+		if err != nil {
+			return model.Code{}, err
+		}
+		i = protocol.Instrument{Exchange: ex, Code: symbol}
+	}
+	market, err := i.Market()
+	if err != nil {
+		return model.Code{}, err
+	}
+	return model.Code{Market: market, Code: i.StorageCode()}, nil
 }

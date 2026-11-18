@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol/market"
 )
 
 var location = time.FixedZone("UTC+08:00", 8*60*60)
@@ -10,13 +12,7 @@ var location = time.FixedZone("UTC+08:00", 8*60*60)
 const TimeLayout = "2006-01-02 15:04"
 
 // IsIntraday 判断 K 线周期是否携带时分。
-func IsIntraday(category uint8) bool {
-	switch category {
-	case TypeKlineMinute, TypeKlineMinute2, TypeKline5Minute, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute:
-		return true
-	}
-	return false
-}
+func IsIntraday(category uint8) bool { return market.IsIntraday(category) }
 
 // KlineTime 保留源时间精度；日及更长周期只有日期，不添加收盘时刻。
 func KlineTime(t time.Time, category uint8) string {

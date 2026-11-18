@@ -181,7 +181,7 @@ func testTradePeriods(t *testing.T, code, volumeTitle string, units, price, trad
 	c.SetTimeout(time.Second)
 
 	now := time.Now().In(protocol.Location())
-	snapshot := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "fixture", From: "2025-01-02", Through: now.Format(time.DateOnly)}
+	snapshot := model.WorkdaySnapshot{Market: protocol.MarketSH, Source: "fixture", From: "2025-01-02", Through: now.Format(time.DateOnly)}
 	for _, date := range []time.Time{
 		time.Date(2025, 1, 2, 15, 0, 0, 0, protocol.Location()),
 		time.Date(2025, 1, 3, 15, 0, 0, 0, protocol.Location()),

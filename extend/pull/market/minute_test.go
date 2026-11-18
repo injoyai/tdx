@@ -23,15 +23,12 @@ func (c *plainMinuteClient) GetKlineUntil(category uint8, _ string, _ func(tdx.K
 }
 
 func TestBondMinuteUsesPlainPaging(t *testing.T) {
-	for _, market := range []protocol.Market{protocol.MarketBond, protocol.MarketOther} {
-		if _, ok := pull.Get(market.String()); !ok {
-			t.Fatal("new domestic unit not registered", market)
-		}
+	for _, code := range []string{"sh110075", "sh019001"} {
 		c := &plainMinuteClient{}
-		u := stdUnit{name: market}
-		rows, err := u.minUntil(c, "sh110075", "2026-01-01 00:00")
+		u := stdUnit{name: protocol.MarketSH}
+		rows, err := u.minUntil(c, code, "2026-01-01 00:00")
 		if err != nil || len(rows) != 1 || c.category != protocol.TypeKlineMinute {
-			t.Fatal(market, rows, c.category, err)
+			t.Fatal(code, rows, c.category, err)
 		}
 	}
 }
@@ -42,7 +39,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	var data []*model.KlineMinute
 	for y := 2024; y <= 2026; y++ {
@@ -103,7 +100,7 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 2; i++ {
 		if err := pullMinutes(s, c, now, func(from string) ([]*model.KlineMinute, error) {
@@ -133,7 +130,7 @@ func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	old := &model.KlineMinute{Time: time.Date(2026, 3, 2, 15, 0, 0, 0, time.Local).Format("2006-01-02 15:04"), Close: 10}
 	if err := s.SaveMinute(c, 2026, "", []*model.KlineMinute{old}); err != nil {
 		t.Fatal(err)
@@ -219,7 +216,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	u := &exUnit{name: protocol.MarketUS, markets: []protocol.Exchange{protocol.ExchangeUS}}
+	u := &exUnit{name: protocol.MarketUS}
 	rows, err := u.bars(s, model.Code{Market: protocol.MarketUS, Code: "AAPL"}, protocol.TypeKlineDay, base.Format(time.DateOnly))
 	if err != nil || len(rows) != 2 || rows[0].Time != c.rows[1].Time || c.calls != 1 {
 		t.Fatal(rows, c.calls, err)
@@ -246,7 +243,7 @@ func TestPoolDoesNotInitializeGbbq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, name := range []protocol.Market{protocol.MarketAStock, protocol.MarketIndex, protocol.MarketEtfLof} {
+	for _, name := range []protocol.Market{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
 		u := &stdUnit{name: name}
 		if _, err := u.pool(s); err != nil {
 			t.Fatal(err)
@@ -260,7 +257,7 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	now := time.Date(2026, 9, 4, 16, 0, 0, 0, time.Local)
 	row := &model.KlineMinute{Time: now.Add(-time.Hour).Format("2006-01-02 15:04"), Close: 10}
 	failed := errors.New("scan failed")

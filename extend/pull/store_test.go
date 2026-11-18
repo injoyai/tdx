@@ -55,27 +55,27 @@ func TestParseCode(t *testing.T) {
 		code   string
 	}{
 		// 沪深：带前缀
-		{"sh600000", protocol.MarketAStock, "sh600000"},
-		{"sz000001", protocol.MarketAStock, "sz000001"},
-		{"sz300750", protocol.MarketAStock, "sz300750"},
-		{"bj920001", protocol.MarketAStock, "bj920001"},
-		{"SH600000", protocol.MarketAStock, "sh600000"}, // 大小写归一
+		{"sh600000", protocol.MarketSH, "sh600000"},
+		{"sz000001", protocol.MarketSZ, "sz000001"},
+		{"sz300750", protocol.MarketSZ, "sz300750"},
+		{"bj920001", protocol.MarketBJ, "bj920001"},
+		{"SH600000", protocol.MarketSH, "sh600000"}, // 大小写归一
 		// 沪深：6 位裸数字（自动补前缀）
-		{"600000", protocol.MarketAStock, "sh600000"},
-		{"000001", protocol.MarketAStock, "sz000001"},
-		{"300750", protocol.MarketAStock, "sz300750"},
-		{"920001", protocol.MarketAStock, "bj920001"},
+		{"600000", protocol.MarketSH, "sh600000"},
+		{"000001", protocol.MarketSZ, "sz000001"},
+		{"300750", protocol.MarketSZ, "sz300750"},
+		{"920001", protocol.MarketBJ, "bj920001"},
 		// ETF/LOF
-		{"sh510300", protocol.MarketEtfLof, "sh510300"},
-		{"sz159915", protocol.MarketEtfLof, "sz159915"},
-		{"510300", protocol.MarketEtfLof, "sh510300"},
+		{"sh510300", protocol.MarketSH, "sh510300"},
+		{"sz159915", protocol.MarketSZ, "sz159915"},
+		{"510300", protocol.MarketSH, "sh510300"},
 		// 指数/板块
-		{"sh000001", protocol.MarketIndex, "sh000001"},
-		{"sz399001", protocol.MarketIndex, "sz399001"},
-		{"399001", protocol.MarketIndex, "sz399001"},
-		{"sh880001", protocol.MarketBlock, "sh880001"},
-		{"880001", protocol.MarketBlock, "sh880001"},
-		{"899050", protocol.MarketIndex, "bj899050"}, // 北交所指数，补不上交易所前缀，特判
+		{"sh000001", protocol.MarketSH, "sh000001"},
+		{"sz399001", protocol.MarketSZ, "sz399001"},
+		{"399001", protocol.MarketSZ, "sz399001"},
+		{"sh880001", protocol.MarketSH, "sh880001"},
+		{"880001", protocol.MarketSH, "sh880001"},
+		{"899050", protocol.MarketBJ, "bj899050"}, // 北交所指数，补不上交易所前缀，特判
 		// 港股
 		{"HK00700", protocol.MarketHK, "00700"},
 		{"00700", protocol.MarketHK, "00700"},
@@ -85,17 +85,16 @@ func TestParseCode(t *testing.T) {
 		// 美股
 		{"AAPL", protocol.MarketUS, "AAPL"},
 		// 期货
-		{"cff/IF2609", protocol.MarketFuture, "cff/IF2609"},
-		{"shf/cu2609", protocol.MarketFuture, "shf/cu2609"},
+		{"cff/IF2609", protocol.MarketCFF, "IF2609"},
+		{"shf/cu2609", protocol.MarketSHF, "cu2609"},
 		// 完整键
-		{"cn/future.cff/IF2609", protocol.MarketFuture, "cff/IF2609"},
 		{"hk/stock.00700", protocol.MarketHK, "00700"},
 		{"US.AAPL", protocol.MarketUS, "AAPL"},
 		{"hk/index.HSI", protocol.MarketHKIndex, "HSI"},
 		{"hk/index.CES120", protocol.MarketHKIndex, "CES120"},
 	}
 	for _, c := range cases {
-		got, err := ParseCode(c.in)
+		got, err := ParseCodeWithHK(c.in, hkTestSnapshot)
 		if err != nil {
 			t.Errorf("ParseCode(%q) err: %v", c.in, err)
 			continue

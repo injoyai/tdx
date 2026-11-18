@@ -29,13 +29,11 @@ func TestMarketTimeZones(t *testing.T) {
 		winterOffset int
 		summerOffset int
 	}{
-		{MarketAStock, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketIndex, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketEtfLof, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketBond, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketOther, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketBlock, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
-		{MarketFuture, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketSH, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketSZ, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketBJ, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketCFF, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
+		{MarketQHZ, "Asia/Shanghai", "15:30", 8 * 3600, 8 * 3600},
 		{MarketHK, "Asia/Hong_Kong", "16:10", 8 * 3600, 8 * 3600},
 		{MarketHKIndex, "Asia/Hong_Kong", "16:10", 8 * 3600, 8 * 3600},
 		{MarketUS, "America/New_York", "20:00", -5 * 3600, -4 * 3600},

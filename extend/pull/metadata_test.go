@@ -260,7 +260,7 @@ func (*universeUnit) FetchMinute(*Service, model.Code) error   { return nil }
 func TestUniverseFixedWithinOneRun(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	calls := 0
-	list := []model.Code{{Market: protocol.MarketAStock, Code: "sh600000"}}
+	list := []model.Code{{Market: protocol.MarketSH, Code: "sh600000"}}
 	backend := testStore(t.Name())
 	s, err := New(&Config{Store: backend, Codes: []string{"test.one"}, Day: true, ListCodes: func(context.Context) ([]model.Code, error) { calls++; return list, nil }})
 	if err != nil {
@@ -277,7 +277,7 @@ func TestUniverseFixedWithinOneRun(t *testing.T) {
 	backend.Mu.Lock()
 	backend.Marks.Marks = nil
 	backend.Mu.Unlock()
-	list = []model.Code{{Market: protocol.MarketAStock, Code: "sz000001"}}
+	list = []model.Code{{Market: protocol.MarketSZ, Code: "sz000001"}}
 	if err := s.UpdateContext(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}

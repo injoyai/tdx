@@ -140,7 +140,7 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 ## 市场默认时区与收盘后更新
 
-`protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回按市场硬编码的 IANA 时区，供调用方调度使用：国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
+`protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回市场定义中的 IANA 时区，供调用方调度使用。国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
 
 `Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。国际指数市场 12 跨多个来源地区，`TimeZone` 和 `CloseTime` 留空。通过 pull 同步时为 `protocol.MarketInternationalIndex` 设置 `Config.Schedules`。
 
@@ -152,9 +152,9 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 `Quote`、`KlineResp`、`MinuteResp`、`TradeResp` 移除 `VolumeUnit`，`VolumeUnknown` 和 `protocol.VolumeUnit` 枚举也移除。统一成交量及五档买卖量使用股票股数、期货合约张数；HTTP、分页结果和停止回调使用相同口径。调用方删除原先依据单位再乘 100 的代码，避免重复转换。原始 `Standard/Extended/RangeExtended` 与 `StandardResponse()` 保留各自的协议单位；指标或本地文件编码使用 `KlineResp.Klines()`，由它将统一股数转为整数手。
 
-`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`。报价以及原始槽位提供成交量的分时和分笔使用 `MarketInfo.TickVolumeScale`。标准指数 `cn/index` 日、周、月、季、年线的解码量乘 100，与统一报价口径一致。标准指数分时和分笔的调用方改读 `Amount`，其中分时原始量乘 10,000、分笔原始量乘 100，单位元，两者的 `Volume` 均为 0。旧版 SDK 已入库的记录需在受影响范围内重新获取。国内其他尚未校准的品种或接口默认 100，期货用 1。可转债使用 `cn/bond`，其他未细分国内品种使用 `cn/other`。
+`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`。报价以及原始槽位提供成交量的分时和分笔使用 `MarketInfo.TickVolumeScale`。标准指数日、周、月、季、年线的解码量乘 100，与统一报价口径一致。标准指数分时和分笔的调用方改读 `Amount`，其中分时原始量乘 10,000、分笔原始量乘 100，单位元，两者的 `Volume` 均为 0。旧版 SDK 已入库的记录需在受影响范围内重新获取。国内其他尚未校准的品种或接口默认 100，期货用 1。
 
-可转债市场使用短名 `protocol.MarketBond`，对应 `market.Bond` 和目录 `cn/bond`。若已使用此前的 `MarketConvertibleBond`、`market.ConvertibleBond` 或 `cn/convertible_bond`，需同步更新引用及配置；旧目录不会自动搬移。
+沪深北分别使用 `protocol.MarketSH`、`MarketSZ`、`MarketBJ`。股票、指数、ETF/LOF、转债和板块指数由 `Instrument.Kind()` 区分。K 线周期和倍率通过 `Instrument.Info()` 获取，从 `model.Code` 出发时先调用 `code.Instrument()`。期货市场键使用各自交易所简称，`Code.Code` 保存合约主体。
 
 `KlineInfo.ToStorageVolume` 现在返回 `(int64, error)`，调用方须处理零/负倍率、负数量和溢出错误，不再对零值配置偷偷采用 ×100。期货、美股 pull 存储从旧默认 ×100 改为保留张数/股数；港股分钟 K 线采用 ×100。已有数据库不自动修改，旧记录不能未经核对混用。
 
@@ -351,7 +351,7 @@ HTTP 元数据客户端只提供 New 和 FetchCodes/FetchGbbq，不持有后台�
 
 `lib/zip.Encode` 拒绝源文件与目标文件相同的路径、硬链接或符号链接，检查失败不会截断源文件；压缩写入及关闭错误会返回调用方。
 
-内置 pull 代码复用协议层校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受 `qhz.IMCI`。市场 12 的国际指数使用 `wi.A_IXIC` 等原始代码，完整市场键为 `global/index.A_IXIC`。完整市场键须匹配品种。过去被接受的非法配置现在提前返回错误；合法代码沿用原文件名，自定义市场保留自己的代码规则。`Instrument.Market()` 将沪市 880/881 板块归为 `cn/block`，不再误归 `cn/index`。
+内置 pull 代码复用协议层校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受 `qhz.IMCI`。市场 12 的国际指数使用 `wi.A_IXIC` 等原始代码，完整市场键为 `global/index.A_IXIC`。完整市场键须匹配实际市场。沪市 880/881 板块的市场键为 `sh`，证券类别为 `protocol.SecurityBlock`。自定义市场保留自己的代码规则。
 
 边界行为修正：`Merge241(n<=0)` 原样返回；`DoIncomes` 忽略负偏移，起始日期晚于全部数据时返回空。pull 的 `DayToPeriod` / `MinuteToPeriod` / `DayToCalendar` 直接合并原始浮点量价，保留超过三位小数及负价格；不再往返整数厘。裸美股代码统一转大写参与去重和文件定位。旧的小写美股库不会自动重命名，使用前应在停机备份后合并到大写文件名，包含相应 WAL/SHM；不要直接覆盖已有大写库。
 
@@ -389,7 +389,7 @@ import (
 | `Types: []string{extend.Day}` | `Day: true, Minute: false` |
 | `Update(m)` | 在 Config 中传入 Pool、Store 和自动发现所需的 ListCodes，然后调用 `s.UpdateContext(ctx)` |
 | `Run(m, spec)` | 调用方安排定时任务，在任务内调用 `s.Update()` |
-| `DayKlines(code, start, end)` | `s.QueryDay(c, start, end)`，其中 `c` 由 `pull.ParseCode(code)` 获取 |
+| `DayKlines(code, start, end)` | `s.QueryDay(c, start, end)`，其中 `c` 由 `s.ParseCode(code)` 获取 |
 | `DayKlinesAll(code)` | `s.QueryDay(c, "", "")` |
 | `DayKline(code, n)` | 查询升序日线后检查长度，按切片下标选取；最新一根为 `ks[len(ks)-1]` |
 | `MinKlines(code, start, end)` | `s.QueryMinute(c, start, end)` |
@@ -400,9 +400,9 @@ import (
 
 Amount 改为 *float64：Client 未提供金额时保存 nil／SQL NULL，非 nil 的 0 为真实零。移除 AmountUnknown，新库不另加状态列。聚合仅在全部组成记录金额已知时求和，否则为 nil。旧库既有 0 保持非 nil 的 0，不自动推断为未知或重写历史。扩展原始持仓字节不会作为金额落库。源时间格式库的旧状态列不再映射或使用，不自动删列、改历史金额；过去自定义写入非零未知金额的记录需自行核对并重拉。示例见 [pull](../examples/pull/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
-内置市场的参数和倍率集中于 `Market.Info()`。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用 `TickVolumeScale`。港股指数 K 线统一量为 0，金额倍率为 1,000,000。
+行情参数和倍率通过 `Instrument.Info()` 获取。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用 `TickVolumeScale`。港股指数 K 线统一量为 0，金额倍率为 1,000,000。
 
-港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。香港 ETF 五位代码按港交所分配区间自动进入扩展市场 49，`pull` 存于 `hk/fund`；市场 49 的其他基金可用 `hkf.<代码>` 显式指定。
+港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。数字港股的通达信市场通过品种快照解析。快照标明属于 49 时，`pull` 存于 `hk/fund`。
 
 标准 `GetFinanceInfo` 的财务金额从原始千元转换为人民币元。旧解码按万倍换算的金额需重新查询；股本沿用万股转换，股东户数直接读取。
 
@@ -412,7 +412,7 @@ storage 仅定义行情 BarStore；SQLite 实现在主模块 storage/sqlite。sq
 
 ## 存量数据库
 
-旧服务使用 `day-kline/`、`min-kline/` 与 `update.db`；新服务按市场存储，例如 `cn/stock/day/sz000001.db`、`cn/stock/min/sz000001/sz000001-2026.db`，去重库为 `updated.db`。
+旧服务使用 `day-kline/`、`min-kline/` 与 `update.db`；新服务按市场存储，例如 `sz/day/sz000001.db` 和 `sz/min/sz000001/sz000001-2026.db`，去重库为 `updated.db`。旧 `cn/*` 市场输入和目录不参与新读写，也不自动迁移。
 
 旧表与新表的字段结构、时间字段和量价单位不同，不能仅重命名目录直接复用。新服务不会自动读取或转换旧服务数据库；需要单独转换存量数据，或在新目录重新拉取。重新拉取只能恢复服务器仍可提供的历史，旧库应保留以便转换。
 
@@ -519,8 +519,8 @@ SQLite 目录标记现为 `source-time-v2`；旧 `source-time-v1` 库不能继�
 
 当前 v2 仍在开发，不保留旧接口兼容层：
 
-- `pull` 的市场类型、常量与 `ToShares/FromShares` 直接使用 `protocol`；解析统一为 `pull.ParseCode`。完整市场键和简称输入都规范化为同一代码与文件名，例如 `cn/stock.600000` 与 `sh600000` 均使用 `sh600000.db`，不自动搬迁旧文件。
-- 港股股票和指数的 `Exchange.String()` 均返回 `hk`，`model.Code.Key()` 返回 `hk.00700`、`hk.HSI` 等点分隔代码。旧代码 `hi.HSI` 改用 `hk.HSI`，按协议市场查询时用 `27` 指定港股指数。
+- `pull` 的市场类型、常量与 `ToShares/FromShares` 直接使用 `protocol`；解析统一为 `pull.ParseCode`。完整市场键和简称输入都规范化为同一代码与文件名，例如 `sh.600000` 与 `sh600000` 均使用 `sh600000.db`，不自动搬迁旧文件。
+- 港股股票、基金和指数的 `Exchange.String()` 均返回 `hk`，`model.Code.Key()` 返回 `hk.00700`、`hk.02800`、`hk.HSI` 等点分隔代码。协议市场编号分别为 `31`、`49`、`27`。旧别名 `hi` 和 `hkf` 已删除。
 - `codes.NewSQLite/workday.NewSQLite` 已移除，使用 storage 后端读取快照，再通过 metadata.NewCodes/NewWorkday 构造查询；`DefaultCodes` 已移除。定时任务统一使用返回停止函数的 `update.StartTimer`。
 - `MQuote.Decode` 和 `ParseBlockFile` 直接返回解码错误，不保留忽略错误的包装或 `Checked` 双入口。
 - HTTP `/quote`、`/kline/*`、`/minute/*`、`/trade/*` 按证券前缀选择标准或已启用的扩展池，直接返回 Go 统一结果。`/code` 必须传 `count`，`start` 为 uint32；`/count` 返回整数。

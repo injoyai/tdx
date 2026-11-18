@@ -28,7 +28,7 @@ func (s *failingYearStore) SaveMinute(c model.Code, year int, from string, rows 
 }
 
 func TestFetchResultFilteringAndPartialSave(t *testing.T) {
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	failure := errors.New("write failed")
 	store := &failingYearStore{BarStore: testStore(t.Name()), year: 2025, err: failure}
 	s, err := pull.New(&pull.Config{Store: store, Codes: []string{"sz000001"}, StartAt: "20240101"})
@@ -58,7 +58,7 @@ func TestMinuteResultEmptyAndFuture(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	c := model.Code{Market: protocol.MarketAStock, Code: "sz000001"}
+	c := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
 	calls := 0
 	fetch := func(string) ([]*model.KlineMinute, error) { calls++; return nil, nil }
 	result, err := pullMinutesResult(s, c, time.Date(2026, 9, 4, 16, 0, 0, 0, protocol.Location()), fetch, nil)
@@ -89,7 +89,7 @@ func TestBuiltinResultsAndRecheckKeepHistoricalCoverage(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { s.Close() })
-			code, err := pull.ParseCode(input)
+			code, err := s.ParseCode(input)
 			if err != nil {
 				t.Fatal(err)
 			}

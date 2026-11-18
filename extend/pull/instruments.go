@@ -33,7 +33,7 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 	round := s.discovery
 	if round == nil {
 		s.discoveryMu.Unlock()
-		out, err := s.fetchInstruments(ctx)
+		out, err := fetchInstruments(ctx, s.ExPool())
 		return append([]protocol.ExInstrument(nil), out...), err
 	}
 	if round.items != nil {
@@ -58,7 +58,7 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 	s.discoveryMu.Unlock()
 
 	// No state mutex is held while borrowing a connection or fetching pages.
-	out, err := s.fetchInstruments(ctx)
+	out, err := fetchInstruments(ctx, s.ExPool())
 	s.discoveryMu.Lock()
 	if err == nil {
 		round.items = out
@@ -70,9 +70,8 @@ func (s *Service) GetInstruments() ([]protocol.ExInstrument, error) {
 	return append([]protocol.ExInstrument(nil), out...), err
 }
 
-func (s *Service) fetchInstruments(ctx context.Context) ([]protocol.ExInstrument, error) {
-	p := s.ExPool()
-	if p == nil {
+func fetchInstruments(ctx context.Context, p tdx.ClientPool) ([]protocol.ExInstrument, error) {
+	if isNil(p) {
 		return nil, fmt.Errorf("pull: 需要配置 ExPool（扩展行情7727连接池）")
 	}
 	var out []protocol.ExInstrument

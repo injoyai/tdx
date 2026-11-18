@@ -59,7 +59,7 @@ func (s *Service) metadataCall(ctx context.Context, call func(tdx.Client) error)
 // On error it returns a zero snapshot; callers decide whether to save or publish a successful result.
 func (s *Service) FetchCodes(ctx context.Context, exchanges ...protocol.Exchange) (model.CodeSnapshot, error) {
 	if len(exchanges) == 0 {
-		exchanges = []protocol.Exchange{protocol.ExchangeSH, protocol.ExchangeSZ, protocol.ExchangeBJ}
+		exchanges = protocol.StandardExchanges()
 	}
 	out := model.CodeSnapshot{Exchanges: append([]protocol.Exchange(nil), exchanges...), FetchedAt: time.Now().UTC()}
 	if err := out.Validate(); err != nil {
@@ -150,7 +150,7 @@ func (s *Service) FetchGbbq(ctx context.Context, inputs []string) (model.GbbqSna
 // FetchWorkdays derives observed mainland trading dates from Shanghai-index daily bars.
 // It never persists data. An empty or invalid response returns a zero snapshot and an error.
 func (s *Service) FetchWorkdays(ctx context.Context) (model.WorkdaySnapshot, error) {
-	out := model.WorkdaySnapshot{Market: protocol.MarketAStock, Source: "tdx:sh000001", FetchedAt: time.Now().UTC()}
+	out := model.WorkdaySnapshot{Market: protocol.MarketSH, Source: "tdx:sh000001", FetchedAt: time.Now().UTC()}
 	var response *tdx.KlineResp
 	err := s.metadataCall(ctx, func(c tdx.Client) error { var err error; response, err = c.GetKlineDayAll("sh000001"); return err })
 	if err != nil {
