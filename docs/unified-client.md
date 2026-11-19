@@ -137,6 +137,8 @@ _ = quotes; _ = err
 
 日期为有效 `YYYYMMDD`。K 线单次数量 1..800，实时/历史分笔单次数量分别为 1..1800/1..2000。K 线周期使用既有 `protocol.TypeKline*` 常量；`Day/Day2` 和 `Minute/Minute2` 在业务入口分别视作日线、一分钟别名，实际周期按市场配置映射，记录在返回的 `Category` 中。其他周期沿用协议编号，能否取得数据取决于服务器，不能把成功路由视为每个市场/周期已经通过实盘验证。
 
+标准分钟 K 线按报文中的交易日纠正午休错标：同一页同一交易日没有 11:30 记录时，将错标为 13:00 的午休记录还原为 11:30。该规则不依赖查询日期，不适用于扩展行情。
+
 标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。沪深北分别使用 `sh`、`sz`、`bj` 市场键。`Instrument.Kind()` 返回品种分类，`Instrument.Rules()` 返回该证券的 K 线周期和量价规则。
 
 `Instrument.Rules()` 明确声明当前 SDK 的行情支持范围。报价、分时、分笔分别读取 `Quote.Supported`、`TimeShare.Supported`、`Trade.Supported`。`Kline(category, mode).Supported` 检查周期和普通／区间查询方式，先将日线和一分钟别名映射为市场的实际协议周期。市场通过 `KlinePeriods` 和 `RangePeriods` 声明可请求的协议周期。区间查询采用一分钟周期。

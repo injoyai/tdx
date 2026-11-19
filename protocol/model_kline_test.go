@@ -6,6 +6,34 @@ import (
 	"time"
 )
 
+func TestFixKlineTimeHistoricalDays(t *testing.T) {
+	var bars []*Kline
+	add := func(day, hour, minute int) {
+		bars = append(bars, &Kline{Time: time.Date(2024, 1, day, hour, minute, 0, 0, Location())})
+	}
+	add(2, 13, 0)
+	for minute := 13*60 + 1; minute <= 15*60; minute++ {
+		add(2, minute/60, minute%60)
+	}
+	add(3, 13, 0)
+	add(3, 13, 30)
+	add(4, 11, 30)
+	add(4, 13, 0)
+	add(4, 13, 30)
+
+	got := FixKlineTime(bars)
+	want := map[int]string{
+		0: "2024-01-02 11:30", 120: "2024-01-02 15:00",
+		121: "2024-01-03 11:30", 123: "2024-01-04 11:30",
+		124: "2024-01-04 13:00",
+	}
+	for index, expected := range want {
+		if actual := got[index].Time.Format(TimeLayout); actual != expected {
+			t.Errorf("bar %d: got %s, want %s", index, actual, expected)
+		}
+	}
+}
+
 func TestStockKlineFrame(t *testing.T) {
 	//预期0c02000000001c001c002d050000303030303031 0900 0100 0000 0a00 00000000000000000000
 	//   0c00000000011c001c002d050000313030303030 0900 0000 0000 0a00 00000000000000000000

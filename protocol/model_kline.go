@@ -205,7 +205,9 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		}
 		resp.List = append(resp.List, k)
 	}
-	resp.List = FixKlineTime(resp.List)
+	if IsIntraday(c.Type) {
+		FixKlineTime(resp.List)
+	}
 	return resp, nil
 }
 
@@ -215,26 +217,31 @@ type KlineCache struct {
 	Code string //证券代码,用于区分不同品种的成交量单位
 }
 
-// FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00
+// FixKlineTime 按交易日纠正标准分钟 K 线的午休错标；已有 11:30 时保留 13:00。
 func FixKlineTime(ks []*Kline) []*Kline {
-	if len(ks) == 0 {
-		return ks
-	}
-	now := time.Now().In(Location())
-	//只有当天下午13~15点之间才会出现的时间问题
-	node1 := time.Date(now.Year(), now.Month(), now.Day(), 13, 0, 0, 0, now.Location())
-	node2 := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, now.Location())
-	if ks[len(ks)-1].Time.Unix() < node1.Unix() || ks[len(ks)-1].Time.Unix() > node2.Unix() {
-		return ks
-	}
-	ls := ks
-	if len(ls) >= 120 {
-		ls = ls[len(ls)-120:]
-	}
-	for i, v := range ls {
-		if v.Time.Unix() == node1.Unix() {
-			ls[i].Time = time.Date(now.Year(), now.Month(), now.Day(), 11, 30, 0, 0, now.Location())
+	for start := 0; start < len(ks); {
+		year, month, day := ks[start].Time.In(Location()).Date()
+		lunch := time.Date(year, month, day, 11, 30, 0, 0, Location())
+		reopen := lunch.Add(90 * time.Minute)
+		end := start
+		hasLunch := false
+		var candidate *Kline
+		for ; end < len(ks); end++ {
+			bar := ks[end]
+			if yy, mm, dd := bar.Time.In(Location()).Date(); yy != year || mm != month || dd != day {
+				break
+			}
+			if bar.Time.Equal(lunch) {
+				hasLunch = true
+			}
+			if bar.Time.Equal(reopen) && candidate == nil {
+				candidate = bar
+			}
 		}
+		if candidate != nil && !hasLunch {
+			candidate.Time = lunch
+		}
+		start = end
 	}
 	return ks
 }
