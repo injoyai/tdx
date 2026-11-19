@@ -239,7 +239,7 @@ Codes: []string{
 
 内置市场统一使用 `protocol.ParseInstrument` 校验：扩展代码最多 9 字节，美股须含字母，期货合约须同时含字母和数字，期货类指数接受纯字母代码；`hk/index` 等完整市场键必须与实际市场匹配，非法输入在创建数据库前返回错误。同一证券的合法输入统一规范化为同一代码和存储文件名，自定义市场保留自身代码规则。
 
-服务建好后使用 `s.ParseCode` 复用同一快照得到查询存储所需的 `model.Code`。独立解析可以用 `ParseCodeWithSnapshot` 并传入由 `protocol.NewInstrumentSnapshot` 建立的索引。
+服务建好后使用 `s.ParseCode` 复用同一快照得到查询存储所需的 `model.Code`。没有快照时，`ParseCode` 可以离线解析已导入或内置的五位数字港股，例如 `hk.00700`、`hk.00823` 和 `hk.02800`。未收录的代码需要用 `ParseCodeWithSnapshot` 并传入由 `protocol.NewInstrumentSnapshot` 建立的索引。传入快照时，以快照中的归属为准。
 
 `model.Code.Key()` 对港股股票、基金和指数统一使用 `hk` 前缀，例如 `hk.00700`、`hk.02800`、`hk.HSI`。存储接口仍使用市场类别和代码主体来标识证券，如 `{hk/stock, 00700}` 和 `{hk/index, HSI}`。
 

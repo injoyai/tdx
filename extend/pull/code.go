@@ -76,12 +76,14 @@ func codeInMarket(prefix, body string) (model.Code, error) {
 //
 //	sz000001 / sh.600000 / bj920001     带交易所前缀，可直接拼接或用点分隔；前缀不区分大小写
 //	600000                               6 位裸数字，自动补交易所前缀后再分类
-//	hk00700 / hk02800 / hk.HSI / 00700    港股股票、基金或指数
+//	hk.HSI                               港股指数
 //	usAAPL / us.BRK.B / AAPL              美股
 //	cffIF2609 / cff.IF2609 / cff/IF2609   期货
 //	wi.A_IXIC / global/index.A_IXIC      国际指数
 //	hk/stock.00700 / hk/fund.02800 / hk/index.HSI  完整市场键
 //
+// hk.00700、hk02800、00700 等五位数字港股可按已导入或内置的归属离线解析。
+// 未收录的代码需要使用 ParseCodeWithSnapshot 或已加载品种快照的 Service.ParseCode。
 // 无法识别时返回错误。
 func ParseCode(s string) (model.Code, error) {
 	return ParseCodeWithSnapshot(s, protocol.InstrumentSnapshot{})

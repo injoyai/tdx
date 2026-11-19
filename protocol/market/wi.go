@@ -7,7 +7,7 @@ const (
 	ExchangeWI               Exchange = 12
 )
 
-type wi struct{}
+type wi struct{ ignoreImport }
 
 var _ Market = wi{}
 

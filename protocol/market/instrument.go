@@ -61,9 +61,10 @@ func (i Instrument) StorageCode() string {
 
 // InstrumentLookup describes a code that needs a unique match in a snapshot.
 type InstrumentLookup struct {
-	Code      string
-	Exchanges []Exchange
-	prefix    string
+	Code          string
+	Exchanges     []Exchange
+	prefix        string
+	knownExchange Exchange
 }
 
 func (l InstrumentLookup) String() string { return l.prefix + "." + l.Code }
@@ -87,18 +88,26 @@ func LookupInstrument(input string) (InstrumentLookup, bool) {
 	return InstrumentLookup{}, false
 }
 
-// ResolveInstrument asks the market to resolve the code, loading a snapshot
-// only when its Resolve method reports the missing dependency.
+// ResolveInstrument asks the market to resolve the code. A nil loader uses the
+// market's imported and compiled assignments for codes that would otherwise need a snapshot.
 func ResolveInstrument(input string, load func(InstrumentLookup) (InstrumentSnapshot, error)) (Instrument, error) {
 	i, err := ParseInstrument(input)
 	var required *snapshotRequired
-	if !errors.As(err, &required) || load == nil {
+	if !errors.As(err, &required) {
 		return i, err
 	}
 	lookup := required.lookup
-	snapshot, err := load(lookup)
-	if err != nil {
-		return Instrument{}, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), err)
+	var snapshot InstrumentSnapshot
+	if load != nil {
+		var loadErr error
+		snapshot, loadErr = load(lookup)
+		if loadErr != nil {
+			return Instrument{}, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), loadErr)
+		}
+	}
+	// A supplied snapshot takes precedence over the market's known assignments.
+	if !snapshot.Loaded() && lookup.knownExchange != 0 {
+		return Instrument{Exchange: lookup.knownExchange, Code: lookup.Code}, nil
 	}
 	route, ok := exchangeRoutes[lookup.Exchanges[0]]
 	if !ok {

@@ -55,7 +55,7 @@ func (c *ExConn) WithContext(ctx context.Context) Client {
 	if ctx == nil {
 		panic("tdx: nil context")
 	}
-	v := &ExConn{conn: c.conn, instruments: c.instruments, requestCtx: ctx}
+	v := &ExConn{conn: c.conn, requestCtx: ctx}
 	v.queries = &queries{source: v}
 	return v
 }

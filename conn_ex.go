@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"sync/atomic"
 	"time"
 
 	"github.com/injoyai/ios"
@@ -20,8 +19,7 @@ import (
 type ExConn struct {
 	*conn
 	*queries
-	instruments *instrumentState
-	requestCtx  context.Context
+	requestCtx context.Context
 }
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
@@ -69,24 +67,26 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 // GetQuote 逐品种获取扩展五档报价，任一请求失败不返回部分结果。
 func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 	instruments := make([]protocol.Instrument, len(codes))
+	quotes := make([]*protocol.ExQuote, len(codes))
 	for j, code := range codes {
-		i, _, err := c.instrument(code)
+		i, _, quote, err := c.instrumentWithQuote(code)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := volumeScale(i); err != nil {
 			return nil, err
 		}
-		instruments[j] = i
+		instruments[j], quotes[j] = i, quote
 	}
 	out := make([]Quote, len(codes))
 	for j, i := range instruments {
-		q, err := c.getExtendedQuote(i.Exchange.Uint8(), i.Code)
-		if err != nil {
-			return nil, err
-		}
-		if q.Market != i.Exchange.Uint8() || q.Code != i.Code {
-			return nil, fmt.Errorf("扩展行情响应品种与请求不一致: %s", i)
+		q := quotes[j]
+		if q == nil {
+			var err error
+			q, err = c.instrumentQuote(i)
+			if err != nil {
+				return nil, err
+			}
 		}
 		u := Quote{Instrument: i, PreClose: q.PreClose, Open: q.Open, High: q.High, Low: q.Low, Price: q.Price, Volume: int64(q.ZongLiang), Bid: q.Bid, Ask: q.Ask, Extended: q}
 		for n := 0; n < 5; n++ {
@@ -139,73 +139,69 @@ const instrumentPageSize = 800
 // GetInstruments 读取扩展服务器可分页提供的全局品种表。
 // 报告总数与实读数之间的尾部差异经同一连接复查后允许返回，其他缺页报错。
 func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
-	items, _, err := c.readInstruments(true)
-	return items, err
-}
-
-type instrumentSnapshot struct {
-	writer *frameWriter
-	codes  protocol.InstrumentSnapshot
-}
-
-type instrumentState struct {
-	gate     chan struct{}
-	snapshot atomic.Pointer[instrumentSnapshot]
+	writer := c.currentWriter()
+	items, err := c.scanInstruments()
+	if err != nil {
+		return nil, err
+	}
+	if c.currentWriter() != writer {
+		return nil, errors.New("扩展行情连接在品种扫描期间变更")
+	}
+	if err := c.requestContext().Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (c *ExConn) instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
-	i, err := protocol.ResolveInstrument(code, func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error) {
-		return c.instrumentSnapshot()
-	})
+	i, rules, _, err := c.instrumentWithQuote(code)
+	return i, rules, err
+}
+
+func (c *ExConn) instrumentWithQuote(code string) (protocol.Instrument, protocol.InstrumentRules, *protocol.ExQuote, error) {
+	i, err := protocol.ResolveInstrument(code, nil)
+	var quote *protocol.ExQuote
 	if err != nil {
-		return i, protocol.InstrumentRules{}, err
+		if lookup, ok := protocol.LookupInstrument(code); ok {
+			i, quote, err = c.probeInstrument(lookup)
+		}
+	}
+	if err != nil {
+		return i, protocol.InstrumentRules{}, nil, err
 	}
 	info, ok := i.Rules()
 	if !ok || info.Protocol != protocol.ProtocolExtended {
-		return i, info, protocolMismatch()
+		return i, info, nil, protocolMismatch()
 	}
-	return i, info, nil
+	return i, info, quote, nil
 }
 
-// readInstruments serializes a refresh with snapshot lookups.
-func (c *ExConn) readInstruments(refresh bool) ([]protocol.ExInstrument, protocol.InstrumentSnapshot, error) {
-	ctx := c.requestContext()
-	select {
-	case c.instruments.gate <- struct{}{}:
-		defer func() { <-c.instruments.gate }()
-	case <-ctx.Done():
-		return nil, protocol.InstrumentSnapshot{}, ctx.Err()
-	case <-c.Done():
-		return nil, protocol.InstrumentSnapshot{}, net.ErrClosed
-	}
+func (c *ExConn) probeInstrument(lookup protocol.InstrumentLookup) (protocol.Instrument, *protocol.ExQuote, error) {
+	var found protocol.Instrument
+	var quote *protocol.ExQuote
 	writer := c.currentWriter()
-	if previous := c.instruments.snapshot.Load(); !refresh && previous != nil && previous.writer == writer {
-		return nil, previous.codes, nil
+	for _, exchange := range lookup.Exchanges {
+		i := protocol.Instrument{Exchange: exchange, Code: lookup.Code}
+		q, err := c.instrumentQuote(i)
+		if err != nil {
+			return protocol.Instrument{}, nil, fmt.Errorf("%s 无法确认候选市场 %d: %w", lookup, exchange, err)
+		}
+		if c.currentWriter() != writer {
+			return protocol.Instrument{}, nil, fmt.Errorf("%s 扩展行情连接在市场确认期间变更", lookup)
+		}
+		// 缺少行情的候选市场可能回显请求身份，其余字段全部为零。
+		if *q == (protocol.ExQuote{Market: exchange.Uint8(), Code: lookup.Code}) {
+			continue
+		}
+		if quote != nil {
+			return protocol.Instrument{}, nil, fmt.Errorf("%s 同时在通达信市场 %d 和 %d 返回有效报价", lookup, found.Exchange, exchange)
+		}
+		found, quote = i, q
 	}
-	items, err := c.scanInstruments()
-	if err != nil {
-		return nil, protocol.InstrumentSnapshot{}, err
+	if quote == nil {
+		return protocol.Instrument{}, nil, fmt.Errorf("%s 未取得可确认市场的报价（候选市场 %s）", lookup, lookup.Candidates())
 	}
-	if c.currentWriter() != writer {
-		return nil, protocol.InstrumentSnapshot{}, errors.New("扩展行情连接在品种扫描期间变更")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, protocol.InstrumentSnapshot{}, err
-	}
-	codes := protocol.NewInstrumentSnapshot(items)
-	c.instruments.snapshot.Store(&instrumentSnapshot{writer: writer, codes: codes})
-	return items, codes, nil
-}
-
-func (c *ExConn) instrumentSnapshot() (protocol.InstrumentSnapshot, error) {
-	if err := c.requestContext().Err(); err != nil {
-		return protocol.InstrumentSnapshot{}, err
-	}
-	if snapshot := c.instruments.snapshot.Load(); snapshot != nil && snapshot.writer == c.currentWriter() {
-		return snapshot.codes, nil
-	}
-	_, codes, err := c.readInstruments(false)
-	return codes, err
+	return found, quote, nil
 }
 
 func (c *ExConn) scanInstruments() ([]protocol.ExInstrument, error) {
@@ -440,6 +436,17 @@ func (c *ExConn) getExtendedInstruments(start uint32, count uint16) ([]protocol.
 	return r.([]protocol.ExInstrument), nil
 }
 
+func (c *ExConn) instrumentQuote(i protocol.Instrument) (*protocol.ExQuote, error) {
+	q, err := c.getExtendedQuote(i.Exchange.Uint8(), i.Code)
+	if err != nil {
+		return nil, err
+	}
+	if q.Market != i.Exchange.Uint8() || q.Code != i.Code {
+		return nil, fmt.Errorf("扩展行情响应品种与请求不一致: %s", i)
+	}
+	return q, nil
+}
+
 // getExtendedQuote 单品种五档行情。
 func (c *ExConn) getExtendedQuote(market uint8, code string) (*protocol.ExQuote, error) {
 	r, err := c.SendFrame(protocol.MEx.FrameQuote(market, code))
@@ -555,7 +562,7 @@ func (*ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newExConn(core *conn) *ExConn {
-	c := &ExConn{conn: core, instruments: &instrumentState{gate: make(chan struct{}, 1)}}
+	c := &ExConn{conn: core}
 	c.queries = &queries{source: c}
 	return c
 }

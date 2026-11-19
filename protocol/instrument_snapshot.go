@@ -26,13 +26,25 @@ func NewInstrumentSnapshot(items []ExInstrument) InstrumentSnapshot {
 	return market.NewInstrumentSnapshot(instruments)
 }
 
-// ResolveInstrument parses a code and uses the caller's snapshot loader if required.
+// LoadInstrumentMarkets configures the directory and loads saved market assignments.
+func LoadInstrumentMarkets(dir string) error { return market.LoadInstrumentMarkets(dir) }
+
+// ImportInstruments imports a completed GetInstruments result into the markets.
+func ImportInstruments(items []ExInstrument) error {
+	instruments := make([]Instrument, 0, len(items))
+	for _, item := range items {
+		instruments = append(instruments, Instrument{Exchange: Exchange(item.Market), Code: item.Code})
+	}
+	return market.ImportInstruments(instruments)
+}
+
+// ResolveInstrument parses a code using a supplied snapshot or the market's known assignments.
 func ResolveInstrument(input string, load func(InstrumentLookup) (InstrumentSnapshot, error)) (Instrument, error) {
 	return market.ResolveInstrument(input, load)
 }
 
 // QuoteProtocol selects the connection for a code. Shared codes are resolved
-// against the connection's snapshot separately before an instrument request.
+// by the selected connection before an instrument request.
 func QuoteProtocol(code string) (MarketProtocol, error) {
 	if _, needed := LookupInstrument(code); needed {
 		return ProtocolExtended, nil

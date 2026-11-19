@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -176,39 +178,28 @@ func TestInstrumentsReportedTail(t *testing.T) {
 	}
 }
 
-func TestHongKongSnapshotRouting(t *testing.T) {
-	items := []protocol.ExInstrument{
-		{Market: 31, Code: "00700"},
-		{Market: 49, Code: "00823"},
-		{Market: 31, Code: "01234"},
-		{Market: 49, Code: "01234"},
-		// This symbol is in an ETF code range but belongs to 31 in this fixture.
-		{Market: 31, Code: "02800"},
-	}
-	var scans, quotes atomic.Int32
+func TestHongKongMarketRouting(t *testing.T) {
+	var quotes atomic.Int32
 	native := respondingTestClient(t, true, func(header, body []byte) []byte {
 		switch typ := binary.LittleEndian.Uint16(header[10:12]); typ {
-		case protocol.TypeExCount:
-			scans.Add(1)
-			data := make([]byte, 23)
-			binary.LittleEndian.PutUint32(data[19:23], uint32(len(items)))
-			return data
-		case protocol.TypeExInstrument:
-			data := make([]byte, 6+64*len(items))
-			binary.LittleEndian.PutUint16(data[4:6], uint16(len(items)))
-			for j, item := range items {
-				offset := 6 + 64*j
-				data[offset+1] = item.Market
-				copy(data[offset+5:offset+14], item.Code)
-			}
-			return data
 		case protocol.TypeExQuote:
 			quotes.Add(1)
 			data := make([]byte, 150)
 			copy(data, body)
+			switch string(body[1:6]) {
+			case "99998":
+				if body[0] == 49 {
+					binary.LittleEndian.PutUint32(data[14:], 0x42200000) // 前收 40
+				}
+			case "99997":
+				binary.LittleEndian.PutUint32(data[14:], 0x42200000)
+			case "99996":
+				data[0] = 27 // 响应身份错误
+			}
 			return data
 		case protocol.TypeExBars:
-			if body[0] != 49 || string(body[1:6]) != "00823" {
+			code := string(body[1:6])
+			if body[0] != 49 || (code != "99998" && code != "00823") {
 				t.Errorf("wrong K-line identity: %x", body[:10])
 			}
 			if binary.LittleEndian.Uint32(body[14:18]) > 0 {
@@ -225,7 +216,7 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 	unified.dial[1] = func(context.Context) (protocolClient, error) {
 		return native.protocolClient, nil
 	}
-	// Request views share one lazy snapshot even when the connection is cold.
+	// Compiled codes route directly, including on a cold connection.
 	var workers sync.WaitGroup
 	inputs := []string{"hk.00823", "HK00823", "00823.Hk", "00823", "hk/00823", "香港交易所00823", "00823.香港交易所"}
 	for n, input := range inputs {
@@ -243,10 +234,10 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 		})
 	}
 	workers.Wait()
-	if scans.Load() != 1 || quotes.Load() != int32(len(inputs)) {
-		t.Fatalf("snapshot scans=%d quotes=%d", scans.Load(), quotes.Load())
+	if quotes.Load() != int32(len(inputs)) {
+		t.Fatalf("expected one quote request per compiled code, got %d", quotes.Load())
 	}
-	bars, err := native.GetKlineDay("hk.00823", 0, 1)
+	bars, err := native.GetKlineDayAll("hk.99998")
 	if err != nil || len(bars.List) != 1 || bars.Instrument.Exchange != protocol.ExchangeHKFund {
 		t.Fatal(bars, err)
 	}
@@ -255,19 +246,92 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 		t.Fatal(empty, err)
 	}
 	got, err := native.GetQuote("hk.02800", "02800.49")
-	if err != nil || len(got) != 2 || got[0].Extended.Market != 31 || got[1].Extended.Market != 49 {
+	if err != nil || len(got) != 2 || got[0].Extended.Market != 49 || got[1].Extended.Market != 49 {
 		t.Fatal(got, err)
 	}
+	got, err = native.GetQuote("hk.99998")
+	if err != nil || len(got) != 1 || got[0].Instrument.Exchange != protocol.ExchangeHKFund {
+		t.Fatal(got, err)
+	}
+	if quotes.Load() != int32(len(inputs)+6) {
+		t.Fatalf("expected two probes per unresolved query and one request per known quote, got %d", quotes.Load())
+	}
 	for _, tc := range []struct{ input, want string }{
-		{"hk.01234", "同时出现在通达信市场 31 和 49"},
-		{"hk.00042", "未找到（候选市场 31、49）"},
+		{"hk.99997", "同时在通达信市场 31 和 49 返回有效报价"},
+		{"hk.99999", "未取得可确认市场的报价（候选市场 31、49）"},
+		{"hk.99996", "扩展行情响应品种与请求不一致"},
 	} {
 		got, err := native.GetQuote(tc.input)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || got != nil {
 			t.Fatalf("%s: %+v %v", tc.input, got, err)
 		}
 	}
-	if scans.Load() != 1 || quotes.Load() != int32(len(inputs)+2) {
-		t.Fatalf("ambiguous or unknown code sent a request: scans=%d quotes=%d", scans.Load(), quotes.Load())
+}
+
+func TestHongKongImportedMarketRouting(t *testing.T) {
+	dir, emptyDir := t.TempDir(), t.TempDir()
+	t.Cleanup(func() {
+		if err := protocol.LoadInstrumentMarkets(emptyDir); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := protocol.LoadInstrumentMarkets(dir); err != nil {
+		t.Fatal(err)
 	}
+	for _, items := range [][]protocol.ExInstrument{
+		{{Market: 31, Code: "98991"}, {Market: 31, Code: "98992"}},
+		{{Market: 49, Code: "98991"}, {Market: 31, Code: "98993"}, {Market: 49, Code: "98993"}, {Market: 74, Code: "98994"}},
+	} {
+		if err := protocol.ImportInstruments(items); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkRoutes := func() {
+		t.Helper()
+		for code, exchange := range map[string]protocol.Exchange{"98991": 49, "98992": 31, "98993": 49} {
+			i, err := protocol.ResolveInstrument("hk."+code, nil)
+			if err != nil || i.Exchange != exchange || i.Code != code {
+				t.Fatalf("%s: %+v, %v", code, i, err)
+			}
+		}
+		if i, err := protocol.ResolveInstrument("hk.98994", nil); err == nil {
+			t.Fatalf("imported an unrelated market: %+v", i)
+		}
+	}
+	checkRoutes()
+
+	if err := protocol.LoadInstrumentMarkets(emptyDir); err != nil {
+		t.Fatal(err)
+	}
+	if i, err := protocol.ResolveInstrument("hk.98991", nil); err == nil {
+		t.Fatalf("expected the empty directory to clear learned routes: %+v", i)
+	}
+	if err := protocol.LoadInstrumentMarkets(dir); err != nil {
+		t.Fatal(err)
+	}
+	checkRoutes()
+
+	c := respondingTestClient(t, true, func(header, body []byte) []byte {
+		if typ := binary.LittleEndian.Uint16(header[10:12]); typ != protocol.TypeExQuote || body[0] != 49 || string(body[1:6]) != "98991" {
+			t.Errorf("expected a direct market 49 quote, got type %x body %x", typ, body)
+		}
+		data := make([]byte, 150)
+		copy(data, body)
+		return data
+	})
+	if quotes, err := c.GetQuote("hk.98991"); err != nil || len(quotes) != 1 || quotes[0].Instrument.Exchange != 49 {
+		t.Fatal(quotes, err)
+	}
+
+	file := filepath.Join(dir, "hk-instruments.json")
+	if err := os.Rename(file, file+".saved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(file, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := protocol.ImportInstruments([]protocol.ExInstrument{{Market: 31, Code: "98991"}}); err == nil {
+		t.Fatal("expected the file replacement to fail")
+	}
+	checkRoutes()
 }

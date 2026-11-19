@@ -6,7 +6,7 @@ const (
 	ExchangeINE Exchange = ExchangeSHF // 上海能源与上期所共用协议编号
 )
 
-type shf struct{}
+type shf struct{ ignoreImport }
 
 var _ Market = shf{}
 

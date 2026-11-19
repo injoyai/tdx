@@ -5,7 +5,7 @@ const (
 	ExchangeQHZ Exchange = 42
 )
 
-type qhz struct{}
+type qhz struct{ ignoreImport }
 
 var _ Market = qhz{}
 

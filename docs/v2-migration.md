@@ -156,7 +156,7 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 配置和存储字段中的市场键类型改为 `protocol.MarketID`。`MarketID.Info()` 读取市场资料及其全部协议路由。单个编号的协议及代码表配置从 `Exchange.Route()` 读取。量价规则从 `Instrument.Rules()` 读取，按周期和报文布局调用 `rules.Kline(category, mode)`。港股股票、基金、指数共用 `hk` 市场定义，各自的拉取和存储键仍对应 31、49、27。
 
-内置市场通过无状态类型的 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。品种快照同时负责实际行情和存储归属。
+内置市场通过无状态类型的 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。行情连接使用市场定义中的内置归属及候选市场查询。已有品种快照仍可用于 pull 解析存储归属。
 
 
 `InstrumentRules` 补充显式行情支持声明。查询报价、分时和分笔前读取各自的 `Supported`，查询 K 线使用 `rules.Kline(category, mode).Supported`。自定义市场填写 `KlinePeriods`、`RangePeriods` 和各类行情的 `Fields`，并为可用数量及价格字段配置换算参数。价格、成交量和成交额分别通过 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明。港股指数和国际指数的历史分笔会在读取日期范围和日线之前报不支持错误。
@@ -410,7 +410,7 @@ Amount 改为 *float64：Client 未提供金额时保存 nil／SQL NULL，非 ni
 
 行情参数和倍率通过 `Instrument.Rules()` 获取。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用各自规则的 `VolumeScale`。港股指数 K 线统一量为 0，金额倍率为 1,000,000。
 
-港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。数字港股的通达信市场通过品种快照解析。快照标明属于 49 时，`pull` 存于 `hk/fund`。
+港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。pull 可通过品种快照确认数字港股的存储归属。快照标明属于 49 时，`pull` 存于 `hk/fund`。
 
 标准 `GetFinanceInfo` 的财务金额从原始千元转换为人民币元。旧解码按万倍换算的金额需重新查询；股本沿用万股转换，股东户数直接读取。
 

@@ -229,7 +229,21 @@ func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
 }
 
 func TestSharedHongKongCodeRequiresMarketEvidence(t *testing.T) {
-	if c, err := ParseCode("hk.00823"); err == nil || !strings.Contains(err.Error(), "候选市场 31、49") {
+	for _, tt := range []struct {
+		code   string
+		market protocol.MarketID
+	}{
+		{"00700", protocol.MarketHK},
+		{"02800", protocol.MarketHKFund},
+		{"00823", protocol.MarketHKFund},
+	} {
+		input := "hk." + tt.code
+		got, err := ParseCode(input)
+		if err != nil || got.Market != tt.market || got.Code != tt.code || got.Key() != input {
+			t.Fatalf("ParseCode(%q) = %v, %v", input, got, err)
+		}
+	}
+	if c, err := ParseCode("hk.99999"); err == nil || !strings.Contains(err.Error(), "候选市场 31、49") {
 		t.Fatal(c, err)
 	}
 	got, err := ParseCodeWithSnapshot("hk.00823", hkTestSnapshot)

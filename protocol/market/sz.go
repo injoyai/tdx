@@ -5,7 +5,7 @@ const (
 	ExchangeSZ Exchange = 0
 )
 
-type sz struct{}
+type sz struct{ ignoreImport }
 
 var _ Market = sz{}
 

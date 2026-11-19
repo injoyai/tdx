@@ -5,7 +5,7 @@ const (
 	ExchangeGFE Exchange = 66
 )
 
-type gfe struct{}
+type gfe struct{ ignoreImport }
 
 var _ Market = gfe{}
 

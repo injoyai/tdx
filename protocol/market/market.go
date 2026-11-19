@@ -17,7 +17,13 @@ type Market interface {
 	Info() MarketInfo
 	Resolve(code Code, snapshot InstrumentSnapshot) (Instrument, error)
 	Rules(instrument Instrument) (InstrumentRules, error)
+	// Import receives a completed instrument discovery result.
+	Import(items []Instrument) error
 }
+
+type ignoreImport struct{}
+
+func (ignoreImport) Import([]Instrument) error { return nil }
 
 // MarketInfo describes a logical market. Routes are in order of precedence,
 // with the default route first. Schedule fields do not interpret source timestamps.
