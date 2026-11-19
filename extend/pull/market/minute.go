@@ -32,7 +32,8 @@ func pullMinutesResult(s *pull.Service, code model.Code, now time.Time,
 	result = pull.FetchResult{Known: true}
 	start := s.Start()
 	now = now.In(start.Location())
-	info, known := code.Market.Info()
+	ex, known := code.Market.Exchange()
+	info, _ := ex.Route()
 	if start.After(now) && known && info.Protocol == protocol.ProtocolStandard {
 		result.SkipReason = pull.SkipFuture
 		return result, nil

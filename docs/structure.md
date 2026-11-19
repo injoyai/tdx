@@ -5,7 +5,8 @@
 ```text
 tdx/
 ├── *.go                 Client、连接、拨号、连接池与共享查询
-├── protocol/            协议帧、编解码、市场规则及行情计算
+├── protocol/            协议帧、编解码及行情计算
+│   └── market/          市场接口、注册表及每个市场的定义
 ├── extend/              基于 tdx SDK 的扩展能力
 │   ├── model/           扩展共享业务记录、快照与输入校验
 │   ├── metadata/        证券、股本、历史日历的内存查询
@@ -29,6 +30,8 @@ tdx/
 ```
 
 依赖方向为扩展使用 SDK；根包和 protocol 不导入 extend。标准连接仅在连接内保存报价 Decimal，用于协议价格校准，不引用扩展证券索引、存储接口或业务模型。
+
+每个逻辑市场在 `protocol/market/` 下用一个无状态类型实现 `Market`，例如 `type sh struct{}`、`type hk struct{}`。`Info` 直接返回登记资料、协议路由与调度，`Resolve` 直接处理代码和协议市场归属，`Rules` 直接返回证券规则并复用公共协议默认值。`init` 只调用 `registerMarket(hk{})` 完成注册。通用层按接口读取市场行为，港股三条协议路由在 `hk.go` 中声明。需要品种快照时，由 `Resolve` 返回候选市场，通用层加载快照后继续解析。
 
 扩展内部，pull 通过 Client 获取数据，元数据直接返回快照，行情通过 storage.BarStore 提交，model 提供共享记录与校验。metadata 直接查询内存数据，不依赖 pull、storage 或 HTTP 客户端。metadata/httpclient 是独立子包，显式请求后返回完整查询快照；调度和快照发布由应用负责，客户端不持有后台任务，不需要 Close。导入 metadata 不会引入该子包。
 

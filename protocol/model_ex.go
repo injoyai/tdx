@@ -443,7 +443,7 @@ func decodeExTrade(bs []byte, exchange uint8) ([]ExTradeTick, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 	out := make([]ExTradeTick, 0, num)
-	tradeNature := market.ExtendedTradeNature(Exchange(exchange))
+	tradeNature := market.TradeNatureOf(Exchange(exchange))
 	for i := 0; i < num; i++ {
 		raw := int(r.u16())
 		price := r.u32()
@@ -454,11 +454,7 @@ func decodeExTrade(bs []byte, exchange uint8) ([]ExTradeTick, error) {
 		if second > 59 {
 			second = 0
 		}
-		var dir int
-		var name string
-		if tradeNature != nil {
-			dir, name = tradeNature(direction, volume, zengcang)
-		}
+		dir, name := tradeNature.Decode(direction, volume, zengcang)
 		out = append(out, ExTradeTick{
 			Hour: raw / 60, Minute: raw % 60, Second: second,
 			Price: price, Volume: volume, ZengCang: zengcang,

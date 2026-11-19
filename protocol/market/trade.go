@@ -1,14 +1,34 @@
 package market
 
-// ExtendedTradeNature selects the decoder for an extended trade direction field.
-func ExtendedTradeNature(ex Exchange) func(uint16, uint32, int32) (int, string) {
+type TradeNature uint8
+
+const (
+	TradeNeutral TradeNature = iota
+	TradeHK
+	TradeFutures
+)
+
+// TradeNatureOf selects the raw direction encoding declared by the market.
+func TradeNatureOf(ex Exchange) TradeNature {
 	switch ex {
-	case 48: // 旧港股协议市场
-		return hkTradeNature
+	case 48: // 港股协议编号 48 的原始分笔
+		return TradeHK
 	case ExchangeCFFO, ExchangeCZCO, ExchangeDCEO, ExchangeSHFO, ExchangeGFEO, ExchangeSHO, ExchangeSZO:
-		return futuresTradeNature
+		return TradeFutures
 	default:
-		return marketDefinitions[exchangeMarkets[ex]].tradeNature
+		rules, _ := (Instrument{Exchange: ex}).Rules()
+		return rules.Trade.Nature
+	}
+}
+
+func (n TradeNature) Decode(direction uint16, volume uint32, change int32) (int, string) {
+	switch n {
+	case TradeHK:
+		return hkTradeNature(direction, volume, change)
+	case TradeFutures:
+		return futuresTradeNature(direction, volume, change)
+	default:
+		return 0, ""
 	}
 }
 

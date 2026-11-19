@@ -26,17 +26,16 @@ type ExConn struct {
 
 // GetKline 请求扩展 K 线，保留持仓、结算价等扩展字段。
 func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
-	out, _, err := klineRequest(code, category, count)
-	if err != nil {
+	if err := klineBounds(category, count); err != nil {
 		return nil, err
 	}
 	i, info, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
-	out.Instrument = i
-	out.Category = klineCategory(info, category)
-	scale, err := klineVolumeScale(i, out.Category, info)
+	rule := info.Kline(category, protocol.KlinePage)
+	out := &KlineResp{Instrument: i, Category: rule.Category}
+	scale, err := klineVolumeScale(i, rule)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +43,6 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	amountScale := info.ExtendedKlineAmountScale(out.Category)
 	for j := range bars {
 		k := &bars[j]
 		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Extended: k}
@@ -54,10 +52,11 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 				return nil, err
 			}
 		}
-		if amountScale > 0 {
-			amount := k.Amount * amountScale
+		if rule.AmountField == protocol.AmountInAmount {
+			amount := k.Amount * rule.AmountScale
 			row.Amount = &amount
 		}
+		row.applyFields(rule.Fields)
 		out.List = append(out.List, row)
 	}
 	if len(out.List) > int(count) {
@@ -93,11 +92,8 @@ func (c *ExConn) GetQuote(codes ...string) ([]Quote, error) {
 		for n := 0; n < 5; n++ {
 			u.BidVolume[n], u.AskVolume[n] = int64(q.BidVol[n]), int64(q.AskVol[n])
 		}
-		scale, err := volumeScale(i)
-		if err != nil {
-			return nil, err
-		}
-		if err := u.scaleVolume(scale); err != nil {
+		info, _ := i.Rules()
+		if err := u.applyRule(info.Quote); err != nil {
 			return nil, err
 		}
 		out[j] = u
@@ -157,24 +153,17 @@ type instrumentState struct {
 	snapshot atomic.Pointer[instrumentSnapshot]
 }
 
-func (c *ExConn) instrument(code string) (protocol.Instrument, protocol.MarketInfo, error) {
-	i, info, err := protocolInstrument(code, true)
+func (c *ExConn) instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
+	i, err := protocol.ResolveInstrument(code, func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error) {
+		return c.instrumentSnapshot()
+	})
 	if err != nil {
-		return i, info, err
+		return i, protocol.InstrumentRules{}, err
 	}
-	lookup, needed := protocol.LookupInstrument(code)
-	if !needed {
-		return i, info, nil
+	info, ok := i.Rules()
+	if !ok || info.Protocol != protocol.ProtocolExtended {
+		return i, info, protocolMismatch()
 	}
-	snapshot, err := c.instrumentSnapshot()
-	if err != nil {
-		return i, info, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), err)
-	}
-	i, err = snapshot.Resolve(lookup)
-	if err != nil {
-		return i, info, err
-	}
-	info, _ = i.Info()
 	return i, info, nil
 }
 
@@ -282,12 +271,12 @@ func (c *ExConn) GetCount(ex protocol.Exchange) (int, error) {
 }
 
 func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
-	i, _, err := c.instrument(code)
+	i, info, err := c.instrument(code)
 	if err != nil {
 		return nil, err
 	}
-	scale, err := volumeScale(i)
-	if err != nil {
+	rule := info.TimeShare
+	if err := checkTickRule(i, "分时", rule); err != nil {
 		return nil, err
 	}
 	out := &MinuteResp{Instrument: i, Date: date}
@@ -303,11 +292,15 @@ func (c *ExConn) minutePage(date, code string) (*MinuteResp, error) {
 	}
 	for j := range ticks {
 		k := &ticks[j]
-		volume, err := scaleVolume(int64(k.Volume), scale)
+		volume, amount, err := tickVolumeAmount(int64(k.Volume), rule)
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Minute{Time: fmt.Sprintf("%02d:%02d", k.Hour, k.Minute), Price: k.Price, Volume: volume, Extended: k})
+		var price float64
+		if rule.Fields.Price {
+			price = k.Price / rule.PriceDivisor
+		}
+		out.List = append(out.List, Minute{Time: fmt.Sprintf("%02d:%02d", k.Hour, k.Minute), Price: price, Volume: volume, Amount: amount, Extended: k})
 	}
 	out.Count = len(out.List)
 	return out, nil
@@ -318,8 +311,8 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	scale, err := volumeScale(i)
-	if err != nil {
+	rule := info.Trade
+	if err := checkTickRule(i, "分笔", rule); err != nil {
 		return nil, err
 	}
 	out := &TradeResp{Instrument: i, Date: date}
@@ -335,7 +328,7 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	}
 	for j := range ticks {
 		k := &ticks[j]
-		volume, err := scaleVolume(int64(k.Volume), scale)
+		volume, amount, err := tickVolumeAmount(int64(k.Volume), rule)
 		if err != nil {
 			return nil, err
 		}
@@ -343,7 +336,7 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 		if value, ok := info.ExtendedTradePrice(k.Price); ok {
 			price = &value
 		}
-		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Price: price, Volume: volume, Direction: k.Direction, Extended: k})
+		out.List = append(out.List, Trade{Date: date, Time: fmt.Sprintf("%02d:%02d:%02d", k.Hour, k.Minute, k.Second), Price: price, Volume: volume, Amount: amount, Direction: k.Direction, Extended: k})
 	}
 	out.Count = len(out.List)
 	return out, nil
@@ -367,7 +360,8 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 	if err != nil {
 		return nil, err
 	}
-	scale, err := klineVolumeScale(i, info.Minute.Category, info)
+	rule := info.Kline(protocol.TypeKlineMinute, protocol.KlineRange)
+	scale, err := klineVolumeScale(i, rule)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +370,6 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 		return nil, err
 	}
 	out := &KlineResp{Instrument: i, Category: protocol.TypeKlineMinute}
-	amountScale := info.ExtendedKlineAmountScale(out.Category)
 	for j := range r {
 		k := &r[j]
 		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, RangeExtended: k}
@@ -386,10 +379,11 @@ func (c *ExConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 				return nil, err
 			}
 		}
-		if amountScale > 0 {
-			amount := float64(math.Float32frombits(k.Position)) * amountScale
+		if rule.AmountField == protocol.AmountInPosition {
+			amount := float64(math.Float32frombits(k.Position)) * rule.AmountScale
 			row.Amount = &amount
 		}
+		row.applyFields(rule.Fields)
 		out.List = append(out.List, row)
 	}
 	return filterKlineRange(out, fromDay, toDay), nil
@@ -401,9 +395,6 @@ func (c *ExConn) GetMarkets() ([]Exchange, error) {
 	case <-c.Done():
 		return nil, net.ErrClosed
 	default:
-	}
-	if err := protocolExchange(protocol.ExchangeHK, true); err != nil {
-		return nil, err
 	}
 	r, err := c.getExtendedMarkets()
 	if err != nil {

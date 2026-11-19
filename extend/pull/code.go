@@ -10,12 +10,12 @@ import (
 )
 
 // 最长市场名优先，避免将 hk/index 等完整市场名拆成 hk；前缀不区分大小写。
-func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, bool, error) {
+func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error)) (model.Code, bool, error) {
 	var prefixes []string
 	wirePrefixes := map[string]bool{}
 	for _, m := range protocol.Markets() {
-		ex, _ := m.Exchange()
-		prefix := ex.String()
+		info, _ := m.Info()
+		prefix := info.Prefix
 		if !wirePrefixes[prefix] {
 			wirePrefixes[prefix] = true
 			prefixes = append(prefixes, prefix)
@@ -25,7 +25,7 @@ func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protoc
 		}
 	}
 	for _, u := range Units() {
-		if _, builtin := protocol.Market(u.Name()).Exchange(); !builtin {
+		if _, builtin := protocol.MarketID(u.Name()).Exchange(); !builtin {
 			prefixes = append(prefixes, u.Name())
 		}
 	}
@@ -57,7 +57,7 @@ func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protoc
 }
 
 func codeInMarket(prefix, body string) (model.Code, error) {
-	market := protocol.Market(prefix)
+	market := protocol.MarketID(prefix)
 	if _, builtin := market.Exchange(); builtin {
 		i, err := market.ParseInstrument(body)
 		if err != nil {
@@ -89,10 +89,10 @@ func ParseCode(s string) (model.Code, error) {
 
 // ParseCodeWithSnapshot resolves shared market symbols against an instrument snapshot.
 func ParseCodeWithSnapshot(s string, snapshot protocol.InstrumentSnapshot) (model.Code, error) {
-	return parseCode(s, snapshot.Resolve)
+	return parseCode(s, func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error) { return snapshot, nil })
 }
 
-func parseCode(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, error) {
+func parseCode(s string, resolve func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error)) (model.Code, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return model.Code{}, fmt.Errorf("pull: 空代码")
@@ -103,16 +103,10 @@ func parseCode(s string, resolve func(protocol.InstrumentLookup) (protocol.Instr
 	return parseWireCode(s, resolve)
 }
 
-func parseWireCode(s string, resolve func(protocol.InstrumentLookup) (protocol.Instrument, error)) (model.Code, error) {
-	i, err := protocol.ParseInstrument(s)
+func parseWireCode(s string, resolve func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error)) (model.Code, error) {
+	i, err := protocol.ResolveInstrument(s, resolve)
 	if err != nil {
 		return model.Code{}, err
-	}
-	if lookup, needed := protocol.LookupInstrument(s); needed {
-		i, err = resolve(lookup)
-		if err != nil {
-			return model.Code{}, err
-		}
 	}
 	market, err := i.Market()
 	if err != nil {

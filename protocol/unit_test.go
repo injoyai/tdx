@@ -190,14 +190,13 @@ func TestDecodeCode(t *testing.T) {
 		{"600000.SH", ExchangeSH, "600000"},
 		{"600000.sh", ExchangeSH, "600000"},   //小写后缀
 		{"399001.SZ", ExchangeSZ, "399001"},   //深成指
-		{"00700.HK", ExchangeHK, "00700"},     //港股
+		{"00700.31", ExchangeHK, "00700"},     //港股
 		{"AAPL.US", ExchangeUS, "AAPL"},       //美股
 		{"IF2609.CFF", ExchangeCFF, "IF2609"}, //期货
 
-		// 港股
-		{"hk00700", ExchangeHK, "00700"},
-		{"00700", ExchangeHK, "00700"}, //裸5位纯数字自动识别为港股
-		{"hk09988", ExchangeHK, "09988"},
+		// 已指定协议编号的港股
+		{"02800.49", ExchangeHKFund, "02800"},
+		{"09988.31", ExchangeHK, "09988"},
 
 		// 美股
 		{"usAAPL", ExchangeUS, "AAPL"},

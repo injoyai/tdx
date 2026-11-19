@@ -34,7 +34,7 @@ func (s Schedule) boundary(now time.Time) (time.Time, error) {
 	return time.Date(now.Year(), now.Month(), now.Day(), clock.Hour(), clock.Minute(), 0, 0, loc).Add(s.Delay), nil
 }
 
-func defaultSchedule(market protocol.Market) (Schedule, error) {
+func defaultSchedule(market protocol.MarketID) (Schedule, error) {
 	info, known := market.Info()
 	if !known {
 		return Schedule{}, fmt.Errorf("pull: 自定义市场 %s 需要显式配置 Schedule", market)
@@ -46,11 +46,11 @@ func defaultSchedule(market protocol.Market) (Schedule, error) {
 }
 
 func (s *Service) schedule(u Unit) (Schedule, error) {
-	if value, ok := s.cfg.Schedules[protocol.Market(u.Name())]; ok {
+	if value, ok := s.cfg.Schedules[protocol.MarketID(u.Name())]; ok {
 		return value, nil
 	}
-	if _, known := protocol.Market(u.Name()).Info(); known {
-		return defaultSchedule(protocol.Market(u.Name()))
+	if _, known := protocol.MarketID(u.Name()).Info(); known {
+		return defaultSchedule(protocol.MarketID(u.Name()))
 	}
 	if unit, ok := u.(interface{ Schedule() Schedule }); ok {
 		return unit.Schedule(), nil
@@ -58,7 +58,7 @@ func (s *Service) schedule(u Unit) (Schedule, error) {
 	return Schedule{}, fmt.Errorf("pull: 自定义市场 %s 需要显式配置 Schedule", u.Name())
 }
 
-func marketUpdateTime(market protocol.Market, now time.Time) (time.Time, error) {
+func marketUpdateTime(market protocol.MarketID, now time.Time) (time.Time, error) {
 	schedule, err := defaultSchedule(market)
 	if err != nil {
 		return time.Time{}, err

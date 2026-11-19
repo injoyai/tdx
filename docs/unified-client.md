@@ -112,7 +112,7 @@ _ = quotes; _ = err
 
 `HSI/HKL/VHSI/CES100/GEM` 裸代码沿用 pull 的港股指数规则；其他有歧义的品种须显式带前缀，裸 `IF2609` 会报错。标准代码须为 6 位数字，扩展主体最多 9 个 ASCII 字节，超长或非法输入在发送前拒绝，避免底层定长字段截断。
 
-`protocol.ParseInstrument` 做离线格式解析并返回 `{Exchange, Code}`。数字港股的离线分类仅供选择行情协议，实际发包由扩展连接根据品种快照确认。`Exchange.String()` 返回证券代码前缀，`Instrument.String()` 返回点分隔代码，例如港股股票 `hk.00700`、香港基金 `hk.02800`、港股指数 `hk.HSI`。按协议市场查询时，股票、基金、指数分别使用 `31`、`49`、`27`。仅传入简称 `hk` 查询市场列表时解析为主板 `31`。
+`protocol.ParseInstrument` 做离线格式解析并返回 `{Exchange, Code}`。数字港股缺少协议编号时返回需要品种快照的错误，并列出候选编号。统一行情连接与 pull 通过 `protocol.ResolveInstrument` 读取品种快照，按唯一匹配确认实际协议市场。已知编号可直接解析 `00823.49`。`Exchange.String()` 返回证券代码前缀，`Instrument.String()` 返回点分隔代码，例如港股股票 `hk.00700`、香港基金 `hk.02800`、港股指数 `hk.HSI`。按协议市场查询时，股票、基金、指数分别使用 `31`、`49`、`27`。仅传入简称 `hk` 查询市场列表时解析为主板 `31`。
 
 统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
@@ -137,9 +137,19 @@ _ = quotes; _ = err
 
 日期为有效 `YYYYMMDD`。K 线单次数量 1..800，实时/历史分笔单次数量分别为 1..1800/1..2000。K 线周期使用既有 `protocol.TypeKline*` 常量；`Day/Day2` 和 `Minute/Minute2` 在业务入口分别视作日线、一分钟别名，实际周期按市场配置映射，记录在返回的 `Category` 中。其他周期沿用协议编号，能否取得数据取决于服务器，不能把成功路由视为每个市场/周期已经通过实盘验证。
 
-标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。沪深北分别使用 `sh`、`sz`、`bj` 市场键。`Instrument.Kind()` 返回品种分类，`Instrument.Info()` 返回该证券的 K 线周期和量价规则。
+标准股票、指数和板块指数统一调用 `GetKline*`，内部自动选择股票/指数解码，不需要另选 `GetIndex*`。沪深北分别使用 `sh`、`sz`、`bj` 市场键。`Instrument.Kind()` 返回品种分类，`Instrument.Rules()` 返回该证券的 K 线周期和量价规则。
 
-`Market.Info()` 返回 `(MarketInfo, bool)`，单地区市场提供供调度使用的 IANA 时区。国际指数覆盖多个地区，`TimeZone` 和 `CloseTime` 为空，拉取任务由调用方配置更新边界。
+`Instrument.Rules()` 明确声明当前 SDK 的行情支持范围。报价、分时、分笔分别读取 `Quote.Supported`、`TimeShare.Supported`、`Trade.Supported`。`Kline(category, mode).Supported` 检查周期和普通／区间查询方式，先将日线和一分钟别名映射为市场的实际协议周期。市场通过 `KlinePeriods` 和 `RangePeriods` 声明可请求的协议周期。区间查询采用一分钟周期。
+
+每类规则的 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明对应统一字段的可用性。标准指数分时和分笔声明成交额，日内 K 线声明价格与成交额；港股指数 K 线声明价格与成交额。字段缺失沿用返回模型的零值或 nil 约定，已知零成交额保留非 nil 的 0。报价返回模型没有成交额字段。`Supported` 表示 SDK 能按已有契约处理该请求，数据覆盖取决于服务器。
+
+查询在相关行情请求发出前校验支持范围。报价批量查询先检查全部证券，历史分笔在查询日线或月线前检查分笔支持范围。字段有可用声明时校验对应换算参数，规则中的倍率用于转换已声明的字段。
+
+
+`MarketID.Info()` 返回 `(MarketInfo, bool)`，其中包含市场简称、名称、协议路由和调度资料。`Exchange.Route()` 获取指定协议市场的存储键、协议类型及代码表来源。单地区市场提供供调度使用的 IANA 时区。国际指数覆盖多个地区，`TimeZone` 和 `CloseTime` 为空，拉取任务由调用方配置更新边界。
+
+内置市场以无状态类型实现 `protocol/market.Market` 的 `Info`、`Resolve`、`Rules` 三个方法，在本文件通过 `registerMarket(hk{})` 注册即可。`Info` 返回路由、裸代码标识和快照参与范围等数据，`Resolve` 和 `Rules` 提供实际行为。通用解析层根据 `Resolve` 返回的快照候选加载数据，复用解析后的协议市场。`Trade.Nature` 声明分笔方向的编码类型。
+
 
 | 市场 | `TimeZone` | `CloseTime` |
 |---|---|---|
@@ -184,8 +194,8 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 
 - 统一价格为 `float64`，使用证券原币种/报价单位；标准 `protocol` 模型的价格与成交额也为浮点元值，整数差值在解码边界换算，扩展浮点价格保留底层精度。没有汇率换算，也不把美元、港币或指数点标为人民币元。
 - 统一结果移除 `VolumeUnit`，`Volume`、`BidVolume`、`AskVolume` 对股票、ETF 使用股或份，可转债使用债券张数，期货使用合约张数。标准股票/ETF K 线、报价、分时和分笔的百股量乘 100。标准指数的日、周、月、季、年线解码量乘 100，与统一报价的换算口径一致；`Standard.Volume` 和 `StandardResponse()` 保留解码量。标准指数日内 K 线的量槽位近似成交额的缩放值，统一 `Volume=0` 表示缺少可用成交量，OHLC 和成交额照常返回。板块指数沿用协议解码量。港股主板及香港基金的日线和分钟线（含区间线）解码量 ×100，周月季年 ×10000。美股日线和分钟线为股，周月季年解码量 ×100。期货解码量为张。港股报价、分时和分笔量为股。
-- 通过 `protocol.Instrument.Info()` 获取对应证券的量价规则。`Day.VolumeScale`、`Minute.VolumeScale` 和 `LongVolumeScale` 分别对应日线、分钟线和周月季年线，`KlineVolumeScale(category)` 按周期选用，`HasKlineVolume(category)` 标记可用的成交数量。`TickVolumeScale` 用于报价（含五档）以及数量槽位确认为成交量的分时和分笔。国内其他未细分品种的默认 ×100 仍待逐接口校准。成交量转换拒绝零/负倍率、负数量和整数溢出。
-- 标准指数的实时和历史分时、分笔使用 `Amount`（`*float64`）返回人民币成交额，公开 `Volume=0`。分时的 `Standard.Number` 每单位为 10,000 元，分笔的 `Standard.Volume` 每单位为 100 元，由 `MinuteAmountScale` 和 `TradeAmountScale` 配置。已知零金额返回零值地址，其他市场的分时和分笔 `Amount` 为 nil。原始结构及原始响应保留报文尺度。
+- 通过 `protocol.Instrument.Rules()` 获取对应证券的量价规则。`Kline(category, mode)` 返回映射后的协议周期、成交量倍率、金额字段及其倍率，普通和区间请求分别使用 `KlinePage` 与 `KlineRange`。`Day.VolumeScale`、`Minute.VolumeScale` 和 `LongVolumeScale` 分别对应日线、分钟线和周月季年线，`KlineVolumeScale(category)` 按周期选用，`HasKlineVolume(category)` 标记可用的成交数量。各自规则的 `VolumeScale` 用于报价（含五档）以及数量槽位确认为成交量的分时和分笔。国内其他未细分品种的默认 ×100 仍待逐接口校准。成交量转换拒绝零/负倍率、负数量和整数溢出。
+- 标准指数的实时和历史分时、分笔使用 `Amount`（`*float64`）返回人民币成交额，公开 `Volume=0`。分时的 `Standard.Number` 每单位为 10,000 元，分笔的 `Standard.Volume` 每单位为 100 元，由 `TimeShare.AmountScale` 和 `Trade.AmountScale` 配置。已知零金额返回零值地址，其他市场的分时和分笔 `Amount` 为 nil。原始结构及原始响应保留报文尺度。
 - 标准可转债的日、周、月、季、年 K 线解码量 ×1000，分钟 K 线、报价、分时和分笔的解码量 ×10，统一返回张数。分钟 K 线价格与成交额直接使用源值，分时价格按其解码值 ÷100，分笔在协议解码时校准为元/张。报价价格继续按代码表精度换算。
 - 港股指数（市场 27）的 K 线返回指数点位，`Volume=0` 表示协议没有提供股数。普通 K 线取 `Extended.Amount`，区间 K 线取 `RangeExtended.Position` 的 float32 金额，统一乘 1,000,000 写入原币种 `Amount`。原始 `Trade` 为粗粒度金额，日线及日内约以千万为单位，周月季年约以十亿为单位。恒指金额对应港股市场成交额。报价、分时与分笔的成交数量接口对该市场返回错误。原始结果保留在 `Standard`、`Extended`、`RangeExtended` 及 `StandardResponse()`。
 - 国际指数 K 线返回指数点位，量为 0、金额为 nil，原始量额槽位保留在 `Extended` 或 `RangeExtended`。报价列表可经 `GetQuoteList` 获取原始字段，单品种报价、分时和分笔的统一数量接口返回错误。

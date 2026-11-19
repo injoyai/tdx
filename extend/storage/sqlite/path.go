@@ -81,7 +81,7 @@ func minuteFile(c model.Code, dir string, year int) string {
 	return filepath.Join(dir, marketPath(c.Market), "min", name, name+"-"+y+".db")
 }
 
-func marketPath(market protocol.Market) string {
+func marketPath(market protocol.MarketID) string {
 	parts := strings.Split(market.String(), "/")
 	for i, part := range parts {
 		parts[i] = fileName(part)

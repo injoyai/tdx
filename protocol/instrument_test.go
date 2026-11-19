@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestParseInstrument(t *testing.T) {
 	for _, tc := range []struct {
@@ -11,15 +15,10 @@ func TestParseInstrument(t *testing.T) {
 		{"sz000001", ExchangeSZ, "000001"}, {" SH.000001 ", ExchangeSH, "000001"},
 		{"000001", ExchangeSZ, "000001"}, {"600000.SH", ExchangeSH, "600000"},
 		{"bj899050", ExchangeBJ, "899050"}, {"899050", ExchangeBJ, "899050"},
-		{"上海600000", ExchangeSH, "600000"}, {"00700", ExchangeHK, "00700"},
-		{"HK.00700", ExchangeHK, "00700"}, {"hk.HSI", ExchangeHI, "HSI"},
-		{"02800", ExchangeHKFund, "02800"}, {"02800.HK", ExchangeHKFund, "02800"},
-		{"HK02849", ExchangeHKFund, "02849"}, {"hk.02850", ExchangeHK, "02850"},
-		{"HK03199", ExchangeHKFund, "03199"}, {"hk03200", ExchangeHK, "03200"},
-		{"hk03499", ExchangeHKFund, "03499"}, {"hk03500", ExchangeHK, "03500"},
-		{"hk09801", ExchangeHKFund, "09801"}, {"hk09850", ExchangeHK, "09850"},
-		{"hk82800", ExchangeHKFund, "82800"}, {"hk83200", ExchangeHK, "83200"},
-		{"hk.02800", ExchangeHKFund, "02800"}, {"香港基金02800", ExchangeHKFund, "02800"},
+		{"上海600000", ExchangeSH, "600000"},
+		{"00700.31", ExchangeHK, "00700"}, {"hk.HSI", ExchangeHI, "HSI"},
+		{"02800.49", ExchangeHKFund, "02800"}, {"香港基金02800", ExchangeHKFund, "02800"},
+		{"02800.香港基金", ExchangeHKFund, "02800"},
 		{"HKCES120", ExchangeHI, "CES120"}, {"HKL", ExchangeHI, "HKL"},
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
 		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
@@ -37,7 +36,7 @@ func TestParseInstrument(t *testing.T) {
 			if err != nil || i.Exchange != tc.ex || i.Code != tc.code {
 				t.Fatalf("ParseInstrument(%q)=%+v, %v", tc.input, i, err)
 			}
-			back, err := ParseInstrument(i.String())
+			back, err := ParseInstrument(i.QueryCode())
 			if err != nil || back != i {
 				t.Fatal("canonical code did not round-trip", back, err)
 			}
@@ -81,7 +80,7 @@ func TestInstrumentBlockMarket(t *testing.T) {
 func TestDomesticInstrumentMarkets(t *testing.T) {
 	for _, tc := range []struct {
 		code   string
-		market Market
+		market MarketID
 		kind   SecurityKind
 	}{
 		{"sh110075", MarketSH, SecurityBond}, {"sz123126", MarketSZ, SecurityBond},
@@ -99,8 +98,9 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 		}
 	}
 	for _, market := range Markets() {
-		info, ok := market.Info()
-		if !ok || info.Day.VolumeScale < 0 || info.Minute.VolumeScale < 0 || info.TickVolumeScale < 0 || info.LongVolumeScale < 0 {
+		ex, _ := market.Exchange()
+		info, ok := (Instrument{Exchange: ex}).Rules()
+		if !ok || info.Day.VolumeScale < 0 || info.Minute.VolumeScale < 0 || info.Quote.VolumeScale < 0 || info.LongVolumeScale < 0 {
 			t.Fatalf("%s has invalid volume scale: %+v", market, info)
 		}
 	}
@@ -108,11 +108,10 @@ func TestDomesticInstrumentMarkets(t *testing.T) {
 
 func TestExtendedTradePriceScale(t *testing.T) {
 	for _, ex := range []Exchange{ExchangeHK, ExchangeHKFund, ExchangeUS, ExchangeCFF, ExchangeCZC, ExchangeDCE, ExchangeSHF, ExchangeGFE, ExchangeHI, ExchangeQHZ} {
-		market, err := (Instrument{Exchange: ex}).Market()
-		if err != nil {
-			t.Fatal(ex, err)
+		info, known := (Instrument{Exchange: ex}).Rules()
+		if !known {
+			t.Fatal(ex)
 		}
-		info, _ := market.Info()
 		got, ok := info.ExtendedTradePrice(23660)
 		if ex == ExchangeHI || ex == ExchangeQHZ {
 			if ok {
@@ -128,5 +127,51 @@ func TestHongKongFundWithKnownExchange(t *testing.T) {
 	i, err := ParseInstrument("00823.49")
 	if err != nil || i.Exchange != ExchangeHKFund || i.String() != "hk.00823" {
 		t.Fatalf("known market 49: %+v, %v", i, err)
+	}
+}
+
+func TestNumericHongKongRequiresSnapshot(t *testing.T) {
+	for _, input := range []string{
+		"00700", "hk00700", "HK.00700", "00700.HK", "hk09988", "02800", "02800.HK", "hk/00823",
+		"HK02849", "hk.02850", "HK03199", "hk03200", "hk03499", "hk03500",
+		"hk09801", "hk09850", "hk82800", "hk83200", "hk.02800",
+	} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := ParseInstrument(input); err == nil || !strings.Contains(err.Error(), "品种快照") {
+				t.Fatalf("ambiguous wire market accepted: %v", err)
+			}
+			if _, _, err := DecodeCode(input); err == nil {
+				t.Fatal("DecodeCode bypassed snapshot routing")
+			}
+			lookup, needed := LookupInstrument(input)
+			if !needed || lookup.Candidates() != "31、49" {
+				t.Fatalf("missing snapshot candidates: %+v", lookup)
+			}
+		})
+	}
+	snapshot := NewInstrumentSnapshot([]ExInstrument{
+		{Market: 31, Code: "02800"}, {Market: 49, Code: "00823"},
+	})
+	for input, want := range map[string]Exchange{"HK.02800": ExchangeHK, "hk.00823": ExchangeHKFund} {
+		calls := 0
+		got, err := ResolveInstrument(input, func(lookup InstrumentLookup) (InstrumentSnapshot, error) {
+			calls++
+			if lookup.Candidates() != "31、49" {
+				t.Fatal(lookup)
+			}
+			return snapshot, nil
+		})
+		if err != nil || got.Exchange != want || calls != 1 {
+			t.Fatalf("%s: %+v, calls=%d, %v", input, got, calls, err)
+		}
+	}
+	sentinel := errors.New("snapshot unavailable")
+	if _, err := ResolveInstrument("hk.00823", func(InstrumentLookup) (InstrumentSnapshot, error) {
+		return InstrumentSnapshot{}, sentinel
+	}); !errors.Is(err, sentinel) {
+		t.Fatalf("snapshot loader error lost: %v", err)
+	}
+	if _, needed := LookupInstrument("00823.49"); needed {
+		t.Fatal("explicit wire market requested a snapshot")
 	}
 }

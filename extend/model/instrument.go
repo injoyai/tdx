@@ -9,7 +9,7 @@ import (
 
 // Code is a security identified by its market and canonical storage code.
 type Code struct {
-	Market protocol.Market
+	Market protocol.MarketID
 	Code   string // standard: sz000001; extended: 00700, AAPL, IF2609
 	Name   string
 }
@@ -21,7 +21,7 @@ func (c Code) Instrument() (protocol.Instrument, error) {
 		return protocol.Instrument{}, fmt.Errorf("未定义的行情市场 %s", c.Market)
 	}
 	body := c.Code
-	info, _ := c.Market.Info()
+	info, _ := ex.Route()
 	if info.Protocol == protocol.ProtocolStandard {
 		body = strings.TrimPrefix(body, ex.String())
 	}

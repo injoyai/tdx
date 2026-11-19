@@ -83,7 +83,7 @@ func TestDirectMetadataDependencies(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 	for _, tc := range []struct {
-		market protocol.Market
+		market protocol.MarketID
 		codes  []string
 	}{
 		{protocol.MarketSZ, []string{"sz000001"}},
@@ -136,7 +136,7 @@ func TestMissingStandardDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, market := range []protocol.Market{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
+	for _, market := range []protocol.MarketID{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
 		u, _ := pull.Get(market.String())
 		if _, err := u.Codes(s); err == nil || !strings.Contains(err.Error(), "ListCodes") {
 			t.Fatalf("missing cache %s: %v", market, err)

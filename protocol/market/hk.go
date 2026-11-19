@@ -1,72 +1,75 @@
 package market
 
-import "strings"
-
-const (
-	MarketHK   Market   = "hk/stock"
-	ExchangeHK Exchange = 31 // 扩展行情
+import (
+	"fmt"
+	"strings"
 )
 
-func init() {
-	def := hkEquityDefinition(ExchangeHK, "hk", "香港交易所", parseHK)
-	def.security = SecurityStock
-	def.parseExplicit = numericHKCode
-	def.lookup = snapshotRule{code: hkNumericCode, exchanges: []Exchange{ExchangeHK, ExchangeHKFund}}
-	registerMarket(MarketHK, def)
+const (
+	MarketHK       ID       = "hk/stock"
+	MarketHKFund   ID       = "hk/fund"
+	MarketHKIndex  ID       = "hk/index"
+	ExchangeHK     Exchange = 31
+	ExchangeHKFund Exchange = 49
+	ExchangeHI     Exchange = 27
+)
+
+type hk struct{}
+
+var _ Market = hk{}
+
+func (hk) Info() MarketInfo {
+	return MarketInfo{
+		Prefix: "hk", Name: "香港交易所", TimeZone: "Asia/Hong_Kong", CloseTime: "16:10",
+		Routes: []RouteInfo{
+			{ID: MarketHK, Exchange: ExchangeHK, Name: "香港交易所", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true},
+			{ID: MarketHKFund, Exchange: ExchangeHKFund, Name: "香港基金", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true},
+			{ID: MarketHKIndex, Exchange: ExchangeHI, Name: "港股指数", Protocol: ProtocolExtended, CodeSource: CodeListExtended, BareSymbols: []string{"HSI", "HKL", "VHSI", "CES100", "GEM"}},
+		},
+	}
 }
 
-func hkEquityDefinition(ex Exchange, prefix, name string, parse func(Instrument) (Instrument, bool)) marketDefinition {
-	def := extendedDefinition(ex, prefix, name, parse)
-	def.info.TimeZone, def.info.CloseTime = "Asia/Hong_Kong", "16:10"
-	def.info.TradePriceDivisor = 1_000
-	def.info.Day.VolumeScale, def.info.Minute.VolumeScale = SharesPerLot, SharesPerLot
-	def.info.LongVolumeScale, def.info.TickVolumeScale = 10_000, 1
-	def.info.extendedKlineAmountScale = 1
-	def.tradeNature = hkTradeNature
-	return def
-}
-
-func parseHK(i Instrument) (Instrument, bool) {
-	if index, ok := upperSymbol(i, ""); ok {
-		index.Exchange = ExchangeHI
-		return index, true
-	}
-	if _, ok := numericHKCode(i); !ok {
-		return i, false
-	}
-	if isHKETFCode(i.Code) {
-		i.Exchange = ExchangeHKFund
-	}
-	return i, true
-}
-
-// isHKETFCode 依据港交所证券代号编配计划匹配五位数字 ETF 代码。
-// https://www.hkex.com.hk/Products/Securities/Stock-Code-Allocation-Plan
-func isHKETFCode(code string) bool {
-	for _, span := range [][2]string{
-		{"02800", "02849"}, {"03000", "03199"}, {"03400", "03499"}, // 港元
-		{"09000", "09199"}, {"09400", "09499"}, {"09800", "09849"}, // 美元
-		{"82800", "82849"}, {"83000", "83199"}, {"83400", "83499"}, // 人民币
-	} {
-		if code >= span[0] && code <= span[1] {
-			return true
+func (hk) Resolve(code Code, snapshot InstrumentSnapshot) (Instrument, error) {
+	switch code.Exchange {
+	case ExchangeHK, ExchangeHKFund:
+		if len(code.Symbol) == 5 && isDigits(code.Symbol) {
+			if !code.explicit {
+				return snapshot.resolve(InstrumentLookup{Code: code.Symbol, Exchanges: []Exchange{ExchangeHK, ExchangeHKFund}, prefix: "hk"})
+			}
+			return Instrument{Exchange: code.Exchange, Code: code.Symbol}, nil
 		}
+		if code.Exchange == ExchangeHKFund || code.explicit {
+			return validateInstrument(code.Exchange, code, false)
+		}
+		code.Exchange = ExchangeHI
+	case ExchangeHI:
+	default:
+		return Instrument{}, fmt.Errorf("行情市场 %d 不属于 hk", code.Exchange)
 	}
-	return false
+	letter, _, valid := symbolParts(code.Symbol, "")
+	code.Symbol = strings.ToUpper(code.Symbol)
+	return validateInstrument(ExchangeHI, code, valid && letter)
 }
 
-func hkNumericCode(input string) (string, bool) {
-	code := strings.TrimSpace(input)
-	if len(code) >= 2 && strings.EqualFold(code[:2], "hk") {
-		code = code[2:]
-		if strings.HasPrefix(code, ".") || strings.HasPrefix(code, "/") {
-			code = code[1:]
+func (hk) Rules(i Instrument) (InstrumentRules, error) {
+	switch i.Exchange {
+	case ExchangeHK, ExchangeHKFund:
+		rules := equityRules(SharesPerLot, 10_000)
+		rules.Security = SecurityStock
+		if i.Exchange == ExchangeHKFund {
+			rules.Security = SecurityFund
 		}
-	} else if body, suffix, ok := strings.Cut(code, "."); ok && strings.EqualFold(suffix, "hk") {
-		code = body
+		rules.Trade.Nature = TradeHK
+		return rules, nil
+	case ExchangeHI:
+		rules := extendedRules(SecurityIndex)
+		rules.extendedKlineAmountScale = 1_000_000
+		rules.DayFields = Fields{Price: true, Amount: true}
+		rules.IntradayFields, rules.LongFields = rules.DayFields, rules.DayFields
+		return rules, nil
+	default:
+		return InstrumentRules{}, fmt.Errorf("行情市场 %d 不属于 hk", i.Exchange)
 	}
-	if len(code) == 5 && isDigits(code) {
-		return code, true
-	}
-	return "", false
 }
+
+func init() { registerMarket(hk{}) }

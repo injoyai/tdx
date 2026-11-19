@@ -3,16 +3,34 @@ package protocol
 import "github.com/injoyai/tdx/v2/protocol/market"
 
 type (
-	Market         = market.Market
-	MarketInfo     = market.MarketInfo
-	MarketProtocol = market.MarketProtocol
-	KlineInfo      = market.KlineInfo
-	Exchange       = market.Exchange
-	Instrument     = market.Instrument
-	SecurityKind   = market.SecurityKind
+	MarketID        = market.ID
+	MarketInfo      = market.MarketInfo
+	InstrumentRules = market.InstrumentRules
+	KlineRule       = market.KlineRule
+	KlineMode       = market.KlineMode
+	TickRule        = market.TickRule
+	TradeNature     = market.TradeNature
+	QuoteRule       = market.QuoteRule
+	Fields          = market.Fields
+	Periods         = market.Periods
+	MarketProtocol  = market.MarketProtocol
+	KlineInfo       = market.KlineInfo
+	Exchange        = market.Exchange
+	Instrument      = market.Instrument
+	SecurityKind    = market.SecurityKind
 )
 
 const (
+	TradeNeutral             = market.TradeNeutral
+	TradeHK                  = market.TradeHK
+	TradeFutures             = market.TradeFutures
+	AllPeriods               = market.AllPeriods
+	KlinePage                = market.KlinePage
+	KlineRange               = market.KlineRange
+	NoKlineAmount            = market.NoKlineAmount
+	AmountInAmount           = market.AmountInAmount
+	AmountInPosition         = market.AmountInPosition
+	CodeListZHBReport        = market.CodeListZHBReport
 	MarketSH                 = market.MarketSH
 	MarketSZ                 = market.MarketSZ
 	MarketBJ                 = market.MarketBJ
@@ -66,7 +84,7 @@ const (
 )
 
 // Markets returns the registered market keys.
-func Markets() []Market { return market.Markets() }
+func Markets() []MarketID { return market.Markets() }
 
 // StandardExchanges returns exchanges supported by the standard protocol.
 func StandardExchanges() []Exchange { return market.StandardExchanges() }
@@ -77,12 +95,11 @@ func ParseExchange(s string) (Exchange, error) { return market.ParseExchange(s) 
 // ParseInstrument parses the exchange and bare code of a security.
 func ParseInstrument(s string) (Instrument, error) { return market.ParseInstrument(s) }
 
-func standardMarketInfo(code string) MarketInfo {
+func standardMarketInfo(code string) InstrumentRules {
 	if i, err := ParseInstrument(code); err == nil {
-		if info, ok := i.Info(); ok && info.Protocol == ProtocolStandard {
+		if info, ok := i.Rules(); ok && info.Protocol == ProtocolStandard {
 			return info
 		}
 	}
-	info, _ := Market("").Info()
-	return info
+	return market.StandardRules()
 }

@@ -16,7 +16,7 @@ func TestMarketPrefixForms(t *testing.T) {
 	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
 	for _, tt := range []struct {
 		inputs []string
-		market protocol.Market
+		market protocol.MarketID
 		code   string
 	}{
 		{[]string{"sh600000", "sh.600000", "SH.600000"}, protocol.MarketSH, "sh600000"},
@@ -111,7 +111,7 @@ func TestHongKongSecurityKeys(t *testing.T) {
 			if roundTrip, err := ParseCodeWithSnapshot(code.Key(), hkTestSnapshot); err != nil || roundTrip != code {
 				t.Fatalf("key changed the security: %+v, %v", roundTrip, err)
 			}
-			i, err := protocol.ParseInstrument(code.Key())
+			i, err := code.Instrument()
 			if err != nil || i.Exchange != tc.exchange || i.Code != code.Code || i.String() != tc.key {
 				t.Fatalf("key changed the wire market or symbol: %+v, %v", i, err)
 			}
@@ -133,7 +133,7 @@ func TestMarketRegistryIsCaseInsensitive(t *testing.T) {
 	}
 	for _, input := range []string{"casemarket.one", "CASEMARKETone"} {
 		got, err := ParseCode(input)
-		if err != nil || got.Market != protocol.Market(name) || got.Code != "one" {
+		if err != nil || got.Market != protocol.MarketID(name) || got.Code != "one" {
 			t.Fatal("自定义市场未保留注册名称", got, err)
 		}
 	}

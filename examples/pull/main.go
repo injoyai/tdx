@@ -56,7 +56,8 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		info, _ := code.Market.Info()
+		ex, _ := code.Market.Exchange()
+		info, _ := ex.Route()
 		if info.Protocol == protocol.ProtocolExtended {
 			needsEx = true
 		} else {

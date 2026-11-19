@@ -28,7 +28,7 @@ func queryStandardCode(r *http.Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if i.Exchange > protocol.ExchangeBJ {
+	if route, ok := i.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return "", fmt.Errorf("市场 %s 不支持此标准专用接口", i.Exchange)
 	}
 	return code, nil
@@ -36,20 +36,26 @@ func queryStandardCode(r *http.Request) (string, error) {
 
 // requestPool 使用查询的交易所选择连接池；标准专用接口仍由各 handler 校验。
 func (s *Server) requestPool(r *http.Request) (*tdx.Pool, error) {
-	ex := protocol.ExchangeSZ
-	var err error
+	kind := protocol.ProtocolStandard
 	if name := r.URL.Query().Get("exchange"); name != "" {
-		ex, err = protocol.ParseExchange(name)
+		ex, err := protocol.ParseExchange(name)
+		if err != nil {
+			return nil, err
+		}
+		route, ok := ex.Route()
+		if !ok {
+			return nil, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
+		}
+		kind = route.Protocol
 	} else if code := r.URL.Query().Get("code"); code != "" {
-		var instrument protocol.Instrument
-		instrument, err = protocol.ParseInstrument(code)
-		ex = instrument.Exchange
-	}
-	if err != nil {
-		return nil, err
+		var err error
+		kind, err = protocol.QuoteProtocol(code)
+		if err != nil {
+			return nil, err
+		}
 	}
 	pool := s.pool
-	if ex > protocol.ExchangeBJ {
+	if kind == protocol.ProtocolExtended {
 		pool = s.exPool
 	}
 	if pool == nil {

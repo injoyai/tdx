@@ -109,7 +109,7 @@ func decodeTrades(bs []byte, count uint16, c TradeCache, historical bool) (*Trad
 		return nil, err
 	}
 	resp.List = make(Trades, 0, count)
-	divisor := standardMarketInfo(c.Code).TradePriceDivisor
+	divisor := standardMarketInfo(c.Code).Trade.PriceDivisor
 	var lastPrice int64
 	for i := uint16(0); i < resp.Count; i++ {
 		if len(bs) < 2 {

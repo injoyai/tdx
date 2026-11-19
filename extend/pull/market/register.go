@@ -8,7 +8,8 @@ import (
 
 func init() {
 	for _, m := range protocol.Markets() {
-		info, _ := m.Info()
+		ex, _ := m.Exchange()
+		info, _ := ex.Route()
 		switch info.Protocol {
 		case protocol.ProtocolStandard:
 			pull.RegisterMarket(&stdUnit{name: m})

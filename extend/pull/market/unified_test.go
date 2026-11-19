@@ -88,7 +88,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 					}
 					t.Fatalf("missing schedule: %v", err)
 				}
-				cfg.Schedules = map[protocol.Market]pull.Schedule{
+				cfg.Schedules = map[protocol.MarketID]pull.Schedule{
 					protocol.MarketInternationalIndex: {TimeZone: "America/New_York", CloseTime: "16:00", Delay: 5 * time.Minute},
 				}
 			}

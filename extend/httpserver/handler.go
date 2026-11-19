@@ -91,13 +91,13 @@ func (s *Server) handleQuote(w http.ResponseWriter, r *http.Request) {
 	var groups [2][]string
 	var positions [2][]int
 	for pos, code := range codes {
-		instrument, err := protocol.ParseInstrument(code)
+		kind, err := protocol.QuoteProtocol(code)
 		if err != nil {
 			respondErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		group := 0
-		if instrument.Exchange > protocol.ExchangeBJ {
+		if kind == protocol.ProtocolExtended {
 			group = 1
 		}
 		groups[group] = append(groups[group], code)

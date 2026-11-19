@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -155,7 +157,7 @@ func TestDomesticDefaultVolume(t *testing.T) {
 		if scale, err := volumeScale(i); err != nil || scale != 100 {
 			t.Fatal(code, scale, err)
 		}
-		if scale, err := klineVolumeScale(i, info.Day.Category, info); err != nil || scale != 100 {
+		if scale, err := klineVolumeScale(i, info.Kline(info.Day.Category, protocol.KlinePage)); err != nil || scale != 100 {
 			t.Fatal(code, scale, err)
 		}
 	}
@@ -257,7 +259,7 @@ func TestIndexKlineVolumeScaleByPeriod(t *testing.T) {
 			if protocol.IsIntraday(category) {
 				want = tc.intraday
 			}
-			if got, err := klineVolumeScale(i, category, info); err != nil || got != want {
+			if got, err := klineVolumeScale(i, info.Kline(category, protocol.KlinePage)); err != nil || got != want {
 				t.Fatalf("%s category %d: scale=%d err=%v, want %d", tc.code, category, got, err, want)
 			}
 		}
@@ -397,5 +399,63 @@ func TestDomesticDefaultKlines(t *testing.T) {
 		if err != nil || minute.Count != 1 || minute.List[0].Volume != tc.minuteVolume || minute.List[0].Standard.Volume != tc.minuteRaw {
 			t.Fatal(code, minute, err)
 		}
+	}
+}
+
+func TestTickSupportAndFieldsAreIndependentOfScales(t *testing.T) {
+	i := protocol.Instrument{Exchange: protocol.ExchangeSH, Code: "000001"}
+	rule := protocol.TickRule{
+		Supported: true, Fields: protocol.Fields{Price: true},
+		PriceDivisor: 1, VolumeScale: 100, AmountScale: 10_000,
+	}
+	if err := checkTickRule(i, "分时", rule); err != nil {
+		t.Fatal(err)
+	}
+	volume, amount, err := tickVolumeAmount(123, rule)
+	if err != nil || volume != 0 || amount != nil {
+		t.Fatalf("undeclared quantity fields leaked: %d %v %v", volume, amount, err)
+	}
+	rule.Fields.Amount = true
+	volume, amount, err = tickVolumeAmount(0, rule)
+	if err != nil || volume != 0 || amount == nil || *amount != 0 {
+		t.Fatalf("known zero amount lost: %d %v %v", volume, amount, err)
+	}
+	rule.Supported = false
+	if err := checkTickRule(i, "分时", rule); err == nil {
+		t.Fatal("positive scales enabled an unsupported query")
+	}
+	rule.Supported, rule.Fields.Amount, rule.Fields.Volume, rule.VolumeScale = true, false, true, 0
+	if err := checkTickRule(i, "分时", rule); err == nil {
+		t.Fatal("declared volume accepted an invalid scale")
+	}
+}
+
+func TestUnsupportedTickQueriesSendNoFrames(t *testing.T) {
+	var requests atomic.Int32
+	serve := func(_, _ []byte) []byte {
+		requests.Add(1)
+		return nil
+	}
+	c := marketTestClient(t, serve, serve)
+	if _, err := c.GetQuote("sz.000001", "hk.HSI"); err == nil {
+		t.Fatal("mixed quote batch accepted an unsupported query")
+	}
+	for _, code := range []string{"hk.HSI", "hk.CES120", "wi.A_IXIC"} {
+		for _, query := range []func() error{
+			func() error { _, err := c.GetQuote(code); return err },
+			func() error { _, err := c.GetMinute(code); return err },
+			func() error { _, err := c.GetHistoryMinute("20261117", code); return err },
+			func() error { _, err := c.GetTrade(code, 0, 1); return err },
+			func() error { _, err := c.GetHistoryTrade("20261117", code, 0, 1); return err },
+			func() error { _, err := c.GetHistoryTradeDay("20261117", code); return err },
+			func() error { _, err := c.GetHistoryTradeBefore(code, completionCalendar{}, time.Now()); return err },
+		} {
+			if err := query(); err == nil {
+				t.Fatalf("unsupported query accepted: %s", code)
+			}
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("unsupported queries sent %d instrument frames", requests.Load())
 	}
 }

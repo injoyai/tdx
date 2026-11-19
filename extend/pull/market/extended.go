@@ -11,7 +11,7 @@ import (
 )
 
 // exUnit pulls markets using the extended quote protocol.
-type exUnit struct{ name protocol.Market }
+type exUnit struct{ name protocol.MarketID }
 
 func (u *exUnit) Name() string { return u.name.String() }
 
@@ -112,10 +112,11 @@ func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
 }
 
 func (u *exUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
-	info, ok := u.name.Info()
-	if !ok {
-		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	i, err := code.Instrument()
+	if err != nil {
+		return pull.FetchResult{Known: true}, err
 	}
+	info, _ := i.Rules()
 	last, err := s.LastDayTime(code)
 	if err != nil {
 		return pull.FetchResult{Known: true}, err
@@ -144,10 +145,11 @@ func (u *exUnit) FetchMinute(s *pull.Service, code model.Code) error {
 }
 
 func (u *exUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
-	info, ok := u.name.Info()
-	if !ok {
-		return pull.FetchResult{Known: true}, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
+	i, err := code.Instrument()
+	if err != nil {
+		return pull.FetchResult{Known: true}, err
 	}
+	info, _ := i.Rules()
 	return pullMinutesResult(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {
 		bars, err := u.bars(s, code, info.Minute.Category, from)
 		if err != nil {

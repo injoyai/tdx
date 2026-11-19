@@ -69,7 +69,7 @@ func (s GbbqSnapshot) Validate() error {
 // WorkdaySnapshot records observed dates in an inclusive source coverage range.
 // It is not a forecast of future exchange holidays.
 type WorkdaySnapshot struct {
-	Market    protocol.Market
+	Market    protocol.MarketID
 	Source    string
 	From      string
 	Through   string

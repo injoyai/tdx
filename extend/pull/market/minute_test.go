@@ -243,7 +243,7 @@ func TestPoolDoesNotInitializeGbbq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	for _, name := range []protocol.Market{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
+	for _, name := range []protocol.MarketID{protocol.MarketSH, protocol.MarketSZ, protocol.MarketBJ} {
 		u := &stdUnit{name: name}
 		if _, err := u.pool(s); err != nil {
 			t.Fatal(err)

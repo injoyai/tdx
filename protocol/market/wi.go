@@ -1,15 +1,34 @@
 package market
 
+import "strings"
+
 const (
-	MarketInternationalIndex Market   = "global/index"
-	ExchangeWI               Exchange = 12 // 扩展行情
+	MarketInternationalIndex ID       = "global/index"
+	ExchangeWI               Exchange = 12
 )
 
-func init() {
-	def := extendedDefinition(ExchangeWI, "wi", "国际指数", func(i Instrument) (Instrument, bool) {
-		return upperSymbol(i, "._")
-	})
-	def.preferBareSymbol, def.security = true, SecurityIndex
-	// 该市场覆盖多个地区，调度由调用方配置。
-	registerMarket(MarketInternationalIndex, def)
+type wi struct{}
+
+var _ Market = wi{}
+
+func (wi) Info() MarketInfo {
+	return MarketInfo{
+		Prefix: "wi", Name: "国际指数", PreferBareSymbol: true,
+		Routes: []RouteInfo{{ID: MarketInternationalIndex, Exchange: ExchangeWI, Name: "国际指数", Protocol: ProtocolExtended, CodeSource: CodeListExtended}},
+	}
 }
+
+func (wi) Resolve(code Code, _ InstrumentSnapshot) (Instrument, error) {
+	letter, _, valid := symbolParts(code.Symbol, "._")
+	code.Symbol = strings.ToUpper(code.Symbol)
+	return validateInstrument(ExchangeWI, code, valid && letter)
+}
+
+func (wi) Rules(i Instrument) (InstrumentRules, error) {
+	if err := checkExchange(i.Exchange, ExchangeWI); err != nil {
+		return InstrumentRules{}, err
+	}
+	return extendedRules(SecurityIndex), nil
+}
+
+func init() { registerMarket(wi{}) }

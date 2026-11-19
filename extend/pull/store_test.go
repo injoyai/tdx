@@ -51,7 +51,7 @@ func (*mockUnit) FetchMinute(s *Service, code model.Code) error {
 func TestParseCode(t *testing.T) {
 	cases := []struct {
 		in     string
-		market protocol.Market
+		market protocol.MarketID
 		code   string
 	}{
 		// 沪深：带前缀

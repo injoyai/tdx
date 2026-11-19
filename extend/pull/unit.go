@@ -14,7 +14,7 @@ import (
 // 内置市场由 market 包按协议定义注册。自定义市场需实现并 Register，且须通过 Config.Schedules
 // 或可选的 Schedule() Schedule 方法声明更新边界。
 type Unit interface {
-	// Name 唯一标识（protocol.Market 枚举值，如 protocol.MarketSH、protocol.MarketHK、protocol.MarketCFF），用于日志/进度条/去重。
+	// Name 唯一标识（protocol.MarketID 枚举值，如 protocol.MarketSH、protocol.MarketHK、protocol.MarketCFF），用于日志/进度条/去重。
 	Name() string
 
 	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。
@@ -53,7 +53,7 @@ func register(u Unit, builtin bool) {
 		panic("pull: 注册的市场 Unit 缺少 Name")
 	}
 	if builtin {
-		if _, ok := protocol.Market(name).Exchange(); !ok {
+		if _, ok := protocol.MarketID(name).Exchange(); !ok {
 			panic(fmt.Sprintf("pull: 未定义的内置市场 %q", name))
 		}
 	} else {

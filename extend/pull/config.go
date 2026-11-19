@@ -35,7 +35,7 @@ type Config struct {
 	// Schedules overrides update boundaries. Custom markets must provide an entry
 	// here or implement Schedule() Schedule on their Unit.
 	// International indices require a schedule entry because they span multiple time zones.
-	Schedules  map[protocol.Market]Schedule
+	Schedules  map[protocol.MarketID]Schedule
 	RetryDelay time.Duration // initial retry backoff; zero defaults to five seconds
 	// OnProgress receives serialized per-code completion events. Nil means no terminal output.
 	// The callback must return promptly and must not synchronously reenter Service.Update.

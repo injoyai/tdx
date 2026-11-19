@@ -12,7 +12,7 @@ import (
 func TestMarketInfoRouting(t *testing.T) {
 	for _, tc := range []struct {
 		code               string
-		market             protocol.Market
+		market             protocol.MarketID
 		protocol           protocol.MarketProtocol
 		kind               string
 		day, min           uint8
@@ -39,23 +39,17 @@ func TestMarketInfoRouting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			info, ok := i.Info()
+			info, ok := i.Rules()
 			if !ok || info.Protocol != tc.protocol || info.Kind != tc.kind ||
 				info.Day != (protocol.KlineInfo{Category: tc.day, VolumeScale: tc.dayScale}) || info.Minute != (protocol.KlineInfo{Category: tc.min, VolumeScale: tc.minScale}) {
 				t.Fatal("unexpected market configuration", info, ok)
 			}
 		})
 	}
-	for _, market := range []protocol.Market{"", "custom"} {
-		info, ok := market.Info()
-		if ok || info.TickVolumeScale != 100 {
-			t.Fatal("custom market must receive the default tick scale without being marked as built-in", market, info, ok)
-		}
-	}
 	info, _ := protocol.MarketHK.Info()
-	info.Day.Category = 9
+	info.Routes[0].Name = "changed"
 	unchanged, _ := protocol.MarketHK.Info()
-	if unchanged.Day.Category != 4 {
+	if unchanged.Routes[0].Name == "changed" {
 		t.Fatal("editing a copy changed the built-in configuration")
 	}
 	for _, scale := range []int64{100} {
@@ -63,8 +57,9 @@ func TestMarketInfoRouting(t *testing.T) {
 			t.Fatal("default conversion", scale, got)
 		}
 	}
-	for _, market := range []protocol.Market{protocol.MarketCFF, protocol.MarketUS} {
-		info, _ := market.Info()
+	for _, market := range []protocol.MarketID{protocol.MarketCFF, protocol.MarketUS} {
+		ex, _ := market.Exchange()
+		info, _ := (protocol.Instrument{Exchange: ex}).Rules()
 		for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 			if got, err := spec.ToStorageVolume(123); err != nil || got != 123 {
 				t.Fatal("minimum units multiplied twice", market, got)
@@ -78,7 +73,7 @@ func TestStandardIndexDayAndMinuteVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, _ := i.Info()
+	info, _ := i.Rules()
 	for _, spec := range []protocol.KlineInfo{info.Day, info.Minute} {
 		// 一条指数记录：价格差值为零，原始量 123400，额和涨跌家数为零。
 		data := make([]byte, 22)
@@ -113,7 +108,7 @@ func TestHKDailyCapturedVolume(t *testing.T) {
 	// 腾讯独立源的不复权日线（2026-10-05 至 10-09），来自：
 	// https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00700,day,2026-10-05,2026-10-09,5,
 	shares := []int64{8709438, 10030081, 12436640, 30202875, 20422500}
-	info, _ := protocol.MarketHK.Info()
+	info, _ := (protocol.Instrument{Exchange: protocol.ExchangeHK, Code: "00700"}).Rules()
 	var latest protocol.ExKline
 	for _, raw := range []string{five, single} {
 		data, err := hex.DecodeString(raw)

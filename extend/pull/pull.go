@@ -36,7 +36,7 @@ type Service struct {
 	freezeUniverse bool
 
 	// Config.Codes 解析结果：市场 → 代码列表（一次性解析，Update 时按市场取用）
-	overrides map[protocol.Market][]model.Code
+	overrides map[protocol.MarketID][]model.Code
 
 	updateGate  chan struct{}
 	discoveryMu sync.Mutex
@@ -74,7 +74,7 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 	// 固定配置快照；连接源等依赖仍由调用方持有，不复制其内部状态。
 	snapshot := *cfg
 	snapshot.Codes = append([]string(nil), cfg.Codes...)
-	snapshot.Schedules = make(map[protocol.Market]Schedule, len(cfg.Schedules))
+	snapshot.Schedules = make(map[protocol.MarketID]Schedule, len(cfg.Schedules))
 	for market, schedule := range cfg.Schedules {
 		if _, builtin := market.Exchange(); !builtin {
 			if u, ok := Get(market.String()); !ok || u.Name() != market.String() {
@@ -116,17 +116,17 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 	// 代码列表：一次性解析并按市场分组。
 	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
 	// Codes 为空时，有默认调度或已经配置调度的内置市场自动发现代码。
-	overrides := map[protocol.Market][]model.Code{}
+	overrides := map[protocol.MarketID][]model.Code{}
 	if len(cfg.Codes) > 0 {
-		resolve := func(lookup protocol.InstrumentLookup) (protocol.Instrument, error) {
+		resolve := func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error) {
 			if !cfg.InstrumentSnapshot.Loaded() && !isNil(cfg.ExPool) {
 				items, err := fetchInstruments(ctx, cfg.ExPool)
 				if err != nil {
-					return protocol.Instrument{}, fmt.Errorf("%s 无法读取通达信品种快照（候选市场 %s）: %w", lookup, lookup.Candidates(), err)
+					return protocol.InstrumentSnapshot{}, err
 				}
 				cfg.InstrumentSnapshot = protocol.NewInstrumentSnapshot(items)
 			}
-			return cfg.InstrumentSnapshot.Resolve(lookup)
+			return cfg.InstrumentSnapshot, nil
 		}
 		for _, s := range cfg.Codes {
 			c, err := parseCode(s, resolve)
@@ -152,7 +152,7 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 		}
 	} else {
 		for _, u := range Units() {
-			market := protocol.Market(u.Name())
+			market := protocol.MarketID(u.Name())
 			info, known := market.Info()
 			if _, explicit := cfg.Schedules[market]; !explicit && known && info.TimeZone == "" {
 				continue
@@ -210,7 +210,7 @@ func (s *Service) Close() error { s.closed.Store(true); return nil }
 // Config 返回配置副本（只读；Codes 切片拷贝，避免与 Service 共享底层）。
 func (s *Service) Config() Config {
 	c := *s.cfg
-	c.Schedules = make(map[protocol.Market]Schedule, len(s.cfg.Schedules))
+	c.Schedules = make(map[protocol.MarketID]Schedule, len(s.cfg.Schedules))
 	for market, schedule := range s.cfg.Schedules {
 		c.Schedules[market] = schedule
 	}
@@ -416,14 +416,14 @@ func (s *Service) updateKey(prefix string) string {
 	}
 	sort.Strings(codes)
 	sort.Strings(units)
-	schedules := make(map[protocol.Market]Schedule, len(s.cfg.Schedules))
+	schedules := make(map[protocol.MarketID]Schedule, len(s.cfg.Schedules))
 	for market, schedule := range s.cfg.Schedules {
 		schedules[market] = schedule
 	}
 	for _, u := range s.units {
-		if _, known := protocol.Market(u.Name()).Info(); !known {
+		if _, known := protocol.MarketID(u.Name()).Info(); !known {
 			if schedule, err := s.schedule(u); err == nil {
-				schedules[protocol.Market(u.Name())] = schedule
+				schedules[protocol.MarketID(u.Name())] = schedule
 			}
 		}
 	}
@@ -432,8 +432,8 @@ func (s *Service) updateKey(prefix string) string {
 		Dir, StartAt               string
 		Day, Minute, TradeFallback bool
 		Codes, Units               []string
-		UniverseVersion            string                       `json:",omitempty"`
-		Schedules                  map[protocol.Market]Schedule `json:",omitempty"`
+		UniverseVersion            string                         `json:",omitempty"`
+		Schedules                  map[protocol.MarketID]Schedule `json:",omitempty"`
 	}{s.store.Identity(), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units, s.cfg.UniverseVersion, schedules})
 	return fmt.Sprintf("%s:%x", prefix, sha256.Sum256(data))
 }
@@ -550,7 +550,7 @@ func (s *Service) updateUnit(u Unit) error {
 // codes 获取市场代码列表；Config.Codes 指定时优先使用（已按市场分组）。
 // 注意：overrides 只包含用户显式列出的市场；其他市场仍走自动发现。
 func (s *Service) codes(u Unit) ([]model.Code, error) {
-	if override, ok := s.overrides[protocol.Market(u.Name())]; ok {
+	if override, ok := s.overrides[protocol.MarketID(u.Name())]; ok {
 		return override, nil
 	}
 	codes, err := u.Codes(s)

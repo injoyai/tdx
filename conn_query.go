@@ -13,6 +13,7 @@ import (
 // querySource 提供分页与历史查询依赖的基本操作。
 type querySource interface {
 	KlineReader
+	instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error)
 	minutePage(date, code string) (*MinuteResp, error)
 	tradePage(date, code string, start, count uint16) (*TradeResp, error)
 }
@@ -28,49 +29,37 @@ type protocolClient interface {
 // queries 共享业务分页和日期检查，不持有网络连接。
 type queries struct{ source querySource }
 
-func protocolInstrument(code string, extended bool) (protocol.Instrument, protocol.MarketInfo, error) {
+func protocolInstrument(code string, extended bool) (protocol.Instrument, protocol.InstrumentRules, error) {
 	i, info, err := instrumentInfo(code)
 	if err != nil {
 		return i, info, err
 	}
 	if (info.Protocol == protocol.ProtocolExtended) != extended {
-		return i, info, errors.New("证券与当前连接协议不匹配；跨市场查询请使用 NewClient")
+		return i, info, protocolMismatch()
 	}
 	return i, info, nil
 }
 
+func protocolMismatch() error {
+	return errors.New("证券与当前连接协议不匹配；跨市场查询请使用 NewClient")
+}
+
 func protocolExchange(ex protocol.Exchange, extended bool) error {
-	m, err := (protocol.Instrument{Exchange: ex}).Market()
-	if err != nil {
-		return err
+	info, ok := ex.Route()
+	if !ok {
+		return fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
 	}
-	info, _ := m.Info()
 	if (info.Protocol == protocol.ProtocolExtended) != extended {
-		return errors.New("证券与当前连接协议不匹配；跨市场查询请使用 NewClient")
+		return protocolMismatch()
 	}
 	return nil
 }
 
-func klineRequest(code string, category uint8, count uint16) (*KlineResp, protocol.MarketInfo, error) {
-	i, info, err := instrumentInfo(code)
-	if err != nil {
-		return nil, info, err
-	}
+func klineBounds(category uint8, count uint16) error {
 	if category > protocol.TypeKlineYear || count == 0 || count > 800 {
-		return nil, info, errors.New("K线周期必须为0..11，单次数量必须为1..800")
+		return errors.New("K线周期必须为0..11，单次数量必须为1..800")
 	}
-	return &KlineResp{Instrument: i, Category: klineCategory(info, category)}, info, nil
-}
-
-func klineCategory(info protocol.MarketInfo, category uint8) uint8 {
-	switch category {
-	case protocol.TypeKlineDay, protocol.TypeKlineDay2:
-		return info.Day.Category
-	case protocol.TypeKlineMinute, protocol.TypeKlineMinute2:
-		return info.Minute.Category
-	default:
-		return category
-	}
+	return nil
 }
 
 func codePage(out *CodeResp, start uint32, count uint16) *CodeResp {
@@ -127,7 +116,7 @@ func codePageBounds(ex protocol.Exchange, start uint32, count uint16) error {
 	if count == 0 || count > 1000 {
 		return errors.New("代码分页 count 必须在 1 到 1000 之间")
 	}
-	if (ex == protocol.ExchangeSZ || ex == protocol.ExchangeSH) && start > 65535 {
+	if route, ok := ex.Route(); ok && route.Protocol == protocol.ProtocolStandard && route.CodeSource != protocol.CodeListZHBReport && start > 65535 {
 		return errors.New("分页偏移超过协议 uint16 上限")
 	}
 	return nil
@@ -154,7 +143,7 @@ func standardInstrument(code string) (protocol.Instrument, error) {
 	if err != nil {
 		return i, err
 	}
-	if i.Exchange > protocol.ExchangeBJ {
+	if route, ok := i.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return i, fmt.Errorf("市场 %s 不支持此标准专用接口", i.Exchange)
 	}
 	return i, nil

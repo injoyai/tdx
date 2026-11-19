@@ -278,7 +278,7 @@ func (s *Metadata) ReplaceGbbq(ctx context.Context, snapshot model.GbbqSnapshot)
 	})
 }
 
-func (s *Metadata) LoadWorkdays(ctx context.Context, market protocol.Market) (model.WorkdaySnapshot, error) {
+func (s *Metadata) LoadWorkdays(ctx context.Context, market protocol.MarketID) (model.WorkdaySnapshot, error) {
 	out := model.WorkdaySnapshot{Market: market}
 	err := transactionContext(ctx, s.db, func(tx *xorm.Session) error {
 		var state metadataState

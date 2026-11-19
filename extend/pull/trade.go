@@ -71,7 +71,7 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 	if err != nil {
 		return err
 	}
-	info, _ := instrument.Info()
+	info, _ := instrument.Rules()
 
 	tss := []tdx.Trade{}
 	kss1 := protocol.Klines(nil)
@@ -146,11 +146,11 @@ func (p *Trade) PullYear(ctx context.Context, year int, code string) (err error)
 		rows := make([]tdx.Kline, 0, len(ks))
 		for _, k := range ks {
 			// Trades.Klines 按股票的每手百股计算金额，转债按每手张数调整。
-			amount := k.Amount * (float64(info.TickVolumeScale) / protocol.SharesPerLot)
-			volume := k.Volume * info.TickVolumeScale
-			if info.TradeAmountScale > 0 {
+			amount := k.Amount * (float64(info.Trade.VolumeScale) / protocol.SharesPerLot)
+			volume := k.Volume * info.Trade.VolumeScale
+			if info.Trade.Fields.Amount {
 				// 标准合成器保留在 Volume 中的是原始分笔数量槽位的合计。
-				amount = float64(k.Volume) * float64(info.TradeAmountScale)
+				amount = float64(k.Volume) * float64(info.Trade.AmountScale)
 				volume = 0
 			}
 			rows = append(rows, tdx.Kline{Time: k.Time.Format(protocol.TimeLayout), Open: k.Open, High: k.High,

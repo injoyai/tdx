@@ -1,8 +1,31 @@
 package market
 
 const (
-	MarketDCE   Market   = "dce"
-	ExchangeDCE Exchange = 29 // 扩展行情
+	MarketDCE   ID       = "dce"
+	ExchangeDCE Exchange = 29
 )
 
-func init() { registerMarket(MarketDCE, futuresDefinition(ExchangeDCE, "dce", "大连期货")) }
+type dce struct{}
+
+var _ Market = dce{}
+
+func (dce) Info() MarketInfo {
+	return MarketInfo{
+		Prefix: "dce", Name: "大连期货", TimeZone: "Asia/Shanghai", CloseTime: "15:30",
+		Routes: []RouteInfo{{ID: MarketDCE, Exchange: ExchangeDCE, Name: "大连期货", Protocol: ProtocolExtended, CodeSource: CodeListExtended}},
+	}
+}
+
+func (dce) Resolve(code Code, _ InstrumentSnapshot) (Instrument, error) {
+	letter, digit, valid := symbolParts(code.Symbol, "")
+	return validateInstrument(ExchangeDCE, code, valid && letter && digit)
+}
+
+func (dce) Rules(i Instrument) (InstrumentRules, error) {
+	if err := checkExchange(i.Exchange, ExchangeDCE); err != nil {
+		return InstrumentRules{}, err
+	}
+	return futuresRules(), nil
+}
+
+func init() { registerMarket(dce{}) }

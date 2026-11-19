@@ -227,7 +227,8 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 	}
 	// Request views share one lazy snapshot even when the connection is cold.
 	var workers sync.WaitGroup
-	for n, input := range []string{"hk.00823", "HK00823", "00823.Hk", "00823", "hk/00823"} {
+	inputs := []string{"hk.00823", "HK00823", "00823.Hk", "00823", "hk/00823", "香港交易所00823", "00823.香港交易所"}
+	for n, input := range inputs {
 		workers.Go(func() {
 			var client Client = native.protocolClient
 			if n%2 == 0 {
@@ -242,7 +243,7 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 		})
 	}
 	workers.Wait()
-	if scans.Load() != 1 || quotes.Load() != 5 {
+	if scans.Load() != 1 || quotes.Load() != int32(len(inputs)) {
 		t.Fatalf("snapshot scans=%d quotes=%d", scans.Load(), quotes.Load())
 	}
 	bars, err := native.GetKlineDay("hk.00823", 0, 1)
@@ -266,7 +267,7 @@ func TestHongKongSnapshotRouting(t *testing.T) {
 			t.Fatalf("%s: %+v %v", tc.input, got, err)
 		}
 	}
-	if scans.Load() != 1 || quotes.Load() != 7 {
+	if scans.Load() != 1 || quotes.Load() != int32(len(inputs)+2) {
 		t.Fatalf("ambiguous or unknown code sent a request: scans=%d quotes=%d", scans.Load(), quotes.Load())
 	}
 }

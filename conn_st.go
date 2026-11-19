@@ -32,20 +32,26 @@ type quoteState struct {
 	quoteDecimals map[string]int8
 }
 
+func (c *StConn) instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
+	return protocolInstrument(code, false)
+}
+
 // GetKline 请求标准 K 线，价格转换为浮点元值，并保留指数特有字段。
 func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
-	out, info, err := klineRequest(code, category, count)
+	if err := klineBounds(category, count); err != nil {
+		return nil, err
+	}
+	i, info, err := protocolInstrument(code, false)
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := protocolInstrument(code, false); err != nil {
-		return nil, err
-	}
-	scale, err := klineVolumeScale(out.Instrument, out.Category, info)
+	rule := info.Kline(category, protocol.KlinePage)
+	out := &KlineResp{Instrument: i, Category: rule.Category}
+	scale, err := klineVolumeScale(i, rule)
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.getStandardKline(out.Category, standardCode(out.Instrument), start, count, info.Kind)
+	r, err := c.getStandardKline(out.Category, standardCode(out.Instrument), start, count, rule.Kind)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +65,7 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 		} else {
 			v.Volume = 0
 		}
+		v.applyFields(rule.Fields)
 		v.Time = protocol.KlineTime(k.Time, out.Category)
 		out.List = append(out.List, v)
 	}
@@ -72,11 +79,14 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 // GetQuote 获取标准五档报价，保持输入顺序及重复代码。
 func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 	instruments := make([]protocol.Instrument, len(codes))
-	infos := make([]protocol.MarketInfo, len(codes))
+	infos := make([]protocol.InstrumentRules, len(codes))
 	standard := make([]string, len(codes))
 	for j, code := range codes {
 		i, info, err := protocolInstrument(code, false)
 		if err != nil {
+			return nil, err
+		}
+		if _, err := volumeScale(i); err != nil {
 			return nil, err
 		}
 		instruments[j], standard[j], infos[j] = i, standardCode(i), info
@@ -103,11 +113,7 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 			u.Bid[n], u.BidVolume[n] = q.BuyLevel[n].Price, int64(q.BuyLevel[n].Number)
 			u.Ask[n], u.AskVolume[n] = q.SellLevel[n].Price, int64(q.SellLevel[n].Number)
 		}
-		scale, err := volumeScale(i)
-		if err != nil {
-			return nil, err
-		}
-		if err := u.scaleVolume(scale); err != nil {
+		if err := u.applyRule(infos[j].Quote); err != nil {
 			return nil, err
 		}
 		out[j] = u
@@ -116,7 +122,7 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 }
 
 // standardQuotes 在需要价格精度校准时取元数据，避免额外数据库/连接。
-func (c *StConn) standardQuotes(codes []string, infos []protocol.MarketInfo) (protocol.QuotesResp, error) {
+func (c *StConn) standardQuotes(codes []string, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
 	ctx := c.requestContext()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -133,7 +139,7 @@ func (c *StConn) standardQuotes(codes []string, infos []protocol.MarketInfo) (pr
 	loaded := map[protocol.Exchange]bool{}
 	for j, code := range codes {
 		_, cached := c.quoteDecimals[code]
-		if !infos[j].QuoteUsesCodeDecimals || cached {
+		if !infos[j].Quote.UseCodeDecimals || cached {
 			continue
 		}
 		ex, _, err := protocol.DecodeCode(code)
@@ -168,7 +174,7 @@ func (c *StConn) GetCode(ex protocol.Exchange, start uint32, count uint16) (*Cod
 	if err := protocolExchange(ex, false); err != nil {
 		return nil, err
 	}
-	if ex == protocol.ExchangeBJ {
+	if route, _ := ex.Route(); route.CodeSource == protocol.CodeListZHBReport {
 		out, err := c.GetCodeAll(ex)
 		if err != nil {
 			return nil, err
@@ -199,7 +205,7 @@ func (c *StConn) GetCount(ex protocol.Exchange) (int, error) {
 	if err := protocolExchange(ex, false); err != nil {
 		return 0, err
 	}
-	if ex == protocol.ExchangeBJ {
+	if route, _ := ex.Route(); route.CodeSource == protocol.CodeListZHBReport {
 		r, err := c.GetCodeAll(ex)
 		if err != nil {
 			return 0, err
@@ -218,8 +224,8 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	scale, err := volumeScale(i)
-	if err != nil {
+	rule := info.TimeShare
+	if err := checkTickRule(i, "分时", rule); err != nil {
 		return nil, err
 	}
 	code = standardCode(i)
@@ -235,11 +241,15 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	}
 	for j := range r.List {
 		k := &r.List[j]
-		volume, amount, err := tickVolumeAmount(int64(k.Number), scale, info.MinuteAmountScale)
+		volume, amount, err := tickVolumeAmount(int64(k.Number), rule)
 		if err != nil {
 			return nil, err
 		}
-		out.List = append(out.List, Minute{Time: k.Time, Price: k.Price / info.MinutePriceDivisor, Volume: volume, Amount: amount, Standard: k})
+		var price float64
+		if rule.Fields.Price {
+			price = k.Price / rule.PriceDivisor
+		}
+		out.List = append(out.List, Minute{Time: k.Time, Price: price, Volume: volume, Amount: amount, Standard: k})
 	}
 
 	out.Count = len(out.List)
@@ -251,8 +261,8 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	if err != nil {
 		return nil, err
 	}
-	scale, err := volumeScale(i)
-	if err != nil {
+	rule := info.Trade
+	if err := checkTickRule(i, "分笔", rule); err != nil {
 		return nil, err
 	}
 	out := &TradeResp{Instrument: i, Date: date}
@@ -266,18 +276,22 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 		return nil, err
 	}
 	for _, k := range r.List {
-		volume, amount, err := tickVolumeAmount(int64(k.Volume), scale, info.TradeAmountScale)
+		volume, amount, err := tickVolumeAmount(int64(k.Volume), rule)
 		if err != nil {
 			return nil, err
 		}
-		price := k.Price
+		var price *float64
+		if rule.Fields.Price {
+			value := k.Price
+			price = &value
+		}
 		direction := 0
 		if k.IsBuy() {
 			direction = 1
 		} else if k.IsSell() {
 			direction = -1
 		}
-		out.List = append(out.List, Trade{Date: date, Time: k.Time.Format("15:04:05"), Price: &price, Volume: volume, Amount: amount, Direction: direction, Standard: k})
+		out.List = append(out.List, Trade{Date: date, Time: k.Time.Format("15:04:05"), Price: price, Volume: volume, Amount: amount, Direction: direction, Standard: k})
 	}
 
 	out.Count = len(out.List)
@@ -290,7 +304,11 @@ func (c *StConn) GetKlineRange(code, startDate, endDate string) (*KlineResp, err
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := protocolInstrument(code, false); err != nil {
+	i, info, err := c.instrument(code)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := klineVolumeScale(i, info.Kline(protocol.TypeKlineMinute, protocol.KlineRange)); err != nil {
 		return nil, err
 	}
 	out, err := c.GetKlineUntil(protocol.TypeKlineMinute, code, func(k Kline) bool { return strings.SplitN(k.Time, " ", 2)[0] < fromDay })
@@ -340,7 +358,7 @@ func (c *StConn) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeR
 
 	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
 	//通过 zhb.zip 中的 tdxbjmore.cfg 获取北交所代码和名称。
-	if exchange == protocol.ExchangeBJ {
+	if route, _ := exchange.Route(); route.CodeSource == protocol.CodeListZHBReport {
 		files, err := c.GetZHBFiles()
 		if err != nil {
 			return nil, err
@@ -406,7 +424,7 @@ func (c *StConn) codeList(ls []string, match func(string) bool, exchanges ...pro
 }
 
 // getStandardQuotes 按代码元数据校准标准行情价格。
-func (c *StConn) getStandardQuotes(codes []string, infos []protocol.MarketInfo) (protocol.QuotesResp, error) {
+func (c *StConn) getStandardQuotes(codes []string, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
 	f, err := protocol.MQuote.Frame(codes...)
 	if err != nil {
 		return nil, err
@@ -421,7 +439,7 @@ func (c *StConn) getStandardQuotes(codes []string, infos []protocol.MarketInfo) 
 		return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
 	}
 	for j, code := range codes {
-		if !infos[j].QuoteUsesCodeDecimals {
+		if !infos[j].Quote.UseCodeDecimals {
 			continue
 		}
 		decimal, ok := c.quoteDecimals[code]
@@ -429,7 +447,7 @@ func (c *StConn) getStandardQuotes(codes []string, infos []protocol.MarketInfo) 
 			return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
 		}
 		q := quotes[j]
-		scale := infos[j].QuotePriceScale(decimal)
+		scale := infos[j].Quote.PriceScale(decimal)
 		for n := range q.SellLevel {
 			q.SellLevel[n].Price *= scale
 		}

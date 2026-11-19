@@ -209,8 +209,16 @@ func (q *queries) GetHistoryTrade(date, code string, start, count uint16) (*Trad
 	return q.getTrade(date, code, start, count, true)
 }
 
+func (q *queries) tradeInstrument(code string) (protocol.Instrument, error) {
+	i, rules, err := q.source.instrument(code)
+	if err != nil {
+		return i, err
+	}
+	return i, checkTickRule(i, "分笔", rules.Trade)
+}
+
 func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool) (*TradeResp, error) {
-	if _, _, err := instrumentInfo(code); err != nil {
+	if _, err := protocol.QuoteProtocol(code); err != nil {
 		return nil, err
 	}
 	limit := uint16(1800)
@@ -220,6 +228,11 @@ func (q *queries) getTrade(date, code string, start, count uint16, checkDay bool
 	if count == 0 || count > limit {
 		return nil, fmt.Errorf("分笔单次数量必须为1..%d", limit)
 	}
+	i, err := q.tradeInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	code = pinInstrumentCode(code, i)
 	if date != "" && checkDay {
 		day, _ := time.Parse("20060102", date)
 		target := day.Format(time.DateOnly)
@@ -304,6 +317,11 @@ func (q *queries) GetHistoryTradeBefore(code string, calendar TradingCalendar, b
 	if before.IsZero() {
 		return nil, errors.New("结束时间不能为空")
 	}
+	i, err := q.tradeInstrument(code)
+	if err != nil {
+		return nil, err
+	}
+	code = pinInstrumentCode(code, i)
 	r, err := q.GetKlineMonthAll(code)
 	if err != nil {
 		return nil, err
@@ -369,11 +387,12 @@ func pinInstrumentCode(code string, i protocol.Instrument) string {
 }
 
 func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*KlineResp, error) {
-	i, info, err := instrumentInfo(code)
+	_, info, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
-	if info.Protocol != protocol.ProtocolStandard || (!protocol.IsStock(standardCode(i)) && !protocol.IsETF(standardCode(i))) {
+	rule := info.Kline(protocol.TypeKlineMinute, protocol.KlinePage)
+	if info.Protocol != protocol.ProtocolStandard || !rule.Supported || !rule.SplitAuction {
 		return nil, fmt.Errorf("241分钟线仅适用于标准股票/ETF；其他品种使用 GetKlineMinuteUntil")
 	}
 	resp, err := q.GetKlineMinuteUntil(code, stop)

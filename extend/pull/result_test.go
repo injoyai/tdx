@@ -146,7 +146,7 @@ func TestMarketEvents(t *testing.T) {
 func TestEventsAndProgressAreSerializedTogether(t *testing.T) {
 	s := testService(t)
 	s.goro = 4
-	s.overrides = map[protocol.Market][]model.Code{"test": {{Code: "one"}, {Code: "two"}, {Code: "three"}}}
+	s.overrides = map[protocol.MarketID][]model.Code{"test": {{Code: "one"}, {Code: "two"}, {Code: "three"}}}
 	var active atomic.Int32
 	enter := func() {
 		if active.Add(1) != 1 {

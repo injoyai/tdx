@@ -165,14 +165,16 @@ func newMarketClient(options ...client.Option) *MarketClient {
 }
 
 func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) {
-	i := protocol.Instrument{Exchange: ex}
-	m, err := i.Market()
-	if err != nil {
-		return nil, err
+	info, ok := ex.Route()
+	if !ok {
+		return nil, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
 	}
-	info, _ := m.Info()
+	return c.connectionForProtocol(info.Protocol)
+}
+
+func (c *MarketClient) connectionForProtocol(kind protocol.MarketProtocol) (protocolClient, error) {
 	index := 0
-	if info.Protocol == protocol.ProtocolExtended {
+	if kind == protocol.ProtocolExtended {
 		index = 1
 	}
 	ctx := c.requestContext()
@@ -214,13 +216,13 @@ func (c *MarketClient) connection(ex protocol.Exchange) (protocolClient, error) 
 	}
 	defer c.mu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("%s 行情连接: %w", info.Protocol, err)
+		return nil, fmt.Errorf("%s 行情连接: %w", kind, err)
 	}
 	if clientOrNil(link) == nil || (link.protocol() == protocol.ProtocolExtended) != (index == 1) {
 		if clientOrNil(link) != nil {
 			_ = link.Close()
 		}
-		return nil, fmt.Errorf("%s 行情连接协议不匹配或为空", info.Protocol)
+		return nil, fmt.Errorf("%s 行情连接协议不匹配或为空", kind)
 	}
 	if c.timeoutSet {
 		link.SetTimeout(c.timeout)
@@ -269,27 +271,42 @@ func (c *MarketClient) Close() error {
 	return c.closeErr
 }
 
-func instrumentInfo(code string) (protocol.Instrument, protocol.MarketInfo, error) {
+func instrumentInfo(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
 	i, err := protocol.ParseInstrument(code)
 	if err != nil {
-		return i, protocol.MarketInfo{}, err
+		return i, protocol.InstrumentRules{}, err
 	}
-	info, ok := i.Info()
+	info, ok := i.Rules()
 	if !ok {
 		return i, info, fmt.Errorf("行情市场 %d 尚未接入统一 Client", i.Exchange)
 	}
 	return i, info, nil
 }
 
+func (c *MarketClient) quoteConnection(code string) (protocolClient, error) {
+	kind, err := protocol.QuoteProtocol(code)
+	if err != nil {
+		return nil, err
+	}
+	return c.connectionForProtocol(kind)
+}
+
+func (c *MarketClient) instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
+	link, err := c.quoteConnection(code)
+	if err != nil {
+		return protocol.Instrument{}, protocol.InstrumentRules{}, err
+	}
+	return link.instrument(code)
+}
+
 func standardCode(i protocol.Instrument) string { return i.Exchange.String() + i.Code }
 
 // GetKline 使用公开 TypeKline* 常量；日线和一分钟别名按市场配置映射。
 func (c *MarketClient) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
-	request, _, err := klineRequest(code, category, count)
-	if err != nil {
+	if err := klineBounds(category, count); err != nil {
 		return nil, err
 	}
-	link, err := c.connection(request.Instrument.Exchange)
+	link, err := c.quoteConnection(code)
 	if err != nil {
 		return nil, err
 	}
@@ -298,16 +315,23 @@ func (c *MarketClient) GetKline(category uint8, code string, start, count uint16
 
 // GetQuote 保持输入顺序（包括重复代码）；任一请求失败返回错误，不返回部分结果。
 func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
-	instruments := make([]protocol.Instrument, len(codes))
+	protocols := make([]protocol.MarketProtocol, len(codes))
 	var indexes []int
 	var standard []string
 	for j, code := range codes {
-		i, info, err := instrumentInfo(code)
+		kind, err := protocol.QuoteProtocol(code)
 		if err != nil {
 			return nil, err
 		}
-		instruments[j] = i
-		if info.Protocol == protocol.ProtocolStandard {
+		protocols[j] = kind
+		if kind == protocol.ProtocolStandard {
+			i, err := protocol.ParseInstrument(code)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := volumeScale(i); err != nil {
+				return nil, err
+			}
 			indexes = append(indexes, j)
 			standard = append(standard, standardCode(i))
 		}
@@ -316,9 +340,25 @@ func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
 	if len(standard) > (65535-12)/7 {
 		return nil, errors.New("标准报价请求超过协议 uint16 帧长上限")
 	}
+	for j, kind := range protocols {
+		if kind == protocol.ProtocolStandard {
+			continue
+		}
+		link, err := c.connectionForProtocol(kind)
+		if err != nil {
+			return nil, err
+		}
+		i, _, err := link.instrument(codes[j])
+		if err != nil {
+			return nil, err
+		}
+		if _, err := volumeScale(i); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]Quote, len(codes))
 	if len(standard) > 0 {
-		link, err := c.connection(instruments[indexes[0]].Exchange)
+		link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 		if err != nil {
 			return nil, err
 		}
@@ -330,11 +370,11 @@ func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
 			out[indexes[j]] = q
 		}
 	}
-	for j, i := range instruments {
-		if i.Exchange <= protocol.ExchangeBJ {
+	for j, kind := range protocols {
+		if kind == protocol.ProtocolStandard {
 			continue
 		}
-		link, err := c.connection(i.Exchange)
+		link, err := c.connectionForProtocol(kind)
 		if err != nil {
 			return nil, err
 		}
@@ -349,7 +389,7 @@ func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
 
 // GetQuoteList 按扩展市场分页查询列表，与按指定证券查询的 GetQuote 分开。
 func (c *MarketClient) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
-	if market <= protocol.ExchangeBJ.Uint8() {
+	if route, ok := protocol.Exchange(market).Route(); ok && route.Protocol == protocol.ProtocolStandard {
 		return nil, errors.New("市场行情列表需要扩展市场")
 	}
 	link, err := c.connection(protocol.Exchange(market))
@@ -360,11 +400,7 @@ func (c *MarketClient) GetQuoteList(market, category uint8, start, count uint16)
 }
 
 func (c *MarketClient) minutePage(date, code string) (*MinuteResp, error) {
-	i, _, err := instrumentInfo(code)
-	if err != nil {
-		return nil, err
-	}
-	link, err := c.connection(i.Exchange)
+	link, err := c.quoteConnection(code)
 	if err != nil {
 		return nil, err
 	}
@@ -372,11 +408,7 @@ func (c *MarketClient) minutePage(date, code string) (*MinuteResp, error) {
 }
 
 func (c *MarketClient) tradePage(date, code string, start, count uint16) (*TradeResp, error) {
-	i, _, err := instrumentInfo(code)
-	if err != nil {
-		return nil, err
-	}
-	link, err := c.connection(i.Exchange)
+	link, err := c.quoteConnection(code)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +438,7 @@ func (c *MarketClient) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 
 // GetInstruments 通过扩展连接获取全局品种表，不触发标准连接。
 func (c *MarketClient) GetInstruments() ([]protocol.ExInstrument, error) {
-	link, err := c.connection(protocol.ExchangeHK)
+	link, err := c.connectionForProtocol(protocol.ProtocolExtended)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +456,7 @@ func (c *MarketClient) GetCount(ex protocol.Exchange) (int, error) {
 
 // GetMarkets 合并内置标准市场和扩展服务器市场表；扩展发现失败时返回错误。
 func (c *MarketClient) GetMarkets() ([]Exchange, error) {
-	link, err := c.connection(protocol.ExchangeHK)
+	link, err := c.connectionForProtocol(protocol.ProtocolExtended)
 	if err != nil {
 		return nil, err
 	}
@@ -440,11 +472,7 @@ func (c *MarketClient) GetKlineRange(code, startDate, endDate string) (*KlineRes
 	if _, _, _, _, err := klineRangeDates(startDate, endDate); err != nil {
 		return nil, err
 	}
-	i, _, err := instrumentInfo(code)
-	if err != nil {
-		return nil, err
-	}
-	link, err := c.connection(i.Exchange)
+	link, err := c.quoteConnection(code)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +480,7 @@ func (c *MarketClient) GetKlineRange(code, startDate, endDate string) (*KlineRes
 }
 
 func (c *MarketClient) GetBlockData(file string) ([]*protocol.Block, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +488,7 @@ func (c *MarketClient) GetBlockData(file string) ([]*protocol.Block, error) {
 }
 
 func (c *MarketClient) GetBlockDataWithIndex(file string) ([]*protocol.Block, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +496,7 @@ func (c *MarketClient) GetBlockDataWithIndex(file string) ([]*protocol.Block, er
 }
 
 func (c *MarketClient) GetBlockFileRaw(file string) ([]byte, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +507,7 @@ func (c *MarketClient) GetCallAuction(code string) (*protocol.CallAuctionResp, e
 	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +518,7 @@ func (c *MarketClient) GetCompanyCategory(code string) ([]protocol.CompanyCatego
 	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +529,7 @@ func (c *MarketClient) GetCompanyContent(code, filename string, start, length ui
 	if _, err := standardInstrument(code); err != nil {
 		return "", err
 	}
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return "", err
 	}
@@ -509,7 +537,7 @@ func (c *MarketClient) GetCompanyContent(code, filename string, start, length ui
 }
 
 func (c *MarketClient) GetETFCodeAll() ([]string, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +548,7 @@ func (c *MarketClient) GetFinanceInfo(code string) (*protocol.FinanceInfo, error
 	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +559,7 @@ func (c *MarketClient) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	if _, err := standardInstrument(code); err != nil {
 		return nil, err
 	}
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +567,7 @@ func (c *MarketClient) GetGbbq(code string) (*protocol.GbbqResp, error) {
 }
 
 func (c *MarketClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +575,7 @@ func (c *MarketClient) GetGbbqAll() (map[string][]*protocol.Gbbq, error) {
 }
 
 func (c *MarketClient) GetIndexCodeAll() ([]string, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +583,7 @@ func (c *MarketClient) GetIndexCodeAll() ([]string, error) {
 }
 
 func (c *MarketClient) GetReportFile(file string) ([]byte, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +591,7 @@ func (c *MarketClient) GetReportFile(file string) ([]byte, error) {
 }
 
 func (c *MarketClient) GetSpBlock() ([]*protocol.SpBlock, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -571,7 +599,7 @@ func (c *MarketClient) GetSpBlock() ([]*protocol.SpBlock, error) {
 }
 
 func (c *MarketClient) GetStockCodeAll() ([]string, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +607,7 @@ func (c *MarketClient) GetStockCodeAll() ([]string, error) {
 }
 
 func (c *MarketClient) GetTdxBk() ([]*protocol.TdxBk, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +615,7 @@ func (c *MarketClient) GetTdxBk() ([]*protocol.TdxBk, error) {
 }
 
 func (c *MarketClient) GetTdxHy() ([]*protocol.TdxHy, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +623,7 @@ func (c *MarketClient) GetTdxHy() ([]*protocol.TdxHy, error) {
 }
 
 func (c *MarketClient) GetTdxStat() ([]*protocol.TdxStat, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -603,7 +631,7 @@ func (c *MarketClient) GetTdxStat() ([]*protocol.TdxStat, error) {
 }
 
 func (c *MarketClient) GetTdxStat2() ([]*protocol.TdxStat2, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +639,7 @@ func (c *MarketClient) GetTdxStat2() ([]*protocol.TdxStat2, error) {
 }
 
 func (c *MarketClient) GetTdxZs() ([]*protocol.TdxZs, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +647,7 @@ func (c *MarketClient) GetTdxZs() ([]*protocol.TdxZs, error) {
 }
 
 func (c *MarketClient) GetXgsg() ([]*protocol.TdxXgsg, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +655,7 @@ func (c *MarketClient) GetXgsg() ([]*protocol.TdxXgsg, error) {
 }
 
 func (c *MarketClient) GetZHBFiles() (map[string][]byte, error) {
-	link, err := c.connection(protocol.ExchangeSZ)
+	link, err := c.connectionForProtocol(protocol.ProtocolStandard)
 	if err != nil {
 		return nil, err
 	}
@@ -642,7 +670,7 @@ func standardKline(k *protocol.Kline) Kline {
 // Klines 复制标准 K 线并将成交量换算为百股单位，供指标和本地文件编码使用。
 // 成交量无法无损换算为整数百单位时返回错误，不修改原始协议记录。
 func (r *KlineResp) Klines() (protocol.Klines, error) {
-	if r.Instrument.Exchange > protocol.ExchangeBJ {
+	if route, ok := r.Instrument.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")
 	}
 	out := make(protocol.Klines, 0, len(r.List))
@@ -663,7 +691,7 @@ func (r *KlineResp) Klines() (protocol.Klines, error) {
 // StandardResponse 保留原始记录及其单位，供复权、指标适配与协议数据处理使用。
 // 指标与本地文件编码需要整数手，使用 Klines。
 func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
-	if r.Instrument.Exchange > protocol.ExchangeBJ {
+	if route, ok := r.Instrument.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return nil, errors.New("扩展 K线不能转换为标准协议数据")
 	}
 	if len(r.List) > 65535 {
@@ -681,7 +709,7 @@ func (r *KlineResp) StandardResponse() (*protocol.KlineResp, error) {
 
 // StandardResponse 转换标准分时结果，保留原始数据并校验记录数与来源。
 func (r *MinuteResp) StandardResponse() (*protocol.MinuteResp, error) {
-	if r.Instrument.Exchange > protocol.ExchangeBJ {
+	if route, ok := r.Instrument.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return nil, errors.New("扩展分时不能转换为标准协议数据")
 	}
 	if len(r.List) > 65535 {
@@ -698,7 +726,7 @@ func (r *MinuteResp) StandardResponse() (*protocol.MinuteResp, error) {
 }
 
 func (r *TradeResp) StandardResponse() (*protocol.TradeResp, error) {
-	if r.Instrument.Exchange > protocol.ExchangeBJ {
+	if route, ok := r.Instrument.Exchange.Route(); !ok || route.Protocol != protocol.ProtocolStandard {
 		return nil, errors.New("扩展分笔不能转换为标准协议数据")
 	}
 	if len(r.List) > 65535 {

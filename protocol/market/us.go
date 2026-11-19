@@ -1,18 +1,34 @@
 package market
 
+import "strings"
+
 const (
-	MarketUS   Market   = "us/stock"
-	ExchangeUS Exchange = 74 // 扩展行情
+	MarketUS   ID       = "us/stock"
+	ExchangeUS Exchange = 74
 )
 
-func init() {
-	def := extendedDefinition(ExchangeUS, "us", "美国股票", func(i Instrument) (Instrument, bool) {
-		return upperSymbol(i, ".-")
-	})
-	def.info.TimeZone, def.info.CloseTime = "America/New_York", "20:00"
-	def.info.Day.VolumeScale, def.info.Minute.VolumeScale = 1, 1
-	def.info.LongVolumeScale, def.info.TickVolumeScale = 100, 1
-	def.info.TradePriceDivisor = 1_000
-	def.info.extendedKlineAmountScale = 1
-	registerMarket(MarketUS, def)
+type us struct{}
+
+var _ Market = us{}
+
+func (us) Info() MarketInfo {
+	return MarketInfo{
+		Prefix: "us", Name: "美国股票", TimeZone: "America/New_York", CloseTime: "20:00",
+		Routes: []RouteInfo{{ID: MarketUS, Exchange: ExchangeUS, Name: "美国股票", Protocol: ProtocolExtended, CodeSource: CodeListExtended}},
+	}
 }
+
+func (us) Resolve(code Code, _ InstrumentSnapshot) (Instrument, error) {
+	letter, _, valid := symbolParts(code.Symbol, ".-")
+	code.Symbol = strings.ToUpper(code.Symbol)
+	return validateInstrument(ExchangeUS, code, valid && letter)
+}
+
+func (us) Rules(i Instrument) (InstrumentRules, error) {
+	if err := checkExchange(i.Exchange, ExchangeUS); err != nil {
+		return InstrumentRules{}, err
+	}
+	return equityRules(1, 100), nil
+}
+
+func init() { registerMarket(us{}) }

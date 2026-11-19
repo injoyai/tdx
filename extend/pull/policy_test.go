@@ -15,7 +15,7 @@ func TestCustomScheduleAndSnapshotIsolation(t *testing.T) {
 	s := testService(t)
 	u := &scopeTestUnit{mockUnit: mockUnit{name: "test"}}
 	s.units = []Unit{u}
-	s.cfg.Schedules = map[protocol.Market]Schedule{"test": {TimeZone: "America/New_York", CloseTime: "20:00", Delay: 5 * time.Minute}}
+	s.cfg.Schedules = map[protocol.MarketID]Schedule{"test": {TimeZone: "America/New_York", CloseTime: "20:00", Delay: 5 * time.Minute}}
 	before, _ := time.Parse(time.RFC3339, "2026-07-16T00:04:59Z")
 	if err := s.update(before, false); err != nil || len(u.days) != 0 {
 		t.Fatal("ran before custom boundary", u.days, err)
@@ -107,7 +107,7 @@ func TestProgressIsSerializedAndCountsAllCodes(t *testing.T) {
 	s.day = true
 	s.minute = false
 	u := &mockUnit{name: "test"}
-	s.overrides = map[protocol.Market][]model.Code{"test": {{Code: "one"}, {Code: "two"}, {Code: "three"}}}
+	s.overrides = map[protocol.MarketID][]model.Code{"test": {{Code: "one"}, {Code: "two"}, {Code: "three"}}}
 	var active atomic.Int32
 	count := 0
 	s.cfg.OnProgress = func(p Progress) {

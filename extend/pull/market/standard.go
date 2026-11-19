@@ -13,7 +13,7 @@ import (
 // stdUnit 标准行情(7709)市场的基础实现：直接使用连接池和元数据缓存。
 // 负责原始行情适配与增量边界，分页结果通过 Service 存储。
 type stdUnit struct {
-	name protocol.Market // 市场标识（protocol.Market 枚举）
+	name protocol.MarketID // 市场标识（protocol.MarketID 枚举）
 }
 
 func (u *stdUnit) Name() string { return u.name.String() }
@@ -53,7 +53,7 @@ func (u *stdUnit) dayUntil(c tdx.Client, code, from string) ([]tdx.Kline, error)
 	if err != nil {
 		return nil, err
 	}
-	info, ok := i.Info()
+	info, ok := i.Rules()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
@@ -70,7 +70,7 @@ func (u *stdUnit) minUntil(c tdx.Client, code string, from string) ([]tdx.Kline,
 	if err != nil {
 		return nil, err
 	}
-	info, ok := i.Info()
+	info, ok := i.Rules()
 	if !ok {
 		return nil, fmt.Errorf("pull: 市场 %s 没有内置 K 线配置", u.name)
 	}
@@ -158,7 +158,7 @@ func (u *stdUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.Fetc
 	if err != nil {
 		return pull.FetchResult{Known: true}, err
 	}
-	info, _ := i.Info()
+	info, _ := i.Rules()
 	if s.TradeFallbackEnabled() && info.SplitAuction {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {

@@ -206,7 +206,7 @@ func TestMarketClientMixedQuotesAndMetadata(t *testing.T) {
 		if err != nil || len(r) != len(inputs) {
 			t.Fatal(r, err)
 		}
-		for j, input := range inputs {
+		for j, input := range []string{"00700.31", "sz000001", "usAAPL", "sh110075", "sz000001"} {
 			i, _ := protocol.ParseInstrument(input)
 			if r[j].Instrument != i {
 				t.Fatal("mixed quote order lost", r)

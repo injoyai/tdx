@@ -11,14 +11,14 @@ import (
 
 type scheduledTestUnit struct {
 	updateTestUnit
-	market protocol.Market
+	market protocol.MarketID
 }
 
 func (u *scheduledTestUnit) Name() string { return u.market.String() }
 
 func TestMarketUpdateTime(t *testing.T) {
 	for _, tc := range []struct {
-		market    protocol.Market
+		market    protocol.MarketID
 		now, want string
 	}{
 		{protocol.MarketSZ, "2026-01-15T00:00:00Z", "2026-01-15T07:35:00Z"},

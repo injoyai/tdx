@@ -83,20 +83,20 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 | `protocol.MarketBJ` | `bj` | 北京 | 7709 | 按证券代码选择品种规则 |
 | `protocol.MarketCFF`、`MarketCZC`、`MarketDCE`、`MarketSHF`、`MarketGFE`、`MarketQHZ` | `cff`、`czc`、`dce`、`shf`、`gfe`、`qhz` | 各期货交易所及期货类指数 | 7727 | 合约代码保留大小写 |
 | `protocol.MarketHK` | `hk/stock` | 港股主板 | 7727 | `GetKline` |
-| `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，ETF 代码自动路由 |
+| `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，由通达信品种快照确认 |
 | `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
 | `protocol.MarketInternationalIndex` | `global/index` | 国际指数 | 7727 | 市场编码 12，如 `wi.A_IXIC`。通过 `Config.Schedules` 配置调度 |
 
-市场键由 `protocol.Market` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
+市场键由 `protocol.MarketID` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
 
 内置市场在 [`protocol/market/`](../../protocol/market) 逐个声明。增加复用现有报文格式的市场时，在一个文件注册市场键、协议编号、代码规则、量价单位和调度。导入 `extend/pull/market` 后，通用拉取适配器根据定义自动注册。
 
 ### 市场 K 线配置
 
-`Market.Info()` 用于协议和调度等市场设置。`Instrument.Kind()` 返回证券品种，`Instrument.Info()` 返回当前证券的行情类型、周期和量价换算。
+`MarketID.Info()` 返回市场简称、协议路由及默认调度资料。`Instrument.Kind()` 返回证券品种，`Instrument.Rules()` 返回当前证券的行情类型、周期和量价换算。 调用方通过 `rules.Kline(category, mode).Supported` 和各类行情的 `Supported` 检查 SDK 支持范围，读取 `Fields` 确认价格、成交量和成交额的可用性。
 
-`Market.Info().TimeZone` 读取市场定义。国内市场和当前国内期货为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。国际指数跨多个地区，`Info()` 中没有统一时区和收盘边界。显式选择国际指数代码时，须为 `protocol.MarketInternationalIndex` 配置对应代码范围的更新边界。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
+`MarketID.Info().TimeZone` 读取市场定义。国内市场和当前国内期货为 `Asia/Shanghai`，港股、香港基金及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。国际指数跨多个地区，`Info()` 中没有统一时区和收盘边界。显式选择国际指数代码时，须为 `protocol.MarketInternationalIndex` 配置对应代码范围的更新边界。查证来源、用法及夏令时说明见 [统一接口文档](../../docs/unified-client.md)。`CloseTime` 另存当地收盘边界（`HH:MM`），不含更新延迟；pull 按下面的规则判断是否需要更新，不改变行情源时间字符串。
 
 ```go
 code, err := pull.ParseCode("hk/stock.00700")
@@ -107,7 +107,7 @@ instrument, err := code.Instrument()
 if err != nil {
     panic(err)
 }
-info, ok := instrument.Info()
+info, ok := instrument.Rules()
 if !ok {
     panic("没有内置市场配置")
 }

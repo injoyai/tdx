@@ -140,9 +140,9 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 ## 市场默认时区与收盘后更新
 
-`protocol.MarketInfo` 新增 `TimeZone string`，由 `Market.Info()` 返回市场定义中的 IANA 时区，供调用方调度使用。国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
+`protocol.MarketInfo` 新增 `TimeZone string`，由 `MarketID.Info()` 返回市场定义中的 IANA 时区，供调用方调度使用。国内市场及当前国内期货为 `Asia/Shanghai`，港股及港股指数为 `Asia/Hong_Kong`，美股为 `America/New_York`。对应关系及查证来源见 [统一接口文档](unified-client.md)。
 
-`Market.Info()` 保持 `(MarketInfo, bool)` 接口及原有非内置市场处理行为。国际指数市场 12 跨多个来源地区，`TimeZone` 和 `CloseTime` 留空。通过 pull 同步时为 `protocol.MarketInternationalIndex` 设置 `Config.Schedules`。
+`MarketID.Info()` 返回 `(MarketInfo, bool)`，未知市场返回空资料及 `false`。国际指数市场 12 跨多个来源地区，`TimeZone` 和 `CloseTime` 留空。通过 pull 同步时为 `protocol.MarketInternationalIndex` 设置 `Config.Schedules`。
 
 `MarketInfo` 同时新增 `CloseTime string`（当地 `HH:MM`，不含延迟）：国内为 `15:30`，港股及港股指数为 `16:10`，美股为 `20:00`（包含盘后）。pull 统一延迟 5 分钟，收盘延迟边界之前跳过请求，之后按市场每天成功一次；不再使用整体完成标记或固定东八区 15:01 边界。`Update(true)` 仍保留市场级去重，允许提前拉取；提前标记不阻止当天收盘后的更新。`pull.Config.Workday` 已移除，调用方删除该字段，不再按中国日历过滤跨市场更新；`pull.Trade` 的历史交易日历使用不变。详情见 [pull 收盘后更新](../extend/pull/README.md#收盘后更新)。
 
@@ -152,9 +152,17 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 `Quote`、`KlineResp`、`MinuteResp`、`TradeResp` 移除 `VolumeUnit`，`VolumeUnknown` 和 `protocol.VolumeUnit` 枚举也移除。统一成交量及五档买卖量使用股票股数、期货合约张数；HTTP、分页结果和停止回调使用相同口径。调用方删除原先依据单位再乘 100 的代码，避免重复转换。原始 `Standard/Extended/RangeExtended` 与 `StandardResponse()` 保留各自的协议单位；指标或本地文件编码使用 `KlineResp.Klines()`，由它将统一股数转为整数手。
 
-`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`。报价以及原始槽位提供成交量的分时和分笔使用 `MarketInfo.TickVolumeScale`。标准指数日、周、月、季、年线的解码量乘 100，与统一报价口径一致。标准指数分时和分笔的调用方改读 `Amount`，其中分时原始量乘 10,000、分笔原始量乘 100，单位元，两者的 `Volume` 均为 0。旧版 SDK 已入库的记录需在受影响范围内重新获取。国内其他尚未校准的品种或接口默认 100，期货用 1。
+`protocol.KlineInfo.VolumeUnit` 改为换算倍率 `VolumeScale`。报价以及原始槽位提供成交量的分时和分笔使用 `InstrumentRules` 下对应的 `Quote`、`TimeShare`、`Trade` 规则。标准指数日、周、月、季、年线的解码量乘 100，与统一报价口径一致。标准指数分时和分笔的调用方改读 `Amount`，其中分时原始量乘 10,000、分笔原始量乘 100，单位元，两者的 `Volume` 均为 0。旧版 SDK 已入库的记录需在受影响范围内重新获取。国内其他尚未校准的品种或接口默认 100，期货用 1。
 
-沪深北分别使用 `protocol.MarketSH`、`MarketSZ`、`MarketBJ`。股票、指数、ETF/LOF、转债和板块指数由 `Instrument.Kind()` 区分。K 线周期和倍率通过 `Instrument.Info()` 获取，从 `model.Code` 出发时先调用 `code.Instrument()`。期货市场键使用各自交易所简称，`Code.Code` 保存合约主体。
+配置和存储字段中的市场键类型改为 `protocol.MarketID`。`MarketID.Info()` 读取市场资料及其全部协议路由。单个编号的协议及代码表配置从 `Exchange.Route()` 读取。量价规则从 `Instrument.Rules()` 读取，按周期和报文布局调用 `rules.Kline(category, mode)`。港股股票、基金、指数共用 `hk` 市场定义，各自的拉取和存储键仍对应 31、49、27。
+
+内置市场通过无状态类型的 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。品种快照同时负责实际行情和存储归属。
+
+
+`InstrumentRules` 补充显式行情支持声明。查询报价、分时和分笔前读取各自的 `Supported`，查询 K 线使用 `rules.Kline(category, mode).Supported`。自定义市场填写 `KlinePeriods`、`RangePeriods` 和各类行情的 `Fields`，并为可用数量及价格字段配置换算参数。价格、成交量和成交额分别通过 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明。港股指数和国际指数的历史分笔会在读取日期范围和日线之前报不支持错误。
+
+
+沪深北分别使用 `protocol.MarketSH`、`MarketSZ`、`MarketBJ`。股票、指数、ETF/LOF、转债和板块指数由 `Instrument.Kind()` 区分。K 线周期和倍率通过 `Instrument.Rules()` 获取，从 `model.Code` 出发时先调用 `code.Instrument()`。期货市场键使用各自交易所简称，`Code.Code` 保存合约主体。
 
 `KlineInfo.ToStorageVolume` 现在返回 `(int64, error)`，调用方须处理零/负倍率、负数量和溢出错误，不再对零值配置偷偷采用 ×100。期货、美股 pull 存储从旧默认 ×100 改为保留张数/股数；港股分钟 K 线采用 ×100。已有数据库不自动修改，旧记录不能未经核对混用。
 
@@ -400,7 +408,7 @@ import (
 
 Amount 改为 *float64：Client 未提供金额时保存 nil／SQL NULL，非 nil 的 0 为真实零。移除 AmountUnknown，新库不另加状态列。聚合仅在全部组成记录金额已知时求和，否则为 nil。旧库既有 0 保持非 nil 的 0，不自动推断为未知或重写历史。扩展原始持仓字节不会作为金额落库。源时间格式库的旧状态列不再映射或使用，不自动删列、改历史金额；过去自定义写入非零未知金额的记录需自行核对并重拉。示例见 [pull](../examples/pull/main.go)，完整服务说明见 [pull 文档](../extend/pull/README.md)。
 
-行情参数和倍率通过 `Instrument.Info()` 获取。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用 `TickVolumeScale`。港股指数 K 线统一量为 0，金额倍率为 1,000,000。
+行情参数和倍率通过 `Instrument.Rules()` 获取。可转债日及以上周期解码量乘 1000，日内乘 10；标准指数日、周、月、季、年线乘 100，日内 K 线、分时和分笔缺少可用的成交量，返回 `Volume=0`，成交额读 `Amount`。港股主板及香港基金日线和分钟线乘 100，美股日线和分钟线为股；港股和美股的周、月、季、年线分别乘 10000、100，并返回原币种成交额。报价及已确认数量口径的分时、分笔使用各自规则的 `VolumeScale`。港股指数 K 线统一量为 0，金额倍率为 1,000,000。
 
 港股主板日线实际周期为 4，旧周期 9 的首条量异常无法直接按比例恢复。历史存储或导出中的旧口径数据需按受影响日期重查或重拉。数字港股的通达信市场通过品种快照解析。快照标明属于 49 时，`pull` 存于 `hk/fund`。
 

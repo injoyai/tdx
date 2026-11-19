@@ -2,6 +2,7 @@ package market
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -12,8 +13,8 @@ func (e Exchange) Uint8() uint8 { return uint8(e) }
 
 // String 返回证券代码前缀。港股股票、基金和指数共用 hk。
 func (e Exchange) String() string {
-	if m, ok := exchangeMarkets[e]; ok {
-		return marketDefinitions[m].prefix
+	if route, ok := exchangeRoutes[e]; ok {
+		return route.prefix
 	}
 	switch e {
 	case ExchangeNQ:
@@ -46,8 +47,8 @@ func (e Exchange) String() string {
 }
 
 func (e Exchange) Name() string {
-	if m, ok := exchangeMarkets[e]; ok {
-		return marketDefinitions[m].name
+	if route, ok := exchangeRoutes[e]; ok {
+		return route.Name
 	}
 	switch e {
 	case ExchangeNQ:
@@ -111,10 +112,10 @@ func allExchanges() []Exchange {
 	out := make([]Exchange, 0, len(rawExchanges)+len(markets))
 	out = append(out, rawExchanges...)
 	out = append(out, instrumentExchanges...)
-	for _, m := range markets {
-		def := marketDefinitions[m]
-		if def.sharedPrefix {
-			out = append(out, def.exchange)
+	for _, id := range markets {
+		ex := marketRoutes[id].Exchange
+		if !slices.Contains(instrumentExchanges, ex) {
+			out = append(out, ex)
 		}
 	}
 	return out
