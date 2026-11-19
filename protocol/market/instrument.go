@@ -128,7 +128,7 @@ func (m ID) ParseInstrument(body string) (Instrument, error) {
 	return exchangeRoutes[ex].market.Resolve(Code{Symbol: body, Exchange: ex, explicit: true}, InstrumentSnapshot{})
 }
 
-// ParseInstrument 支持拼接/点分隔前缀、交易所后缀和可判定的裸代码。
+// ParseInstrument 支持市场前后缀、带品类的点分隔市场前后缀和可判定的裸代码。
 // 期货保留合约大小写；港股股票、基金和指数分别路由到市场 31、49 和 27。
 func ParseInstrument(s string) (Instrument, error) {
 	resolve := func(ex Exchange, body string) (Instrument, error) {
@@ -144,6 +144,19 @@ func ParseInstrument(s string) (Instrument, error) {
 	}
 	if ex, ok := bareInstruments[strings.ToUpper(s)]; ok {
 		return resolve(ex, s)
+	}
+	// 完整市场键显式选择协议路由，代码主体可以包含点。
+	if prefix, body, ok := strings.Cut(s, "."); ok && strings.Contains(prefix, "/") {
+		id := ID(strings.ToLower(prefix))
+		if _, registered := id.Exchange(); registered {
+			return id.ParseInstrument(body)
+		}
+	}
+	if p := strings.LastIndexByte(s, '.'); p > 0 && strings.Contains(s[p+1:], "/") {
+		id := ID(strings.ToLower(s[p+1:]))
+		if _, registered := id.Exchange(); registered {
+			return id.ParseInstrument(s[:p])
+		}
 	}
 	// 原始协议的长前缀（如 cffo）优先，避免误拆为 cff + 合约主体。
 	if ex, body, ok := splitPrefix(s); ok {

@@ -1209,3 +1209,32 @@ func TestKlinesBeyondLegacyResponseCount(t *testing.T) {
 		}
 	}
 }
+
+func TestMarketClientCodeFormats(t *testing.T) {
+	for _, tc := range []struct {
+		market byte
+		symbol string
+		inputs []string
+	}{
+		{31, "00700", []string{"hk/stock.00700", "hk.00700", "hk00700", "00700.hk", "00700.HK/STOCK"}},
+		{49, "02800", []string{"HK/FUND.02800", "hk.02800", "hk02800", "02800.HK", "02800.hk/fund"}},
+		{27, "HSI", []string{"hk/index.HSI", "hk.HSI", "hkHSI", "HSI.hk", "HSI.hk/index"}},
+		{74, "BRK.B", []string{"us/stock.BRK.B", "BRK.B.US/STOCK"}},
+	} {
+		for _, input := range tc.inputs {
+			t.Run(input, func(t *testing.T) {
+				c := marketTestClient(t, nil, func(h, b []byte) []byte {
+					if binary.LittleEndian.Uint16(h[10:12]) != protocol.TypeExBars ||
+						b[0] != tc.market || strings.TrimRight(string(b[1:10]), "\x00") != tc.symbol {
+						t.Errorf("unexpected request type %x payload %x", h[10:12], b)
+					}
+					return testExtendedBar(20261009)
+				})
+				r, err := c.GetKlineDay(input, 0, 1)
+				if err != nil || r.Count != 1 || r.List[0].Close != 10.5 {
+					t.Fatalf("GetKlineDay(%q): %v, %v", input, r, err)
+				}
+			})
+		}
+	}
+}
