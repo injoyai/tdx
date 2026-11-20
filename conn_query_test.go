@@ -18,6 +18,37 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// TestQuoteListValidationShared 固定两个批量报价入口使用相同的协议与布局校验顺序，
+// 且校验失败时不建立连接、不发送请求。
+func TestQuoteListValidationShared(t *testing.T) {
+	ex := respondingTestClient(t, true, func(h, b []byte) []byte {
+		t.Error("校验失败后仍发送批量报价请求", h)
+		return nil
+	})
+	mc := marketTestClient(t, nil, nil)
+	for _, tc := range []struct {
+		name             string
+		market, category uint8
+		want             string
+	}{
+		{"未接入", 250, 2, "行情市场 250 尚未接入统一 Client"},
+		{"标准市场", 1, 2, "市场行情列表需要扩展市场"},
+		{"未声明布局", 74, 2, "行情市场 74 未声明批量报价类别"},
+		{"类别不匹配", 31, 3, "行情市场 31 的报价类别为 2，不接受类别 3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, exErr := ex.GetQuoteList(tc.market, tc.category, 0, 1)
+			_, mcErr := mc.GetQuoteList(tc.market, tc.category, 0, 1)
+			if exErr == nil || exErr.Error() != tc.want {
+				t.Fatalf("ExConn 错误 = %v，期望 %q", exErr, tc.want)
+			}
+			if mcErr == nil || mcErr.Error() != tc.want {
+				t.Fatalf("MarketClient 错误 = %v，期望 %q", mcErr, tc.want)
+			}
+		})
+	}
+}
+
 func TestCodeListsAndReports(t *testing.T) {
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)

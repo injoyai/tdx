@@ -7,7 +7,7 @@ const (
 	ExchangeUS Exchange = 74
 )
 
-type us struct{ ignoreImport }
+type us struct{}
 
 var _ Market = us{}
 

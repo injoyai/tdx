@@ -156,7 +156,7 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 
 配置和存储字段中的市场键类型改为 `protocol.MarketID`。`MarketID.Info()` 读取市场资料及其全部协议路由。单个编号的协议及代码表配置从 `Exchange.Route()` 读取。量价规则从 `Instrument.Rules()` 读取，按周期和报文布局调用 `rules.Kline(category, mode)`。港股股票、基金、指数共用 `hk` 市场定义，各自的拉取和存储键仍对应 31、49、27。
 
-内置市场通过无状态类型的 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。行情连接使用市场定义中的内置归属及候选市场查询。已有品种快照仍可用于 pull 解析存储归属。
+内置市场通过 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。协议类型由路由声明，`Instrument.Rules()` 组装结果时会填入路由协议，市场规则不必重复声明。`Import` 不再是 `Market` 接口的必选方法，只有需要持久化归属的市场实现内部可选能力；港股加载后持有进程级共享的归属目录和表，所有 Client 共用，`LoadInstrumentMarkets` 应在启动时配置一次。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。行情连接使用市场定义中的内置归属及候选市场查询。已有品种快照仍可用于 pull 解析存储归属。
 
 
 `InstrumentRules` 补充显式行情支持声明。查询报价、分时和分笔前读取各自的 `Supported`，查询 K 线使用 `rules.Kline(category, mode).Supported`。自定义市场填写 `KlinePeriods`、`RangePeriods` 和各类行情的 `Fields`，并为可用数量及价格字段配置换算参数。价格、成交量和成交额分别通过 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明。拆竞价与分笔补分钟分别由 `SplitAuction`、`TradeFallback` 声明，只声明前者时 pull 不会请求分笔。需要从记录序号推导分钟钟面的布局还须在路由声明 `Session`，沪深北共用 `DomesticSession`；未声明时段的市场会报错，普通分钟查询不受影响。港股指数和国际指数的历史分笔会在读取日期范围和日线之前报不支持错误。

@@ -5,7 +5,7 @@ const (
 	ExchangeBJ Exchange = 2
 )
 
-type bj struct{ ignoreImport }
+type bj struct{}
 
 var _ Market = bj{}
 

@@ -17,13 +17,13 @@ type Market interface {
 	Info() MarketInfo
 	Resolve(code Code, snapshot InstrumentSnapshot) (Instrument, error)
 	Rules(instrument Instrument) (InstrumentRules, error)
-	// Import receives a completed instrument discovery result.
-	Import(items []Instrument) error
 }
 
-type ignoreImport struct{}
-
-func (ignoreImport) Import([]Instrument) error { return nil }
+// instrumentImporter is an optional capability for markets that persist a
+// discovered instrument assignment. Markets without local state need no import.
+type instrumentImporter interface {
+	Import(items []Instrument) error
+}
 
 // MarketInfo describes a logical market. Routes are in order of precedence,
 // with the default route first. Schedule fields do not interpret source timestamps.
@@ -200,7 +200,17 @@ func (m ID) Info() (MarketInfo, bool) {
 }
 
 // Route returns the protocol metadata associated with the wire exchange.
+// 返回值与注册表隔离，报表配置与裸代码列表均为独立副本。
 func (e Exchange) Route() (RouteInfo, bool) {
 	route, ok := exchangeRoutes[e]
-	return route.RouteInfo, ok
+	if !ok {
+		return RouteInfo{}, false
+	}
+	info := route.RouteInfo
+	if info.Report != nil {
+		report := *info.Report
+		info.Report = &report
+	}
+	info.BareSymbols = slices.Clone(info.BareSymbols)
+	return info, true
 }

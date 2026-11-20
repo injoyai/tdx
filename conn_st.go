@@ -51,7 +51,8 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.getStandardKline(out.Category, standardCode(out.Instrument), start, count, rule.Kind)
+	route, _ := i.Exchange.Route()
+	r, err := c.getStandardKline(out.Category, out.Instrument, start, count, rule.Kind, route.Session, info)
 	if err != nil {
 		return nil, err
 	}
@@ -836,18 +837,13 @@ func (c *StConn) getStandardHistoryTrade(date, code string, start, count uint16)
 	return result.(*protocol.TradeResp), nil
 }
 
-func (c *StConn) getStandardKline(category uint8, code string, start, count uint16, kind string) (*protocol.KlineResp, error) {
-	code = protocol.AddPrefix(code)
-	f, err := protocol.MKline.Frame(category, code, start, count)
+// getStandardKline 使用入口已解析的品种、规则和交易时段封包与解码，不再从代码字符串重复解析。
+func (c *StConn) getStandardKline(category uint8, i protocol.Instrument, start, count uint16, kind string, session protocol.TradingSession, info protocol.InstrumentRules) (*protocol.KlineResp, error) {
+	f, err := protocol.MKline.FrameCode(category, i.Exchange, i.Code, start, count)
 	if err != nil {
 		return nil, err
 	}
-	cache := protocol.KlineCache{Type: category, Kind: kind, Code: code}
-	if i, err := protocol.ParseInstrument(code); err == nil {
-		if route, ok := i.Exchange.Route(); ok {
-			cache.Session = route.Session
-		}
-	}
+	cache := protocol.KlineCache{Type: category, Kind: kind, Code: standardCode(i), Session: session, Rules: &info}
 	result, err := c.SendFrame(f, cache)
 	if err != nil {
 		return nil, err

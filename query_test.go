@@ -325,6 +325,84 @@ func TestMinute241AuctionConservesVolume(t *testing.T) {
 	}
 }
 
+// TestMinute241WithoutAuction 固定无竞价成交时仍生成 09:30 记录，
+// 且拆分不修改 stop 回调已保存的首分钟记录。
+func TestMinute241WithoutAuction(t *testing.T) {
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+				return []byte{0, 0}
+			}
+			if b[8] == protocol.TypeKlineDay {
+				return testStandardBar(false)
+			}
+			return completionStandardBar(20261009, 571, 250, 2500)
+		}
+		return []byte{0, 0, 0, 0, 0, 0} // 无竞价成交
+	})
+	var held Kline
+	var saved protocol.Kline
+	r, err := c.GetKlineMinute241Until("sz000001", func(k Kline) bool {
+		if strings.HasSuffix(k.Time, " 09:31") {
+			held, saved = k, *k.Standard
+		}
+		return false
+	})
+	if err != nil || r.Count != 2 {
+		t.Fatal("no auction split", r, err)
+	}
+	bar, rest := r.List[0], r.List[1]
+	if bar.Time != "2026-10-09 09:30" || bar.Volume != 0 || bar.Amount == nil || *bar.Amount != 0 {
+		t.Fatal("empty auction bar changed", bar)
+	}
+	if rest.Time != "2026-10-09 09:31" || rest.Volume != 250 || rest.Amount == nil || *rest.Amount != 2500 {
+		t.Fatal("first minute changed without auction", rest)
+	}
+	if held.Standard == nil || *held.Standard != saved || held.Volume != 250 {
+		t.Fatal("split mutated the record saved by stop", held)
+	}
+}
+
+// TestMinute241AuctionExceedsFirstMinute 固定竞价量额超过首分钟时余量归零，不出现负值。
+func TestMinute241AuctionExceedsFirstMinute(t *testing.T) {
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+				return []byte{0, 0}
+			}
+			if b[8] == protocol.TypeKlineDay {
+				return testStandardBar(false)
+			}
+			return completionStandardBar(20261009, 571, 50, 500)
+		}
+		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0} // 历史9:25成交1手、10元。
+	})
+	var held Kline
+	var saved protocol.Kline
+	r, err := c.GetKlineMinute241Until("sz000001", func(k Kline) bool {
+		if strings.HasSuffix(k.Time, " 09:31") {
+			held, saved = k, *k.Standard
+		}
+		return false
+	})
+	if err != nil || r.Count != 2 {
+		t.Fatal("auction exceeds split", r, err)
+	}
+	bar, rest := r.List[0], r.List[1]
+	if bar.Volume != 100 || bar.Amount == nil || *bar.Amount != 1000 {
+		t.Fatal("auction bar changed", bar)
+	}
+	if rest.Volume != 0 || rest.Amount == nil || *rest.Amount != 0 {
+		t.Fatal("remainder not clamped", rest)
+	}
+	if rest.Standard == nil || rest.Standard.Volume != 0 || rest.Standard.Amount != 0 || rest.Standard.Order != 0 {
+		t.Fatal("standard remainder not clamped", rest.Standard)
+	}
+	if held.Standard == nil || *held.Standard != saved || held.Volume != 50 || held.Amount == nil || *held.Amount != 500 {
+		t.Fatal("split mutated the record saved by stop", held)
+	}
+}
+
 func completionRange() []byte {
 	b := make([]byte, 14+32)
 	binary.LittleEndian.PutUint16(b[12:], 1)

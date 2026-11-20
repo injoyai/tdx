@@ -411,94 +411,89 @@ func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*K
 		if err := q.context().Err(); err != nil {
 			return nil, err
 		}
-		v := record
-		if strings.HasSuffix(v.Time, " 09:31") {
-			var tr *TradeResp
-			day := strings.ReplaceAll(v.Time[:10], "-", "")
-			if v.Time[:10] == time.Now().In(protocol.Location()).Format(time.DateOnly) {
-				tr, err = q.GetTradeAll(code)
-			} else {
-				tr, err = q.GetHistoryTradeDay(day, code)
-			}
-			if err != nil {
-				return nil, err
-			}
-			auction := Trade{}
-			if len(tr.List) > 0 && tr.List[0].Time < "09:30:00" {
-				auction = tr.List[0]
-			}
-			price := 0.0
-			if auction.Price != nil {
-				price = *auction.Price
-			}
-			amount := 0.0
-			if auction.Standard != nil {
-				amount = auction.Standard.Amount()
-			} else if auction.Amount != nil {
-				amount = *auction.Amount
-			}
-			order, wireVolume := 0, int64(0)
-			last := 0.0
-			var at time.Time
-			if v.Standard != nil {
-				last = v.Standard.Last
-				at = time.Date(v.Standard.Time.Year(), v.Standard.Time.Month(), v.Standard.Time.Day(), 9, 30, 0, 0, v.Standard.Time.Location())
-			}
-			if auction.Standard != nil {
-				order = auction.Standard.Number
-				wireVolume = int64(auction.Standard.Volume)
-			}
-			ks = append(ks, Kline{
-				Time:   v.Time[:10] + " 09:30",
-				Open:   price,
-				High:   price,
-				Low:    price,
-				Close:  price,
-				Volume: auction.Volume,
-				Amount: &amount,
-				Standard: &protocol.Kline{
-					Last:   last,
-					Open:   price,
-					High:   price,
-					Low:    price,
-					Close:  price,
-					Order:  order,
-					Volume: wireVolume,
-					Amount: amount,
-					Time:   at,
-				},
-			})
-			// 竞价量额已是统一最小单位，与首分钟合并后保持总量和总额守恒。
-			if v.Standard != nil {
-				v.Standard.Last = price
-				v.Standard.Volume -= wireVolume
-				if v.Standard.Volume < 0 {
-					v.Standard.Volume = 0
-				}
-				v.Standard.Amount -= amount
-				if v.Standard.Amount < 0 {
-					v.Standard.Amount = 0
-				}
-				v.Standard.Order -= order
-				if v.Standard.Order < 0 {
-					v.Standard.Order = 0
-				}
-			}
-			v.Volume -= auction.Volume
-			if v.Volume < 0 {
-				v.Volume = 0
-			}
-			if v.Amount != nil {
-				rest := *v.Amount - amount
-				if rest < 0 {
-					rest = 0
-				}
-				v.Amount = &rest
-			}
+		if !strings.HasSuffix(record.Time, " 09:31") {
+			ks = append(ks, record)
+			continue
 		}
-		ks = append(ks, v)
+		var tr *TradeResp
+		day := strings.ReplaceAll(record.Time[:10], "-", "")
+		if record.Time[:10] == time.Now().In(protocol.Location()).Format(time.DateOnly) {
+			tr, err = q.GetTradeAll(code)
+		} else {
+			tr, err = q.GetHistoryTradeDay(day, code)
+		}
+		if err != nil {
+			return nil, err
+		}
+		auction := Trade{}
+		if len(tr.List) > 0 && tr.List[0].Time < "09:30:00" {
+			auction = tr.List[0]
+		}
+		bar, rest := splitMinute241(record, auction)
+		ks = append(ks, bar, rest)
 	}
 	resp.List = ks
 	resp.Count = len(ks)
 	return resp, nil
+}
+
+// splitMinute241 从首根 09:31 记录中拆出 09:30 竞价记录。
+// 返回值均为副本，不修改输入记录及其 Standard 指针。
+func splitMinute241(v Kline, auction Trade) (bar Kline, rest Kline) {
+	price := 0.0
+	if auction.Price != nil {
+		price = *auction.Price
+	}
+	amount := 0.0
+	if auction.Standard != nil {
+		amount = auction.Standard.Amount()
+	} else if auction.Amount != nil {
+		amount = *auction.Amount
+	}
+	order, wireVolume := 0, int64(0)
+	last := 0.0
+	var at time.Time
+	if v.Standard != nil {
+		last = v.Standard.Last
+		at = time.Date(v.Standard.Time.Year(), v.Standard.Time.Month(), v.Standard.Time.Day(), 9, 30, 0, 0, v.Standard.Time.Location())
+	}
+	if auction.Standard != nil {
+		order = auction.Standard.Number
+		wireVolume = int64(auction.Standard.Volume)
+	}
+	bar = Kline{
+		Time:   v.Time[:10] + " 09:30",
+		Open:   price,
+		High:   price,
+		Low:    price,
+		Close:  price,
+		Volume: auction.Volume,
+		Amount: &amount,
+		Standard: &protocol.Kline{
+			Last:   last,
+			Open:   price,
+			High:   price,
+			Low:    price,
+			Close:  price,
+			Order:  order,
+			Volume: wireVolume,
+			Amount: amount,
+			Time:   at,
+		},
+	}
+	rest = v
+	if v.Standard != nil {
+		standard := *v.Standard
+		standard.Last = price
+		standard.Volume = max(0, standard.Volume-wireVolume)
+		standard.Amount = max(0, standard.Amount-amount)
+		standard.Order = max(0, standard.Order-order)
+		rest.Standard = &standard
+	}
+	rest.Volume = max(0, v.Volume-auction.Volume)
+	if v.Amount != nil {
+		remaining := max(0.0, *v.Amount-amount)
+		rest.Amount = &remaining
+	}
+	return bar, rest
 }

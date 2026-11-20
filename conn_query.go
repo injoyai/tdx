@@ -55,6 +55,25 @@ func protocolExchange(ex protocol.Exchange, extended bool) error {
 	return nil
 }
 
+// quoteListRoute 校验批量报价请求的市场与类别，两个公开入口共用同一顺序和错误文案。
+func quoteListRoute(market, category uint8) (protocol.Exchange, error) {
+	ex := protocol.Exchange(market)
+	route, ok := ex.Route()
+	if !ok {
+		return ex, fmt.Errorf("行情市场 %d 尚未接入统一 Client", market)
+	}
+	if route.Protocol != protocol.ProtocolExtended {
+		return ex, errors.New("市场行情列表需要扩展市场")
+	}
+	if route.QuoteListCategory == 0 {
+		return ex, fmt.Errorf("行情市场 %d 未声明批量报价类别", market)
+	}
+	if category != route.QuoteListCategory {
+		return ex, fmt.Errorf("行情市场 %d 的报价类别为 %d，不接受类别 %d", market, route.QuoteListCategory, category)
+	}
+	return ex, nil
+}
+
 func klineBounds(category uint8, count uint16) error {
 	if category > protocol.TypeKlineYear || count == 0 || count > 800 {
 		return errors.New("K线周期必须为0..11，单次数量必须为1..800")

@@ -5,7 +5,7 @@ const (
 	ExchangeDCE Exchange = 29
 )
 
-type dce struct{ ignoreImport }
+type dce struct{}
 
 var _ Market = dce{}
 

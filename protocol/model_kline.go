@@ -133,19 +133,26 @@ Count: a401
 Append: 00000000000000000000
 */
 func (kline) Frame(category uint8, code string, start, count uint16) (*Frame, error) {
-	if count > 800 {
-		return nil, errors.New("单次数量不能超过800")
-	}
-
-	exchange, number, err := DecodeCode(code)
+	exchange, body, err := DecodeCode(code)
 	if err != nil {
 		return nil, err
 	}
+	return klineFrame(category, exchange, body, start, count)
+}
 
+// FrameCode 使用已解析的协议市场编号和代码主体构造请求帧，不再解析代码字符串。
+func (kline) FrameCode(category uint8, exchange Exchange, code string, start, count uint16) (*Frame, error) {
+	return klineFrame(category, exchange, code, start, count)
+}
+
+func klineFrame(category uint8, exchange Exchange, code string, start, count uint16) (*Frame, error) {
+	if count > 800 {
+		return nil, errors.New("单次数量不能超过800")
+	}
 	return &Frame{
 		Control: Control01,
 		Type:    TypeKline,
-		Data:    klineData(exchange, number, start, count, category),
+		Data:    klineData(exchange, code, start, count, category),
 	}, nil
 }
 
@@ -169,7 +176,7 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		resp.List = make([]*Kline, 0, resp.Count)
 	}
 
-	info := standardMarketInfo(c.Code)
+	info := klineRules(c)
 	var last int64 // 线上的整数厘差值先累加，再转换为元，避免累计浮点误差。
 	for i := uint16(0); i < resp.Count; i++ {
 		date := d.take(4)
@@ -221,17 +228,41 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		resp.List = append(resp.List, k)
 	}
 	// 午休时间修正只适用于报文本身不带分钟钟面、且已知午休时段的布局。
-	if c.Session.LunchTimeFix() {
+	// 未显式提供时段时按代码解析市场默认时段，保持直接使用解码器调用方的行为。
+	if klineSession(c).LunchTimeFix() {
 		resp.List = FixKlineTime(resp.List)
 	}
 	return resp, nil
 }
 
+// klineRules 返回显式传入的品种规则；未提供时按代码解析标准市场规则。
+func klineRules(c KlineCache) InstrumentRules {
+	if c.Rules != nil {
+		return *c.Rules
+	}
+	return standardMarketInfo(c.Code)
+}
+
+// klineSession 返回显式时段；未提供时按代码解析所属市场的默认时段。
+// 标准分钟报文没有可解析代码时，按标准协议市场的默认时段处理。
+func klineSession(c KlineCache) TradingSession {
+	if c.Session != (TradingSession{}) {
+		return c.Session
+	}
+	if i, err := ParseInstrument(c.Code); err == nil {
+		if route, ok := i.Exchange.Route(); ok {
+			return route.Session
+		}
+	}
+	return DomesticSession
+}
+
 type KlineCache struct {
-	Type    uint8          //1分钟,5分钟,日线等
-	Kind    string         //指数,个股等
-	Code    string         //证券代码,用于区分不同品种的成交量单位
-	Session TradingSession // 从序号推导分钟钟面时使用的交易时段
+	Type    uint8            //1分钟,5分钟,日线等
+	Kind    string           //指数,个股等
+	Code    string           //证券代码,用于区分不同品种的成交量单位
+	Session TradingSession   // 从序号推导分钟钟面时使用的交易时段
+	Rules   *InstrumentRules // 已解析的品种规则；nil 时按代码解析
 }
 
 // FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00

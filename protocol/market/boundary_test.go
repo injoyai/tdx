@@ -84,3 +84,57 @@ func TestQuoteListCategoryDeclared(t *testing.T) {
 		}
 	}
 }
+
+// TestRouteReturnsIsolatedReport 固定路由返回值不与注册表共享报表配置，
+// 调用方修改返回值不能影响后续查询。
+func TestRouteReturnsIsolatedReport(t *testing.T) {
+	route, ok := ExchangeBJ.Route()
+	if !ok || route.Report == nil {
+		t.Fatal("北交所路由缺少报表配置")
+	}
+	route.Report.Member = "missing.cfg"
+	again, ok := ExchangeBJ.Route()
+	if !ok || again.Report == nil {
+		t.Fatal("北交所路由缺少报表配置")
+	}
+	if again.Report.Member != "tdxbjmore.cfg" {
+		t.Fatalf("注册表报表配置被外部修改为 %q", again.Report.Member)
+	}
+}
+
+// TestRouteReturnsIsolatedBareSymbols 固定路由返回的裸代码列表不与注册表共享。
+func TestRouteReturnsIsolatedBareSymbols(t *testing.T) {
+	route, ok := ExchangeHI.Route()
+	if !ok || len(route.BareSymbols) == 0 {
+		t.Fatal("港股指数路由缺少裸代码列表")
+	}
+	route.BareSymbols[0] = "XXXX"
+	again, ok := ExchangeHI.Route()
+	if !ok || len(again.BareSymbols) == 0 {
+		t.Fatal("港股指数路由缺少裸代码列表")
+	}
+	if again.BareSymbols[0] != "HSI" {
+		t.Fatalf("注册表裸代码列表被外部修改为 %q", again.BareSymbols[0])
+	}
+}
+
+// TestRulesProtocolFromRoute 固定规则中的协议类型由路由声明提供。
+func TestRulesProtocolFromRoute(t *testing.T) {
+	for _, code := range []string{"sh600000", "sz000001", "hkHSI", "usAAPL", "cffIF2609"} {
+		i, err := ParseInstrument(code)
+		if err != nil {
+			t.Fatalf("%s: %v", code, err)
+		}
+		route, ok := i.Exchange.Route()
+		if !ok {
+			t.Fatalf("%s: 路由未注册", code)
+		}
+		rules, ok := i.Rules()
+		if !ok {
+			t.Fatalf("%s: 规则缺失", code)
+		}
+		if rules.Protocol != route.Protocol {
+			t.Fatalf("%s: 规则协议 %s 与路由协议 %s 不一致", code, rules.Protocol, route.Protocol)
+		}
+	}
+}

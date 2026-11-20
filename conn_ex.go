@@ -340,18 +340,7 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 
 // GetQuoteList 获取扩展市场分页报价，保留原始字段和单位。
 func (c *ExConn) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
-	ex := protocol.Exchange(market)
-	route, ok := ex.Route()
-	if !ok {
-		return nil, fmt.Errorf("行情市场 %d 尚未接入统一 Client", market)
-	}
-	if route.QuoteListCategory == 0 {
-		return nil, fmt.Errorf("行情市场 %d 未声明批量报价类别", market)
-	}
-	if category != route.QuoteListCategory {
-		return nil, fmt.Errorf("行情市场 %d 的报价类别为 %d，不接受类别 %d", market, route.QuoteListCategory, category)
-	}
-	if err := protocolExchange(ex, true); err != nil {
+	if _, err := quoteListRoute(market, category); err != nil {
 		return nil, err
 	}
 	return c.getQuoteList(market, category, start, count)

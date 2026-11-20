@@ -109,6 +109,80 @@ func TestKlineWireVolumePreserved(t *testing.T) {
 	}
 }
 
+// TestKlineDecodeDefaultsSession 固定未显式提供时段时的午休修正：
+// 只传代码的直接调用方应按市场默认时段解码，与显式沪深时段结果一致。
+func TestKlineDecodeDefaultsSession(t *testing.T) {
+	now := time.Now().In(Location())
+	ymd := uint16((now.Year()-2004)*2048 + int(now.Month())*100 + now.Day())
+	b := Bytes(uint16(1))
+	b = append(b, Bytes(ymd)...)
+	b = append(b, Bytes(uint16(13*60))...) // 13:00
+	b = append(b, 0x90, 0x9c, 1)
+	b = append(b, 0, 0, 0)
+	b = append(b, Bytes(math.Float32bits(150))...)
+	b = append(b, Bytes(math.Float32bits(1500))...)
+	for _, c := range []KlineCache{
+		{Type: TypeKlineMinute},
+		{Type: TypeKlineMinute, Kind: KindStock, Code: "sh600000"},
+		{Type: TypeKlineMinute, Kind: KindStock, Code: "sh600000", Session: DomesticSession},
+	} {
+		resp, err := MKline.Decode(b, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := resp.List[0].Time.Format(time.TimeOnly); got != "11:30:00" {
+			t.Fatalf("Session=%+v 解码时间 %s, want 11:30:00", c.Session, got)
+		}
+	}
+}
+
+// TestKlineDecodeUsesProvidedRules 固定已解析的品种规则优先于按代码重新解析。
+func TestKlineDecodeUsesProvidedRules(t *testing.T) {
+	now := time.Now().In(Location())
+	ymd := uint16((now.Year()-2004)*2048 + int(now.Month())*100 + now.Day())
+	b := Bytes(uint16(1))
+	b = append(b, Bytes(ymd)...)
+	b = append(b, Bytes(uint16(571))...)
+	b = append(b, 0x90, 0x9c, 1)
+	b = append(b, 0, 0, 0)
+	b = append(b, Bytes(math.Float32bits(150))...)
+	b = append(b, Bytes(math.Float32bits(1500))...)
+	i, err := ParseInstrument("sh110000") // 可转债的分钟量除数为 1
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, ok := i.Rules()
+	if !ok {
+		t.Fatal("可转债规则缺失")
+	}
+	resp, err := MKline.Decode(b, KlineCache{Type: TypeKlineMinute, Code: "sh600000", Rules: &rules})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 按 sh600000 解析会除以 100 得到 1，使用传入规则应保留 150。
+	if got := resp.List[0].Volume; got != 150 {
+		t.Fatalf("成交量 %d, want 150", got)
+	}
+}
+
+// TestKlineFrameCodeMatchesFrame 固定复用已解析交易所和代码主体时帧内容不变。
+func TestKlineFrameCodeMatchesFrame(t *testing.T) {
+	f, err := MKline.Frame(TypeKlineMinute, "sh600000", 3, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := MKline.FrameCode(TypeKlineMinute, ExchangeSH, "600000", 3, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Type != got.Type || f.Control != got.Control || string(f.Data) != string(got.Data) {
+		t.Fatalf("帧不一致: %+v, %+v", f, got)
+	}
+	if _, err := MKline.FrameCode(TypeKlineMinute, ExchangeSH, "600000", 0, 801); err == nil {
+		t.Fatal("超过单次数量上限时应报错")
+	}
+}
+
 func TestMerge241Periods(t *testing.T) {
 	day := time.Date(2026, 1, 5, 9, 30, 0, 0, time.Local)
 	ks := Klines{{Time: day, Open: 1, High: 1, Low: 1, Close: 1, Volume: 10}}

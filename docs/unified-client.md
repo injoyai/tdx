@@ -150,7 +150,7 @@ _ = quotes; _ = err
 
 `MarketID.Info()` 返回 `(MarketInfo, bool)`，其中包含市场简称、名称、协议路由和调度资料。`Exchange.Route()` 获取指定协议市场的存储键、协议类型及代码表来源。单地区市场提供供调度使用的 IANA 时区。国际指数覆盖多个地区，`TimeZone` 和 `CloseTime` 为空，拉取任务由调用方配置更新边界。
 
-内置市场以无状态类型实现 `protocol/market.Market` 的 `Info`、`Resolve`、`Rules` 三个方法，在本文件通过 `registerMarket(hk{})` 注册即可。`Info` 返回路由、裸代码标识和快照参与范围等数据，`Resolve` 和 `Rules` 提供实际行为。通用解析层根据 `Resolve` 返回的快照候选加载数据，复用解析后的协议市场。`Trade.Nature` 声明分笔方向的编码类型。
+内置市场实现 `protocol/market.Market` 的 `Info`、`Resolve`、`Rules` 三个方法，在本文件通过 `registerMarket(hk{})` 注册即可。`Info` 返回路由、裸代码标识和快照参与范围等数据，`Resolve` 和 `Rules` 提供实际行为；`Rules` 返回的协议类型以路由声明为准，市场无需重复声明。持久化证券归属属于可选能力，只有需要它的市场（当前为港股）实现内部导入方法，其他市场无状态且不参与导入。通用解析层根据 `Resolve` 返回的快照候选加载数据，复用解析后的协议市场。`Trade.Nature` 声明分笔方向的编码类型。
 
 
 | 市场 | `TimeZone` | `CloseTime` |
@@ -190,7 +190,7 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 
 通过 `Client.GetInstruments()` 获取扩展服务器可分页提供的全局品种表。MarketClient 自动使用扩展连接，标准连接返回不支持错误。pull 只在本轮 Update 内共享返回快照。
 
-应用可在启动时调用 `protocol.LoadInstrumentMarkets(dir)` 加载已保存的证券归属。目录由应用指定，首次没有文件时从空表开始。每次完整的 `GetInstruments()` 成功后，调用 `protocol.ImportInstruments(items)` 一次。注册表会对每个已注册市场调用一次 `Market.Import`，无需维护归属表的市场直接返回。
+应用可在启动时调用 `protocol.LoadInstrumentMarkets(dir)` 加载已保存的证券归属。目录由应用指定，首次没有文件时从空表开始；目录和归属表是进程级共享数据，重复调用会替换所有 Client 共用的数据源，因此应在启动时配置一次。每次完整的 `GetInstruments()` 成功后，调用 `protocol.ImportInstruments(items)` 一次。只有实现内部导入能力的市场会接收数据（当前仅香港），其他市场不参与。
 
 当前由香港市场处理其中市场 31 和 49 的五位数字证券。相同代码以本次结果中最后一条归属为准，本次缺席的旧代码继续保留。变更原子写入 `dir/hk-instruments.json`，写入成功后才更新进程内的共享归属。所有 Client 都优先使用导入的归属，再使用内置代码表，仍未知时查询候选市场。显式传给 `ResolveInstrument` 的品种快照优先于这份共享归属。同一个目录由一个进程负责写入。
 

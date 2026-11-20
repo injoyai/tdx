@@ -43,12 +43,18 @@ func (i Instrument) Kind() SecurityKind {
 }
 
 // Rules returns the quote, K-line, time-share, and trade rules for the instrument.
+// 协议类型以路由声明为准，规则实现无需重复声明。
 func (i Instrument) Rules() (InstrumentRules, bool) {
-	if route, ok := exchangeRoutes[i.Exchange]; ok {
-		rules, err := route.market.Rules(i)
-		return rules, err == nil
+	route, ok := exchangeRoutes[i.Exchange]
+	if !ok {
+		return InstrumentRules{}, false
 	}
-	return InstrumentRules{}, false
+	rules, err := route.market.Rules(i)
+	if err != nil {
+		return InstrumentRules{}, false
+	}
+	rules.Protocol = route.Protocol
+	return rules, true
 }
 
 // StorageCode returns the code used with its market key in pull and storage.

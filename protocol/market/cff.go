@@ -5,7 +5,7 @@ const (
 	ExchangeCFF Exchange = 47
 )
 
-type cff struct{ ignoreImport }
+type cff struct{}
 
 var _ Market = cff{}
 

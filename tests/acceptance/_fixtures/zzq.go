@@ -56,6 +56,4 @@ func (*zzq) Rules(i Instrument) (InstrumentRules, error) {
 	return info, nil
 }
 
-func (*zzq) Import([]Instrument) error { return nil }
-
 func init() { registerMarket(&zzq{}) }
