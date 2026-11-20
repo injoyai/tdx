@@ -8,13 +8,14 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// StandardCode 将标准证券的合法输入形式统一为 sh/sz/bj 拼接代码。
+// StandardCode 将标准证券的合法输入形式统一为规范简称拼接代码。
 func StandardCode(code string) (string, error) {
 	i, err := protocol.ParseInstrument(code)
 	if err != nil {
 		return "", err
 	}
-	if i.Exchange > protocol.ExchangeBJ {
+	route, ok := i.Exchange.Route()
+	if !ok || route.Protocol != protocol.ProtocolStandard {
 		return "", fmt.Errorf("元数据缓存不支持市场 %s", i.Exchange)
 	}
 	return i.Exchange.String() + i.Code, nil
@@ -44,7 +45,7 @@ func ValidateCodes(rows CodeModels) error {
 			return fmt.Errorf("model: invalid security record")
 		}
 		key, err := StandardCode(row.FullCode())
-		if err != nil || len(key) < 2 || key[:2] != row.Exchange || key[2:] != row.Code || seen[key] {
+		if err != nil || key != row.Exchange+row.Code || seen[key] {
 			return fmt.Errorf("model: invalid or duplicate security %s", row.FullCode())
 		}
 		seen[key] = true

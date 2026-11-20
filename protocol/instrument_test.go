@@ -54,6 +54,65 @@ func TestParseInstrument(t *testing.T) {
 	}
 }
 
+func TestParseInstrumentMarketPriority(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		ex    Exchange
+		code  string
+	}{
+		// 代码主体中的点不能被更短的市场前缀抢占。
+		{"WIX.US", ExchangeUS, "WIX"}, {"us.WIX", ExchangeUS, "WIX"},
+		{"USB.US", ExchangeUS, "USB"}, {"BRK.B.US", ExchangeUS, "BRK.B"},
+		// 裸代码推断保持不变。
+		{"000001", ExchangeSZ, "000001"}, {"SHOP", ExchangeUS, "SHOP"},
+		// 裸品种符号与完整市场键。
+		{"HKL", ExchangeHI, "HKL"},
+		{"hk/fund.02800", ExchangeHKFund, "02800"},
+		{"02800.hk/fund", ExchangeHKFund, "02800"},
+		{"cff/IF2609", ExchangeCFF, "IF2609"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			i, err := ParseInstrument(tc.input)
+			if err != nil || i.Exchange != tc.ex || i.Code != tc.code {
+				t.Fatalf("ParseInstrument(%q)=%+v, %v", tc.input, i, err)
+			}
+			back, err := ParseInstrument(i.QueryCode())
+			if err != nil || back != i {
+				t.Fatal("canonical code did not round-trip", back, err)
+			}
+			ex, code, err := DecodeCode(tc.input)
+			if err != nil || ex != tc.ex || code != tc.code {
+				t.Fatalf("DecodeCode(%q)=%d %q, %v", tc.input, ex, code, err)
+			}
+		})
+	}
+}
+
+func TestParseInstrumentMarketNumberBounds(t *testing.T) {
+	// 编号越界必须报错，不能按 uint8 回绕成其他市场。
+	for _, input := range []string{"600000.257", "000001.999", "00700.256"} {
+		i, err := ParseInstrument(input)
+		if err == nil || i.Exchange != 0 || !strings.Contains(err.Error(), "0-255") {
+			t.Fatalf("%q 未按编号越界报错: %+v, %v", input, i, err)
+		}
+	}
+	// 合规但未接入的编号保持原始协议编号，不得映射到其他市场。
+	if i, err := ParseInstrument("00700.44"); err == nil || i.Exchange != 0 || !strings.Contains(err.Error(), "44") {
+		t.Fatalf("未接入编号未报错: %+v, %v", i, err)
+	}
+	for _, input := range []string{"600000.-1", "600000.257.SH"} {
+		if i, err := ParseInstrument(input); err == nil {
+			t.Fatalf("accepted invalid market number %q as %s", input, i)
+		}
+	}
+	if _, err := ParseExchange("257"); err == nil || !strings.Contains(err.Error(), "0-255") {
+		t.Fatalf("ParseExchange(257) 未按越界报错: %v", err)
+	}
+	if _, err := ParseExchange("-1"); err == nil {
+		t.Fatal("ParseExchange(-1) accepted")
+	}
+}
+
 func TestInstrumentBlockMarket(t *testing.T) {
 	for _, code := range []string{"sh880001", "sh881001", "880001"} {
 		i, err := ParseInstrument(code)

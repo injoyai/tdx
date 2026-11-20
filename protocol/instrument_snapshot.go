@@ -44,10 +44,23 @@ func ResolveInstrument(input string, load func(InstrumentLookup) (InstrumentSnap
 }
 
 // QuoteProtocol selects the connection for a code. Shared codes are resolved
-// by the selected connection before an instrument request.
+// by the selected connection before an instrument request. A shared code whose
+// candidate routes disagree on the protocol must be given an explicit market.
 func QuoteProtocol(code string) (MarketProtocol, error) {
-	if _, needed := LookupInstrument(code); needed {
-		return ProtocolExtended, nil
+	if lookup, needed := LookupInstrument(code); needed {
+		var selected MarketProtocol
+		for _, ex := range lookup.Exchanges {
+			route, ok := ex.Route()
+			if !ok {
+				return "", fmt.Errorf("候选行情市场 %d 尚未接入统一 Client", ex)
+			}
+			if selected == "" {
+				selected = route.Protocol
+			} else if route.Protocol != selected {
+				return "", fmt.Errorf("%s 的候选市场协议不一致（%s），请显式指定市场", lookup, lookup.Candidates())
+			}
+		}
+		return selected, nil
 	}
 	i, err := ParseInstrument(code)
 	if err != nil {

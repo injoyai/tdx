@@ -159,12 +159,12 @@ HTTP 元数据服务通过 CodesHandler(index, equity) 接收现成查询快照�
 内置市场通过无状态类型的 `Info`、`Resolve`、`Rules` 三个方法提供资料和行为，`init` 直接注册实例。数字港股的 `ParseInstrument`／`DecodeCode` 在缺少协议编号时返回需要品种快照的错误。调用方可使用 `ResolveInstrument` 加载快照，或使用已知的数字协议编号。行情连接使用市场定义中的内置归属及候选市场查询。已有品种快照仍可用于 pull 解析存储归属。
 
 
-`InstrumentRules` 补充显式行情支持声明。查询报价、分时和分笔前读取各自的 `Supported`，查询 K 线使用 `rules.Kline(category, mode).Supported`。自定义市场填写 `KlinePeriods`、`RangePeriods` 和各类行情的 `Fields`，并为可用数量及价格字段配置换算参数。价格、成交量和成交额分别通过 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明。港股指数和国际指数的历史分笔会在读取日期范围和日线之前报不支持错误。
+`InstrumentRules` 补充显式行情支持声明。查询报价、分时和分笔前读取各自的 `Supported`，查询 K 线使用 `rules.Kline(category, mode).Supported`。自定义市场填写 `KlinePeriods`、`RangePeriods` 和各类行情的 `Fields`，并为可用数量及价格字段配置换算参数。价格、成交量和成交额分别通过 `Fields.Price`、`Fields.Volume`、`Fields.Amount` 声明。拆竞价与分笔补分钟分别由 `SplitAuction`、`TradeFallback` 声明，只声明前者时 pull 不会请求分笔。需要从记录序号推导分钟钟面的布局还须在路由声明 `Session`，沪深北共用 `DomesticSession`；未声明时段的市场会报错，普通分钟查询不受影响。港股指数和国际指数的历史分笔会在读取日期范围和日线之前报不支持错误。
 
 
 沪深北分别使用 `protocol.MarketSH`、`MarketSZ`、`MarketBJ`。股票、指数、ETF/LOF、转债和板块指数由 `Instrument.Kind()` 区分。K 线周期和倍率通过 `Instrument.Rules()` 获取，从 `model.Code` 出发时先调用 `code.Instrument()`。期货市场键使用各自交易所简称，`Code.Code` 保存合约主体。
 
-`KlineInfo.ToStorageVolume` 现在返回 `(int64, error)`，调用方须处理零/负倍率、负数量和溢出错误，不再对零值配置偷偷采用 ×100。期货、美股 pull 存储从旧默认 ×100 改为保留张数/股数；港股分钟 K 线采用 ×100。已有数据库不自动修改，旧记录不能未经核对混用。
+`KlineInfo.ToStorageVolume` 现在返回 `(int64, error)`，调用方须处理零/负倍率、负数量和溢出错误，不再对零值配置偷偷采用 ×100。期货、美股 pull 存储从旧默认 ×100 改为保留张数/股数；港股分钟 K 线采用 ×100。标准分钟 K 线不再先除 100 再乘倍率，原量槽与倍率一次组合且保留余数（量槽 150 的股票分钟仍为 150 股，旧实现会截断为 100）；受影响的历史数据应按新口径重新拉取或核对。已有数据库不自动修改，旧记录不能未经核对混用。
 
 可转债日线及长周期按 ×1000、分钟线和报价/分时/分笔按 ×10 归一为张。分时和分笔分别按各自编码校准价格。其他国内默认品种尚未逐接口校准。港股指数 K 线返回指数点位和 `Volume=0`，报文金额 ×1,000,000 转为原币种 `Amount`。港股指数报价、分时和分笔的成交数量接口返回错误。港股个股 K 线仅有百股精度。完整边界见 [数据契约](unified-client.md#数据契约)。以下历史迁移条目的量单位说明以本节为准。
 

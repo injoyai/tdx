@@ -11,6 +11,7 @@ import (
 	"net"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -218,6 +219,14 @@ func TestClientUnifiedBjCodes(t *testing.T) {
 	if _, err = f.Write([]byte("44|920000|2|First|1|\n44|920001|2|Second|1|\n")); err != nil {
 		t.Fatal(err)
 	}
+	// 同一压缩包放入无关成员，验证市场只取自己声明的文件。
+	other, err := z.Create(protocol.FileTdxZs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = other.Write([]byte("decoy")); err != nil {
+		t.Fatal(err)
+	}
 	if err = z.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +242,28 @@ func TestClientUnifiedBjCodes(t *testing.T) {
 	page, err := c.GetCode(protocol.ExchangeBJ, 1, 1)
 	if err != nil || page.Count != 1 || page.List[0].Instrument.Code != "920001" || page.List[0].Standard.Name != "Second" {
 		t.Fatal(page, err)
+	}
+}
+
+func TestClientReportCodeMissingMember(t *testing.T) {
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	f, err := z.Create(protocol.FileTdxZs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write([]byte("decoy")); err != nil {
+		t.Fatal(err)
+	}
+	if err = z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	c := respondingTestClient(t, false, func(_, _ []byte) []byte {
+		return append(protocol.Bytes(uint32(buf.Len())), buf.Bytes()...)
+	})
+	_, err = c.GetCount(protocol.ExchangeBJ)
+	if err == nil || !strings.Contains(err.Error(), "2") || !strings.Contains(err.Error(), protocol.FileTdxBjMore) {
+		t.Fatalf("缺少成员错误未包含市场与文件名: %v", err)
 	}
 }
 

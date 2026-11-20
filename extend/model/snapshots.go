@@ -23,7 +23,8 @@ func (s CodeSnapshot) Validate() error {
 	}
 	scope := map[string]bool{}
 	for _, ex := range s.Exchanges {
-		if ex > protocol.ExchangeBJ || scope[ex.String()] {
+		route, ok := ex.Route()
+		if !ok || route.Protocol != protocol.ProtocolStandard || scope[ex.String()] {
 			return fmt.Errorf("model: invalid or duplicate standard exchange %s", ex)
 		}
 		scope[ex.String()] = true
@@ -53,7 +54,9 @@ func (s GbbqSnapshot) Validate() error {
 	scope := map[string]bool{}
 	for _, code := range s.Codes {
 		i, err := protocol.ParseInstrument(code)
-		if err != nil || i.Exchange > protocol.ExchangeBJ || i.Exchange.String()+i.Code != code || scope[code] {
+		route, ok := i.Exchange.Route()
+		if err != nil || !ok || route.Protocol != protocol.ProtocolStandard ||
+			i.Exchange.String()+i.Code != code || scope[code] {
 			return fmt.Errorf("model: invalid or duplicate event security %s", code)
 		}
 		scope[code] = true

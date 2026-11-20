@@ -43,6 +43,10 @@
 
 - **统一行情 API 与连接边界**：Client 方法集兼容保留，单页行情消费者可依赖 KlineReader。NewClient 按市场懒建标准／扩展连接，Dial* 返回 StConn，DialEx* 返回 ExConn；具体连接不暴露可修改的 ios 协议回调。单协议连接不额外建立另一种协议连接。统一结果保留 Standard/Extended 原始字段；未知单位不推测换算，发现市场不代表行情路由已支持。接口与迁移以 docs/unified-client.md 和 docs/v2-migration.md 为准。
 
+- **市场差异集中在市场实现**：市场源码通过 `init` 内置注册，没有外部注册 API；`pull.Register` 只注册拉取任务。路由新增 `RouteInfo.Session`（`TradingSession`）声明从记录序号推导钟面的交易时段，沪深北共用 `DomesticSession`；历史分时解码和标准 K 线午休修正都消费该声明，未声明时段报错，241 入口只接受 `AuctionMinute` 的时段。`CodeSource` 之外由 `RouteInfo.Report` 选择报表成员与解析器，未知来源不回退普通分页；板块补录用目标路由生成代码。`SplitAuction`（拆竞价）与 `TradeFallback`（允许分笔补分钟）独立声明，pull 只有后者开启时才请求分笔。标准分钟量按原量槽与倍率一次组合换算并保留余数。
+
+- **跨包验收夹具**：zzq（标准协议 200，六位数字）通过 `go test -overlay` 将 `tests/acceptance/_fixtures/zzq.go` 挂载为 `protocol/market/zzq.go`，pull 注册表按 `protocol.Markets()` 自动包含；香港基金倍率隔离用临时 overlay 只替换 `hk.go`。下划线目录与运行时 `t.Skip` 保证正常 `go test ./...` 不受影响。
+
 - **连接生命周期依赖约束**：`ios` 的完整写入流程（包括写入统计）和重连初始化须共用门控；初始化在连接回调之前，故门控从 Dial 成功返回前开始，必须保持到握手完整发送后，不能在发布写入快照时提前释放。握手在已持有门控时直接写当次连接，不能再次经过普通加锁入口。对外使用稳定的 `MoreWriter` 入口，心跳只持有当次连接及其关闭信号。生命周期上下文须从首次拨号贯通到读取/重连，否则门面关闭时无法取消默认的首次重试。请求超时覆盖排队、发送、等待；发送被中断时关闭当次连接，防止半帧污染。底层关闭会立即归还读缓存，故协议分包使用每条连接独立的读取缓存；`Close` 取消生命周期并关闭传输，等待读取流程退出后释放底层资源，避免与读取初始化或重连状态重置竞争。
 
 - **TCP 关闭依赖约束**：真实 TCP 重复 `Close` 返回错误，`ios` 遇到关闭错误会提前跳过断开回调和缓存清理；传输须用幂等关闭封装，`Origin()` 继续实现 `net.Conn`，但不保证具体类型为 `*net.TCPConn`。

@@ -39,6 +39,7 @@ func standardSecurityInfo(kind SecurityKind) InstrumentRules {
 	switch kind {
 	case SecurityStock:
 		info.SplitAuction = true
+		info.TradeFallback = true
 	case SecurityIndex:
 		info.Kind = KindIndex
 		info.Minute.VolumeScale = 0
@@ -59,6 +60,7 @@ func standardSecurityInfo(kind SecurityKind) InstrumentRules {
 		info.Trade.PriceDivisor = 10
 		info.Quote.UseCodeDecimals = true
 		info.SplitAuction = true
+		info.TradeFallback = true
 	case SecurityOther:
 		info.Quote.UseCodeDecimals = true
 	}

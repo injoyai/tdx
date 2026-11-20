@@ -2,12 +2,18 @@ package protocol
 
 import (
 	"errors"
+
 	"github.com/injoyai/conv"
 	"io"
-	"time"
 )
 
 type historyMinute struct{}
+
+// MinuteCache carries the market session needed to derive clocks for layouts
+// whose records have no timestamp of their own.
+type MinuteCache struct {
+	Session TradingSession
+}
 
 func (historyMinute) Frame(date, code string) (*Frame, error) {
 	exchange, number, err := DecodeCode(code)
@@ -24,10 +30,15 @@ func (historyMinute) Frame(date, code string) (*Frame, error) {
 	}, nil
 }
 
-func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
+func (historyMinute) Decode(bs []byte, cache ...MinuteCache) (*MinuteResp, error) {
 
 	if len(bs) < 6 {
 		return nil, errors.New("数据长度不足")
+	}
+
+	session := DomesticSession
+	if len(cache) > 0 {
+		session = cache[0].Session
 	}
 
 	resp := &MinuteResp{
@@ -44,7 +55,6 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 	}
 
 	var lastPrice int64
-	t := time.Date(0, 0, 0, 9, 30, 0, 0, Location())
 	for i := uint16(0); i < resp.Count; i++ {
 		price := int64(d.number())
 		d.number() // 未知字段
@@ -54,11 +64,12 @@ func (historyMinute) Decode(bs []byte) (*MinuteResp, error) {
 			return nil, d.err
 		}
 
-		if i == 120 {
-			t = t.Add(time.Minute * 90)
+		clock, err := session.HourMinute(int(i))
+		if err != nil {
+			return nil, err
 		}
 		resp.List = append(resp.List, PriceNumber{
-			Time:   t.Add(time.Minute * time.Duration(i+1)).Format("15:04"),
+			Time:   clock,
 			Price:  float64(lastPrice) / 100,
 			Number: number,
 		})

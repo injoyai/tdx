@@ -197,8 +197,19 @@ func isFuturesCode(s string) bool {
 	return hasLetter && hasDigit
 }
 
-// IsStock 是否是股票,示例sz000001
+// IsStock 是否是股票,示例sz000001。
+// 已注册市场先解析再按路由的标准协议与品种分类判断；公开支持的旧格式保留兜底。
 func IsStock(code string) bool {
+	if len(code) != 8 && !strings.ContainsAny(code, "./") {
+		return false
+	}
+	if i, err := ParseInstrument(code); err == nil {
+		if route, ok := i.Exchange.Route(); ok && route.Protocol == ProtocolStandard {
+			if rules, ok := i.Rules(); ok {
+				return rules.Security == SecurityStock
+			}
+		}
+	}
 	return IsSZStock(code) || IsSHStock(code) || IsBJStock(code)
 }
 
@@ -252,8 +263,23 @@ func isBJStock(code string) bool {
 	return code[:2] == "92"
 }
 
-// IsETF 是否是基金,示例sz159558
+// IsETF 是否是基金,示例sz159558。
+// 解析后仍按既有的 ETF/LOF 号段判断，避免把所有基金一概视为 ETF。
 func IsETF(code string) bool {
+	if len(code) != 8 && !strings.ContainsAny(code, "./") {
+		return false
+	}
+	if i, err := ParseInstrument(code); err == nil {
+		switch i.Exchange {
+		case ExchangeSH:
+			return isSHETF(i.Code)
+		case ExchangeSZ:
+			return isSZETF(i.Code)
+		case ExchangeBJ:
+			return isBJETF(i.Code)
+		}
+		return false
+	}
 	if len(code) != 8 {
 		return false
 	}
@@ -293,9 +319,29 @@ func isBJETF(code string) bool {
 	return false
 }
 
-// IsIndex 是否是指数,sh000001,sz399001,bj899100
+// IsIndex 是否是指数,sh000001,sz399001,bj899100。
 // 板块指数(880xxx 行业/概念, 881xxx 地域)归属上海交易所(ExchangeSH), 也视为指数。
+// 带市场标识的标准代码（前缀、点后缀或完整市场键）统一解析后再分类；扩展市场不在公开支持范围内。
 func IsIndex(code string) bool {
+	if len(code) != 8 && !strings.ContainsAny(code, "./") {
+		return false
+	}
+	if i, err := ParseInstrument(code); err == nil {
+		switch i.Exchange {
+		case ExchangeSH:
+			return isSHIndex(i.Code) || isBlock(i.Code)
+		case ExchangeSZ:
+			return isSZIndex(i.Code)
+		case ExchangeBJ:
+			return isBJIndex(i.Code)
+		}
+		if route, ok := i.Exchange.Route(); ok && route.Protocol == ProtocolStandard {
+			if rules, ok := i.Rules(); ok {
+				return rules.Security == SecurityIndex
+			}
+		}
+		return false
+	}
 	if len(code) != 8 {
 		return false
 	}

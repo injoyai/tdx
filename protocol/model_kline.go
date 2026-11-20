@@ -42,6 +42,19 @@ type Kline struct {
 	Time      time.Time //时间
 	UpCount   int       //上涨数量,指数有效
 	DownCount int       //下跌数量,指数有效
+
+	wireVolume int64 // 标准协议解码得到的原始数量槽位，供按证券与周期规则无损换算
+}
+
+// WireVolume 返回标准协议解码得到的原始成交数量槽位。
+//
+// 该值未做任何取整，供统一入口按证券和周期规则换算为最小单位；Volume 字段保持既有单位契约。
+// 由本地文件、指标或其他协议构造的 Kline 返回 0。
+func (k *Kline) WireVolume() int64 {
+	if k == nil {
+		return 0
+	}
+	return k.wireVolume
 }
 
 func (k *Kline) String() string {
@@ -190,7 +203,9 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 			年: 不需要操作
 
 		*/
-		k.Volume = info.StandardKlineVolume(int64(float32Value(d.uint32())), c.Type, c.Kind)
+		wire := int64(float32Value(d.uint32()))
+		k.Volume = info.StandardKlineVolume(wire, c.Type, c.Kind)
+		k.wireVolume = wire
 		k.Amount = float32Value(d.uint32())
 
 		switch c.Kind {
@@ -205,14 +220,18 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		}
 		resp.List = append(resp.List, k)
 	}
-	resp.List = FixKlineTime(resp.List)
+	// 午休时间修正只适用于报文本身不带分钟钟面、且已知午休时段的布局。
+	if c.Session.LunchTimeFix() {
+		resp.List = FixKlineTime(resp.List)
+	}
 	return resp, nil
 }
 
 type KlineCache struct {
-	Type uint8  //1分钟,5分钟,日线等
-	Kind string //指数,个股等
-	Code string //证券代码,用于区分不同品种的成交量单位
+	Type    uint8          //1分钟,5分钟,日线等
+	Kind    string         //指数,个股等
+	Code    string         //证券代码,用于区分不同品种的成交量单位
+	Session TradingSession // 从序号推导分钟钟面时使用的交易时段
 }
 
 // FixKlineTime 修复盘内下午(13~15点)拉取数据的时候,11.30的时间变成13.00

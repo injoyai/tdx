@@ -159,7 +159,7 @@ func (u *stdUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.Fetc
 		return pull.FetchResult{Known: true}, err
 	}
 	info, _ := i.Rules()
-	if s.TradeFallbackEnabled() && info.SplitAuction {
+	if s.TradeFallbackEnabled() && info.TradeFallback {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {
 				var days []tdx.Kline

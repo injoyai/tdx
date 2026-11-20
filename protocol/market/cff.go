@@ -12,7 +12,7 @@ var _ Market = cff{}
 func (cff) Info() MarketInfo {
 	return MarketInfo{
 		Prefix: "cff", Name: "中金期货", TimeZone: "Asia/Shanghai", CloseTime: "15:30",
-		Routes: []RouteInfo{{ID: MarketCFF, Exchange: ExchangeCFF, Name: "中金期货", Protocol: ProtocolExtended, CodeSource: CodeListExtended}},
+		Routes: []RouteInfo{{ID: MarketCFF, Exchange: ExchangeCFF, Name: "中金期货", Protocol: ProtocolExtended, CodeSource: CodeListExtended, QuoteListCategory: 3}},
 	}
 }
 

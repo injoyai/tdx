@@ -148,8 +148,12 @@ type InstrumentRules struct {
 	Day, Minute                           KlineInfo
 	LongVolumeScale                       int64
 	SplitAuction                          bool
-	Quote                                 QuoteRule
-	TimeShare, Trade                      TickRule
+	// TradeFallback allows pull to synthesize missing minute bars from
+	// historical trades. It is independent from SplitAuction: a venue may split
+	// the auction without permitting trade-based minute completion.
+	TradeFallback    bool
+	Quote            QuoteRule
+	TimeShare, Trade TickRule
 
 	extendedKlineAmountScale    float64
 	standardMinuteVolumeDivisor int64
@@ -224,6 +228,49 @@ func (m InstrumentRules) StandardKlineVolume(volume int64, category uint8, kind 
 		volume *= SharesPerLot
 	}
 	return volume
+}
+
+// StandardKlineBusinessVolume 将标准协议原始数量槽位按证券和周期规则换算为最小单位。
+//
+// 与 StandardKlineVolume 不同，分钟除数和倍率在一次换算中合并计算，不会先整除而丢失余数。
+// 余数部分不足一个最小单位时按整数截断，其余情况保留全部数量；负量与溢出返回错误。
+func (m InstrumentRules) StandardKlineBusinessVolume(volume int64, category uint8, kind string) (int64, error) {
+	if volume < 0 {
+		return 0, fmt.Errorf("成交量 %d 不能为负", volume)
+	}
+	scale := m.KlineVolumeScale(category)
+	if scale <= 0 {
+		return 0, nil
+	}
+	if kind == KindIndex {
+		if scale > math.MaxInt64/SharesPerLot {
+			return 0, fmt.Errorf("成交量 %d 的换算倍率溢出", volume)
+		}
+		scale *= SharesPerLot
+	}
+	divisor := int64(1)
+	if IsIntraday(category) || category == TypeKlineDay2 {
+		divisor = m.standardMinuteVolumeDivisor
+		if divisor <= 0 {
+			return 0, fmt.Errorf("分钟成交量除数无效: %d", divisor)
+		}
+	}
+	if divisor == 1 {
+		if volume > math.MaxInt64/scale {
+			return 0, fmt.Errorf("成交量 %d 无法按倍率 %d 转换为最小单位", volume, scale)
+		}
+		return volume * scale, nil
+	}
+	whole, rest := volume/divisor, volume%divisor
+	if whole > math.MaxInt64/scale || rest > math.MaxInt64/scale {
+		return 0, fmt.Errorf("成交量 %d 无法按倍率 %d 转换为最小单位", volume, scale)
+	}
+	out := whole * scale
+	add := rest * scale / divisor
+	if out > math.MaxInt64-add {
+		return 0, fmt.Errorf("成交量 %d 无法按倍率 %d 转换为最小单位", volume, scale)
+	}
+	return out + add, nil
 }
 
 // FinanceScales returns the standard protocol's share and currency scales.

@@ -340,7 +340,18 @@ func (c *ExConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 
 // GetQuoteList 获取扩展市场分页报价，保留原始字段和单位。
 func (c *ExConn) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
-	if err := protocolExchange(protocol.Exchange(market), true); err != nil {
+	ex := protocol.Exchange(market)
+	route, ok := ex.Route()
+	if !ok {
+		return nil, fmt.Errorf("行情市场 %d 尚未接入统一 Client", market)
+	}
+	if route.QuoteListCategory == 0 {
+		return nil, fmt.Errorf("行情市场 %d 未声明批量报价类别", market)
+	}
+	if category != route.QuoteListCategory {
+		return nil, fmt.Errorf("行情市场 %d 的报价类别为 %d，不接受类别 %d", market, route.QuoteListCategory, category)
+	}
+	if err := protocolExchange(ex, true); err != nil {
 		return nil, err
 	}
 	return c.getQuoteList(market, category, start, count)
@@ -661,6 +672,11 @@ func DialExDefault(op ...client.Option) (*ExConn, error) {
 // DialEx 连接指定扩展行情服务器。
 func DialEx(addr string, op ...client.Option) (*ExConn, error) {
 	return dialExWith(NewTCPDial(withPort(addr, ExPort)), op...)
+}
+
+// DialExWith 通过自定义拨号函数建立扩展行情连接，供离线模拟报文使用。
+func DialExWith(dial ios.DialFunc, op ...client.Option) (*ExConn, error) {
+	return dialExWith(dial, op...)
 }
 
 // DialExHosts 遍历扩展行情服务器，裸 IP 默认使用端口 7727。

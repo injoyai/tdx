@@ -1,6 +1,8 @@
 package market
 
 import (
+	"fmt"
+
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
@@ -25,14 +27,18 @@ func (u *stdUnit) blockCodes(s *pull.Service) ([]model.Code, error) {
 		return nil, err
 	}
 	out := []model.Code{}
+	// 板块补录使用目标路由生成规范代码，避免重新猜测归属。
+	exchange, ok := u.name.Exchange()
+	if !ok {
+		return nil, fmt.Errorf("市场 %s 未注册路由", u.name)
+	}
 	for _, b := range blocks {
 		if b.Index == "" {
 			continue
 		}
-		// 板块指数代码(如 880xxx) 需带市场前缀，走 sh
 		out = append(out, model.Code{
 			Market: u.name,
-			Code:   protocol.AddPrefix(b.Index),
+			Code:   exchange.String() + b.Index,
 			Name:   b.Name,
 		})
 	}

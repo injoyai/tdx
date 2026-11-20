@@ -58,7 +58,7 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	for _, k := range r.List {
 		v := standardKline(k)
 		if scale > 0 {
-			v.Volume, err = scaleVolume(k.Volume, scale)
+			v.Volume, err = info.StandardKlineBusinessVolume(k.WireVolume(), rule.Category, rule.Kind)
 			if err != nil {
 				return nil, err
 			}
@@ -356,20 +356,30 @@ func (c *StConn) getStandardCode(exchange protocol.Exchange, start uint16) (*pro
 func (c *StConn) getStandardCodeAll(exchange protocol.Exchange) (*protocol.CodeResp, error) {
 	resp := &protocol.CodeResp{}
 
-	//通达信标准协议(GetCount/GetCode)不支持北交所(market=2),会超时;
-	//通过 zhb.zip 中的 tdxbjmore.cfg 获取北交所代码和名称。
-	if route, _ := exchange.Route(); route.CodeSource == protocol.CodeListZHBReport {
+	route, ok := exchange.Route()
+	if !ok {
+		return nil, fmt.Errorf("行情市场 %d 未注册", exchange)
+	}
+	switch route.CodeSource {
+	case protocol.CodeListStandard:
+		// 走协议分页；北交所不使用该来源。
+	case protocol.CodeListZHBReport:
+		if route.Report == nil {
+			return nil, fmt.Errorf("市场 %d 的报表来源缺少成员与解析器", exchange)
+		}
 		files, err := c.GetZHBFiles()
 		if err != nil {
 			return nil, err
 		}
-		data, ok := files[protocol.FileTdxBjMore]
-		if !ok {
-			return nil, fmt.Errorf("%s 中缺少 %s", protocol.ReportZHB, protocol.FileTdxBjMore)
+		list, err := protocol.ParseReportCodes(*route.Report, files)
+		if err != nil {
+			return nil, fmt.Errorf("市场 %d: %w", exchange, err)
 		}
-		resp.List = protocol.ParseTdxBjMore(data)
+		resp.List = list
 		resp.Count = uint16(len(resp.List))
 		return resp, nil
+	default:
+		return nil, fmt.Errorf("市场 %d 的代码来源 %d 不能用于标准代码列表", exchange, route.CodeSource)
 	}
 
 	size := 1000
@@ -780,7 +790,13 @@ func (c *StConn) getStandardHistoryMinute(date, code string) (*protocol.MinuteRe
 	if err != nil {
 		return nil, err
 	}
-	result, err := c.SendFrame(f)
+	cache := protocol.MinuteCache{Session: protocol.DomesticSession}
+	if i, err := protocol.ParseInstrument(code); err == nil {
+		if route, ok := i.Exchange.Route(); ok {
+			cache.Session = route.Session
+		}
+	}
+	result, err := c.SendFrame(f, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -826,7 +842,13 @@ func (c *StConn) getStandardKline(category uint8, code string, start, count uint
 	if err != nil {
 		return nil, err
 	}
-	result, err := c.SendFrame(f, protocol.KlineCache{Type: category, Kind: kind, Code: code})
+	cache := protocol.KlineCache{Type: category, Kind: kind, Code: code}
+	if i, err := protocol.ParseInstrument(code); err == nil {
+		if route, ok := i.Exchange.Route(); ok {
+			cache.Session = route.Session
+		}
+	}
+	result, err := c.SendFrame(f, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +874,11 @@ func (*StConn) decode(f *protocol.Response, val any) (resp any, err error) {
 		resp, err = protocol.MMinute.Decode(f.Data)
 
 	case protocol.TypeHistoryMinute:
-		resp, err = protocol.MHistoryMinute.Decode(f.Data)
+		if cache, ok := val.(protocol.MinuteCache); ok {
+			resp, err = protocol.MHistoryMinute.Decode(f.Data, cache)
+		} else {
+			resp, err = protocol.MHistoryMinute.Decode(f.Data)
+		}
 
 	case protocol.TypeCallAuction:
 		resp, err = protocol.MCallAuction.Decode(f.Data)

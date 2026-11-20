@@ -123,6 +123,20 @@ func ParseTdxBjMore(data []byte) []*Code {
 	return out
 }
 
+// ParseReportCodes 按市场声明的报表策略读取成员并绑定既有解析器。
+func ParseReportCodes(report CodeReport, files map[string][]byte) ([]*Code, error) {
+	data, ok := files[report.Member]
+	if !ok {
+		return nil, fmt.Errorf("%s 中缺少 %s", ReportZHB, report.Member)
+	}
+	switch report.Parser {
+	case ReportTdxBjMore:
+		return ParseTdxBjMore(data), nil
+	default:
+		return nil, fmt.Errorf("未知报表解析器 %q（成员 %s）", report.Parser, report.Member)
+	}
+}
+
 // FillBlockIndex 按板块名称用 tdxzs 配置回填板块指数代码(id)到 block_*.dat 解析出的板块。
 // block 文件本身无 id, 故需 tdxzs.cfg 关联。返回成功匹配的数量。
 func FillBlockIndex(blocks []*Block, zs []*TdxZs) int {

@@ -33,8 +33,8 @@ func (*hk) Info() MarketInfo {
 	return MarketInfo{
 		Prefix: "hk", Name: "香港交易所", TimeZone: "Asia/Hong_Kong", CloseTime: "16:10",
 		Routes: []RouteInfo{
-			{ID: MarketHK, Exchange: ExchangeHK, Name: "香港交易所", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true},
-			{ID: MarketHKFund, Exchange: ExchangeHKFund, Name: "香港基金", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true},
+			{ID: MarketHK, Exchange: ExchangeHK, Name: "香港交易所", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true, QuoteListCategory: 2},
+			{ID: MarketHKFund, Exchange: ExchangeHKFund, Name: "香港基金", Protocol: ProtocolExtended, CodeSource: CodeListExtended, Snapshot: true, QuoteListCategory: 2},
 			{ID: MarketHKIndex, Exchange: ExchangeHI, Name: "港股指数", Protocol: ProtocolExtended, CodeSource: CodeListExtended, BareSymbols: []string{"HSI", "HKL", "VHSI", "CES100", "GEM"}},
 		},
 	}

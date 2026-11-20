@@ -128,7 +128,9 @@ func (m ID) ParseInstrument(body string) (Instrument, error) {
 	return exchangeRoutes[ex].market.Resolve(Code{Symbol: body, Exchange: ex, explicit: true}, InstrumentSnapshot{})
 }
 
-// ParseInstrument 支持市场前后缀、带品类的点分隔市场前后缀和可判定的裸代码。
+// ParseInstrument 支持完整市场键、显式市场前缀/后缀和可判定的裸代码。
+// 解析顺序固定为：完整市场键 → 显式前缀 → 显式后缀 → 无分隔前缀与裸代码，
+// 避免代码主体中的点（如 WIX.US）被更短的市场前缀抢占。
 // 期货保留合约大小写；港股股票、基金和指数分别路由到市场 31、49 和 27。
 func ParseInstrument(s string) (Instrument, error) {
 	resolve := func(ex Exchange, body string) (Instrument, error) {
@@ -145,7 +147,7 @@ func ParseInstrument(s string) (Instrument, error) {
 	if ex, ok := bareInstruments[strings.ToUpper(s)]; ok {
 		return resolve(ex, s)
 	}
-	// 完整市场键显式选择协议路由，代码主体可以包含点。
+	// 1. 完整市场键显式选择协议路由，代码主体可以包含点。
 	if prefix, body, ok := strings.Cut(s, "."); ok && strings.Contains(prefix, "/") {
 		id := ID(strings.ToLower(prefix))
 		if _, registered := id.Exchange(); registered {
@@ -158,6 +160,43 @@ func ParseInstrument(s string) (Instrument, error) {
 			return id.ParseInstrument(s[:p])
 		}
 	}
+	// 2. 显式前缀：前缀后的第一个点或斜杠只是分隔符，其余部分属于代码主体。
+	//    显式前缀再早于点后缀处理，保证 "WIX.US" 不会被 "wi" 前缀拆成 X.US。
+	if i := strings.IndexAny(s, "./"); i > 0 {
+		if ex, ok := parseMarketToken(s[:i]); ok {
+			body := s[i+1:]
+			if body != "" {
+				route := exchangeRoutes[ex]
+				if strings.EqualFold(s[:i], route.Name) && route.Name != route.market.Info().Name {
+					return route.ID.ParseInstrument(body)
+				}
+				return resolve(ex, body)
+			}
+		}
+	}
+	// 3. 显式后缀：数字编号必须落在 0-255，越界立即报错，不能回绕到其他市场。
+	if p := strings.LastIndexByte(s, '.'); p > 0 {
+		suffix := s[p+1:]
+		if isDigits(suffix) {
+			n, err := strconv.Atoi(suffix)
+			if err != nil || n > 255 {
+				return Instrument{}, fmt.Errorf("市场编号 %q 超出协议编号范围 0-255", suffix)
+			}
+			ex := Exchange(n)
+			if route, ok := exchangeRoutes[ex]; ok {
+				return route.ID.ParseInstrument(s[:p])
+			}
+			return resolve(ex, s[:p])
+		}
+		if ex, err := ParseExchange(suffix); err == nil {
+			if route, ok := exchangeRoutes[ex]; ok &&
+				(suffix == route.Name && route.Name != route.market.Info().Name) {
+				return route.ID.ParseInstrument(s[:p])
+			}
+			return resolve(ex, s[:p])
+		}
+	}
+	// 4. 无分隔前缀（如 sz000001）与裸代码推断。
 	// 原始协议的长前缀（如 cffo）优先，避免误拆为 cff + 合约主体。
 	if ex, body, ok := splitPrefix(s); ok {
 		if _, err := (Instrument{ex, body}).Market(); err != nil {
@@ -186,16 +225,6 @@ func ParseInstrument(s string) (Instrument, error) {
 			return i, err
 		}
 	}
-	if p := strings.LastIndexByte(s, '.'); p > 0 {
-		suffix := s[p+1:]
-		if ex, err := ParseExchange(suffix); err == nil {
-			if route, ok := exchangeRoutes[ex]; ok &&
-				(isDigits(suffix) || (suffix == route.Name && route.Name != route.market.Info().Name)) {
-				return route.ID.ParseInstrument(s[:p])
-			}
-			return resolve(ex, s[:p])
-		}
-	}
 	if len(s) == 6 && isDigits(s) && strings.HasPrefix(s, "89") {
 		return resolve(ExchangeBJ, s)
 	}
@@ -204,6 +233,23 @@ func ParseInstrument(s string) (Instrument, error) {
 		return Instrument{}, err
 	}
 	return resolve(ex, body)
+}
+
+// parseMarketToken 解析显式前缀里市场标识部分（不含斜杠的简称、缩写或中文名）。
+func parseMarketToken(token string) (Exchange, bool) {
+	token = strings.ToLower(strings.TrimSpace(token))
+	if token == "" || strings.Contains(token, "/") {
+		return 0, false
+	}
+	if m, ok := prefixMarkets[token]; ok {
+		return m.Info().Routes[0].Exchange, true
+	}
+	for _, e := range allExchanges() {
+		if token == strings.ToLower(e.String()) || token == strings.ToLower(e.Name()) {
+			return e, true
+		}
+	}
+	return 0, false
 }
 
 func checkedInstrument(ex Exchange, body string) (Instrument, error) {

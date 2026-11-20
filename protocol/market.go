@@ -18,7 +18,12 @@ type (
 	Exchange        = market.Exchange
 	Instrument      = market.Instrument
 	SecurityKind    = market.SecurityKind
+	TradingSession  = market.TradingSession
+	CodeReport      = market.CodeReport
+	ReportCode      = market.ReportCode
 )
+
+var DomesticSession = market.DomesticSession
 
 const (
 	TradeNeutral             = market.TradeNeutral
@@ -31,6 +36,9 @@ const (
 	AmountInAmount           = market.AmountInAmount
 	AmountInPosition         = market.AmountInPosition
 	CodeListZHBReport        = market.CodeListZHBReport
+	CodeListStandard         = market.CodeListStandard
+	CodeListExtended         = market.CodeListExtended
+	ReportTdxBjMore          = market.ReportTdxBjMore
 	MarketSH                 = market.MarketSH
 	MarketSZ                 = market.MarketSZ
 	MarketBJ                 = market.MarketBJ

@@ -12,7 +12,7 @@ var _ Market = sz{}
 func (sz) Info() MarketInfo {
 	return MarketInfo{
 		Prefix: "sz", Name: "深圳", TimeZone: "Asia/Shanghai", CloseTime: "15:30",
-		Routes: []RouteInfo{{ID: MarketSZ, Exchange: ExchangeSZ, Name: "深圳", Protocol: ProtocolStandard, CodeSource: CodeListStandard}},
+		Routes: []RouteInfo{{ID: MarketSZ, Exchange: ExchangeSZ, Name: "深圳", Protocol: ProtocolStandard, CodeSource: CodeListStandard, Session: DomesticSession}},
 	}
 }
 

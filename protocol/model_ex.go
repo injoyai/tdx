@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 
 	"github.com/injoyai/tdx/v2/protocol/market"
@@ -534,10 +535,10 @@ func (exHq) DecodeQuoteList(bs []byte, c ExQuoteListCache) ([]QuoteListItem, err
 	if len(bs) < 2 {
 		return nil, io.ErrUnexpectedEOF
 	}
-	num := int(Uint16(bs[0:2]))
-	if num == 0 || (c.Category != 2 && c.Category != 3) {
-		return nil, nil
+	if c.Category != 2 && c.Category != 3 {
+		return nil, fmt.Errorf("不支持的批量报价类别 %d", c.Category)
 	}
+	num := int(Uint16(bs[0:2]))
 	r := &exReader{b: bs, p: 2}
 	if num > r.remain()/300 {
 		return nil, io.ErrUnexpectedEOF

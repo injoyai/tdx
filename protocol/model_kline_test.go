@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/hex"
+	"math"
 	"testing"
 	"time"
 )
@@ -53,6 +54,58 @@ func TestNormalizeKlineVolume(t *testing.T) {
 				t.Fatalf("standardKlineVolume() = %d, want %d", got, test.want)
 			}
 		})
+	}
+}
+
+func TestStandardKlineBusinessVolume(t *testing.T) {
+	tests := []struct {
+		name     string
+		volume   int64
+		code     string
+		category uint8
+		want     int64
+	}{
+		{name: "stock minute keeps remainder", volume: 150, code: "sh600000", category: TypeKlineMinute, want: 150},
+		{name: "stock day", volume: 150, code: "sh600000", category: TypeKlineDay, want: 15000},
+		{name: "convertible bond minute", volume: 150, code: "sh110075", category: TypeKlineMinute, want: 1500},
+		{name: "index intraday volume unavailable", volume: 150, code: "sh000001", category: TypeKlineMinute, want: 0},
+		{name: "block minute keeps remainder", volume: 150, code: "sh880001", category: TypeKlineMinute, want: 150},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			info := standardMarketInfo(test.code)
+			got, err := info.StandardKlineBusinessVolume(test.volume, test.category, info.Kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("StandardKlineBusinessVolume() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestKlineWireVolumePreserved(t *testing.T) {
+	b := Bytes(uint16(1))
+	b = append(b, Bytes(uint16((2026-2004)*2048+10*100+9))...)
+	b = append(b, Bytes(uint16(572))...) // 09:32
+	b = append(b, 0x90, 0x9c, 1)
+	b = append(b, 0, 0, 0)
+	b = append(b, Bytes(math.Float32bits(150))...)
+	b = append(b, Bytes(math.Float32bits(1500))...)
+	resp, err := MKline.Decode(b, KlineCache{Type: TypeKlineMinute, Kind: KindStock, Code: "sh600000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.List) != 1 {
+		t.Fatalf("got %d records", len(resp.List))
+	}
+	k := resp.List[0]
+	if k.Volume != 1 || k.WireVolume() != 150 || k.Amount != 1500 {
+		t.Fatalf("Volume=%d WireVolume=%d Amount=%v", k.Volume, k.WireVolume(), k.Amount)
+	}
+	if k.Time.Format(time.TimeOnly) != "09:32:00" {
+		t.Fatalf("unexpected time %s", k.Time)
 	}
 }
 

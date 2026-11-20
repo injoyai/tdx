@@ -256,6 +256,75 @@ func completionStandardBars(days []uint32, minutes []uint16, index bool) []byte 
 	return b
 }
 
+func completionStandardBar(day uint32, minute uint16, quantity, amount float32) []byte {
+	b := protocol.Bytes(uint16(1))
+	year, month, date := int(day)/10000, int(day)/100%100, int(day)%100
+	b = append(b, protocol.Bytes(uint16((year-2004)*2048+month*100+date))...)
+	b = append(b, protocol.Bytes(minute)...)
+	b = append(b, 0x90, 0x9c, 1)
+	b = append(b, 0, 0, 0)
+	b = append(b, protocol.Bytes(math.Float32bits(quantity))...)
+	b = append(b, protocol.Bytes(math.Float32bits(amount))...)
+	return b
+}
+
+func TestMinuteVolumeKeepsRemainder(t *testing.T) {
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+				return []byte{0, 0}
+			}
+			if b[8] == protocol.TypeKlineDay {
+				return testStandardBar(false)
+			}
+			return completionStandardBar(20261009, 572, 150, 1500)
+		}
+		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0}
+	})
+	normal, err := c.GetKlineMinuteUntil("sz000001", func(Kline) bool { return false })
+	if err != nil || len(normal.List) != 1 {
+		t.Fatal("normal minute", normal, err)
+	}
+	split, err := c.GetKlineMinute241Until("sz000001", func(Kline) bool { return false })
+	if err != nil || len(split.List) != 1 {
+		t.Fatal("241 minute", split, err)
+	}
+	for _, r := range []*KlineResp{normal, split} {
+		k := r.List[0]
+		if k.Time != "2026-10-09 09:32" || k.Volume != 150 || k.Amount == nil || *k.Amount != 1500 {
+			t.Fatalf("minute volume truncated: %s %d %v", k.Time, k.Volume, k.Amount)
+		}
+	}
+}
+
+func TestMinute241AuctionConservesVolume(t *testing.T) {
+	c := respondingTestClient(t, false, func(h, b []byte) []byte {
+		if binary.LittleEndian.Uint16(h[10:]) == protocol.TypeKline {
+			if binary.LittleEndian.Uint16(b[12:14]) != 0 {
+				return []byte{0, 0}
+			}
+			if b[8] == protocol.TypeKlineDay {
+				return testStandardBar(false)
+			}
+			return completionStandardBar(20261009, 571, 250, 2500)
+		}
+		return []byte{1, 0, 0, 0, 0, 0, 0x35, 2, 0xa8, 0x0f, 1, 0, 0} // 历史9:25成交1手、10元。
+	})
+	r, err := c.GetKlineMinute241Until("sz000001", func(Kline) bool { return false })
+	if err != nil || r.Count != 2 {
+		t.Fatal("auction split", r, err)
+	}
+	if r.List[0].Volume != 100 || r.List[0].Amount == nil || *r.List[0].Amount != 1000 {
+		t.Fatal("auction volume changed", r.List[0])
+	}
+	if r.List[1].Volume != 150 || r.List[1].Amount == nil || *r.List[1].Amount != 1500 {
+		t.Fatal("first minute remainder changed", r.List[1])
+	}
+	if r.List[0].Volume+r.List[1].Volume != 250 || *r.List[0].Amount+*r.List[1].Amount != 2500 {
+		t.Fatal("auction total not conserved", r)
+	}
+}
+
 func completionRange() []byte {
 	b := make([]byte, 14+32)
 	binary.LittleEndian.PutUint16(b[12:], 1)

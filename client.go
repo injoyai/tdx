@@ -276,9 +276,17 @@ func instrumentInfo(code string) (protocol.Instrument, protocol.InstrumentRules,
 	if err != nil {
 		return i, protocol.InstrumentRules{}, err
 	}
+	route, ok := i.Exchange.Route()
+	if !ok {
+		return i, protocol.InstrumentRules{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", i.Exchange)
+	}
 	info, ok := i.Rules()
 	if !ok {
 		return i, info, fmt.Errorf("行情市场 %d 尚未接入统一 Client", i.Exchange)
+	}
+	// 路由协议是连接选择的唯一依据；规则声明的协议只用于一致性校验。
+	if info.Protocol != route.Protocol {
+		return i, info, fmt.Errorf("行情市场 %d 的规则协议 %s 与路由协议 %s 不一致", i.Exchange, info.Protocol, route.Protocol)
 	}
 	return i, info, nil
 }
@@ -389,10 +397,21 @@ func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
 
 // GetQuoteList 按扩展市场分页查询列表，与按指定证券查询的 GetQuote 分开。
 func (c *MarketClient) GetQuoteList(market, category uint8, start, count uint16) ([]protocol.QuoteListItem, error) {
-	if route, ok := protocol.Exchange(market).Route(); ok && route.Protocol == protocol.ProtocolStandard {
+	ex := protocol.Exchange(market)
+	route, ok := ex.Route()
+	if !ok {
+		return nil, fmt.Errorf("行情市场 %d 尚未接入统一 Client", market)
+	}
+	if route.Protocol != protocol.ProtocolExtended {
 		return nil, errors.New("市场行情列表需要扩展市场")
 	}
-	link, err := c.connection(protocol.Exchange(market))
+	if route.QuoteListCategory == 0 {
+		return nil, fmt.Errorf("行情市场 %d 未声明批量报价类别", market)
+	}
+	if category != route.QuoteListCategory {
+		return nil, fmt.Errorf("行情市场 %d 的报价类别为 %d，不接受类别 %d", market, route.QuoteListCategory, category)
+	}
+	link, err := c.connection(ex)
 	if err != nil {
 		return nil, err
 	}

@@ -387,13 +387,17 @@ func pinInstrumentCode(code string, i protocol.Instrument) string {
 }
 
 func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*KlineResp, error) {
-	_, info, err := instrumentInfo(code)
+	i, info, err := instrumentInfo(code)
 	if err != nil {
 		return nil, err
 	}
 	rule := info.Kline(protocol.TypeKlineMinute, protocol.KlinePage)
 	if info.Protocol != protocol.ProtocolStandard || !rule.Supported || !rule.SplitAuction {
 		return nil, fmt.Errorf("241分钟线仅适用于标准股票/ETF；其他品种使用 GetKlineMinuteUntil")
+	}
+	route, _ := i.Exchange.Route()
+	if !route.Session.AuctionMinute() {
+		return nil, fmt.Errorf("241分钟线不适用于市场 %d 的交易时段；该品种使用 GetKlineMinuteUntil", i.Exchange)
 	}
 	resp, err := q.GetKlineMinuteUntil(code, stop)
 	if err != nil {
@@ -407,53 +411,92 @@ func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*K
 		if err := q.context().Err(); err != nil {
 			return nil, err
 		}
-		v := record.Standard
-		if v.Time.Format(time.TimeOnly) == "09:31:00" {
+		v := record
+		if strings.HasSuffix(v.Time, " 09:31") {
 			var tr *TradeResp
-			if v.Time.Format(time.DateOnly) == time.Now().In(protocol.Location()).Format(time.DateOnly) {
+			day := strings.ReplaceAll(v.Time[:10], "-", "")
+			if v.Time[:10] == time.Now().In(protocol.Location()).Format(time.DateOnly) {
 				tr, err = q.GetTradeAll(code)
 			} else {
-				tr, err = q.GetHistoryTradeDay(v.Time.Format("20060102"), code)
+				tr, err = q.GetHistoryTradeDay(day, code)
 			}
 			if err != nil {
 				return nil, err
 			}
-			_925 := new(protocol.Trade)
-			if len(tr.List) > 0 && tr.List[0].Standard.Time.Format(time.TimeOnly) < "09:30:00" {
-				_925 = tr.List[0].Standard
+			auction := Trade{}
+			if len(tr.List) > 0 && tr.List[0].Time < "09:30:00" {
+				auction = tr.List[0]
 			}
-			ks = append(ks, standardKline(&protocol.Kline{
-				Last:   v.Last,
-				Open:   _925.Price,
-				High:   _925.Price,
-				Low:    _925.Price,
-				Close:  _925.Price,
-				Order:  _925.Number,
-				Volume: int64(_925.Volume),
-				Amount: _925.Amount(),
-				Time:   time.Date(v.Time.Year(), v.Time.Month(), v.Time.Day(), 9, 30, 0, 0, v.Time.Location()),
-			}))
-			v.Last = _925.Price
-			v.Volume -= int64(_925.Volume)
+			price := 0.0
+			if auction.Price != nil {
+				price = *auction.Price
+			}
+			amount := 0.0
+			if auction.Standard != nil {
+				amount = auction.Standard.Amount()
+			} else if auction.Amount != nil {
+				amount = *auction.Amount
+			}
+			order, wireVolume := 0, int64(0)
+			last := 0.0
+			var at time.Time
+			if v.Standard != nil {
+				last = v.Standard.Last
+				at = time.Date(v.Standard.Time.Year(), v.Standard.Time.Month(), v.Standard.Time.Day(), 9, 30, 0, 0, v.Standard.Time.Location())
+			}
+			if auction.Standard != nil {
+				order = auction.Standard.Number
+				wireVolume = int64(auction.Standard.Volume)
+			}
+			ks = append(ks, Kline{
+				Time:   v.Time[:10] + " 09:30",
+				Open:   price,
+				High:   price,
+				Low:    price,
+				Close:  price,
+				Volume: auction.Volume,
+				Amount: &amount,
+				Standard: &protocol.Kline{
+					Last:   last,
+					Open:   price,
+					High:   price,
+					Low:    price,
+					Close:  price,
+					Order:  order,
+					Volume: wireVolume,
+					Amount: amount,
+					Time:   at,
+				},
+			})
+			// 竞价量额已是统一最小单位，与首分钟合并后保持总量和总额守恒。
+			if v.Standard != nil {
+				v.Standard.Last = price
+				v.Standard.Volume -= wireVolume
+				if v.Standard.Volume < 0 {
+					v.Standard.Volume = 0
+				}
+				v.Standard.Amount -= amount
+				if v.Standard.Amount < 0 {
+					v.Standard.Amount = 0
+				}
+				v.Standard.Order -= order
+				if v.Standard.Order < 0 {
+					v.Standard.Order = 0
+				}
+			}
+			v.Volume -= auction.Volume
 			if v.Volume < 0 {
 				v.Volume = 0
 			}
-			v.Amount -= _925.Amount()
-			if v.Amount < 0 {
-				v.Amount = 0
-			}
-			v.Order -= _925.Number
-			if v.Order < 0 {
-				v.Order = 0
+			if v.Amount != nil {
+				rest := *v.Amount - amount
+				if rest < 0 {
+					rest = 0
+				}
+				v.Amount = &rest
 			}
 		}
-		ks = append(ks, standardKline(v))
-	}
-	for j := range ks {
-		ks[j].Volume, err = scaleVolume(ks[j].Volume, protocol.SharesPerLot)
-		if err != nil {
-			return nil, err
-		}
+		ks = append(ks, v)
 	}
 	resp.List = ks
 	resp.Count = len(ks)

@@ -81,16 +81,19 @@ func (e Exchange) Name() string {
 }
 
 // ParseExchange 把字符串转为Exchange类型,支持:
-//   - 数字字符串: "0"/"1"/"2"/"44" 等,对应市场编码数值
+//   - 数字字符串: "0"/"1"/"2"/"44" 等,对应市场编码数值(必须落在 0-255)
 //   - 小写缩写: "sz"/"sh"/"bj"/"nq" 等,对应 String() 输出
 //   - 中文名称: "深圳"/"上海"/"北京"/"新三板" 等,对应 Name() 输出
 //
 // 单独传入 hk 时返回港股主板；可用 27 或港股指数指定指数市场。
-// 无法识别时返回 error。
+// 无法识别时返回 error。数值越界必须报错，不能按 uint8 回绕到其他市场。
 func ParseExchange(s string) (Exchange, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	// 数值形式,如 "0" "2" "44"
 	if n, err := strconv.Atoi(s); err == nil {
+		if n < 0 || n > 255 {
+			return 0, fmt.Errorf("市场编号 %q 超出协议编号范围 0-255", s)
+		}
 		return Exchange(n), nil
 	}
 	for _, e := range allExchanges() {

@@ -47,6 +47,28 @@ type RouteInfo struct {
 	DiscoverBlocks bool
 	BareSymbols    []string
 	Snapshot       bool
+	// Report selects the archive member and parser for report-backed code lists.
+	// It must be set when CodeSource is CodeListZHBReport.
+	Report *CodeReport
+	// QuoteListCategory declares the batch quote list layout (2=HK, 3=futures).
+	// Zero means the route has no batch quote list.
+	QuoteListCategory uint8
+	// Session is the clock for layouts that derive minute timestamps from
+	// record order. Zero means such layouts are not supported by this route.
+	Session TradingSession
+}
+
+// ReportCode identifies a parser bound by the layer that owns the decoder.
+type ReportCode string
+
+const (
+	ReportTdxBjMore ReportCode = "tdxbjmore"
+)
+
+// CodeReport declares how a report-backed market obtains its code list.
+type CodeReport struct {
+	Member string     // 压缩包成员名
+	Parser ReportCode // 解码层绑定的解析器标识
 }
 
 type CodeSource uint8
@@ -115,6 +137,14 @@ func registerMarket(market Market) {
 		if route.ID == "" || route.ID.String() != strings.ToLower(route.ID.String()) ||
 			(route.Protocol != ProtocolStandard && route.Protocol != ProtocolExtended) {
 			panic(fmt.Sprintf("无效市场定义 %q", route.ID))
+		}
+		if route.CodeSource > CodeListZHBReport {
+			panic(fmt.Sprintf("市场 %s 的代码来源 %d 未注册", route.ID, route.CodeSource))
+		}
+		if route.CodeSource == CodeListZHBReport {
+			if route.Report == nil || route.Report.Member == "" || route.Report.Parser == "" {
+				panic(fmt.Sprintf("市场 %s 的报表来源缺少成员或解析器", route.ID))
+			}
 		}
 		for _, symbol := range route.BareSymbols {
 			symbol = strings.ToUpper(symbol)

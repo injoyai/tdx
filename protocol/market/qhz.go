@@ -12,7 +12,7 @@ var _ Market = qhz{}
 func (qhz) Info() MarketInfo {
 	return MarketInfo{
 		Prefix: "qhz", Name: "期货类指数", TimeZone: "Asia/Shanghai", CloseTime: "15:30",
-		Routes: []RouteInfo{{ID: MarketQHZ, Exchange: ExchangeQHZ, Name: "期货类指数", Protocol: ProtocolExtended, CodeSource: CodeListExtended}},
+		Routes: []RouteInfo{{ID: MarketQHZ, Exchange: ExchangeQHZ, Name: "期货类指数", Protocol: ProtocolExtended, CodeSource: CodeListExtended, QuoteListCategory: 3}},
 	}
 }
 
