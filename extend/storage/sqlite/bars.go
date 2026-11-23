@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -102,7 +103,7 @@ func (s *PullStore) MinuteFile(code model.Code, year int) string {
 	return minuteFile(code, s.dir, year)
 }
 
-// QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空。
+// QueryDay 查询某代码日线，按时间范围（升序）；库不存在时返回空，读取失败返回错误。
 // start/end 为空字符串时表示不限制该端。
 func (s *PullStore) QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error) {
 	if err := validateCode(code); err != nil {
@@ -111,7 +112,11 @@ func (s *PullStore) QueryDay(code model.Code, start, end string) ([]*model.Kline
 	if err := model.ValidateTimeRange(start, end, time.DateOnly); err != nil {
 		return nil, err
 	}
-	if !exists(dayFile(code, s.dir)) {
+	ok, err := fileExists(dayFile(code, s.dir))
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, nil
 	}
 	db, release, err := s.openDay(code)
@@ -123,12 +128,16 @@ func (s *PullStore) QueryDay(code model.Code, start, end string) ([]*model.Kline
 	return rows, err
 }
 
-// LastDayTime 查询某代码日线库内最后一条记录的源时间；空库返回空字符串。
+// LastDayTime 查询某代码日线库内最后一条记录的源时间；空库返回空字符串，读取失败返回错误。
 func (s *PullStore) LastDayTime(code model.Code) (string, error) {
 	if err := validateCode(code); err != nil {
 		return "", err
 	}
-	if !exists(s.DayFile(code)) {
+	ok, err := fileExists(s.DayFile(code))
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		return "", nil
 	}
 	db, release, err := s.openDay(code)
@@ -139,12 +148,16 @@ func (s *PullStore) LastDayTime(code model.Code) (string, error) {
 	return LastTime(db, new(model.KlineDay))
 }
 
-// LastMinuteTime 查询某代码指定年份分钟库内最后一条记录的源时间；空库返回空字符串。
+// LastMinuteTime 查询某代码指定年份分钟库内最后一条记录的源时间；空库返回空字符串，读取失败返回错误。
 func (s *PullStore) LastMinuteTime(code model.Code, year int) (string, error) {
 	if err := validateMinuteCode(code, year); err != nil {
 		return "", err
 	}
-	if !s.MinuteExists(code, year) {
+	ok, err := minuteFileExists(code, s.dir, year)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		return "", nil
 	}
 	db, release, err := s.openMinute(code, year)
@@ -212,12 +225,14 @@ func (s *PullStore) SaveMinute(code model.Code, year int, from string, ks []*mod
 	return s.saveMinute(code, year, from, ks)
 }
 
-// MinuteExists 判断某代码指定年份的分钟线文件是否已存在。
+// MinuteExists 判断某代码指定年份的分钟线文件是否已存在；文件系统错误按不存在处理。
+// 需要区分“不存在”和“读取失败”时使用内部带错误返回的检查。
 func (s *PullStore) MinuteExists(code model.Code, year int) bool {
-	return exists(minuteFile(code, s.dir, year))
+	ok, _ := minuteFileExists(code, s.dir, year)
+	return ok
 }
 
-// QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过。
+// QueryMinute 查询某代码分钟线，自动按年定位文件并拼接（升序）；不存在的年份跳过，读取失败返回错误。
 // start/end 为空字符串时表示不限制该端。
 func (s *PullStore) QueryMinute(code model.Code, start, end string) ([]*model.KlineMinute, error) {
 	if err := validateCode(code); err != nil {
@@ -228,7 +243,7 @@ func (s *PullStore) QueryMinute(code model.Code, start, end string) ([]*model.Kl
 		return nil, err
 	}
 	startYear, endYear := minMaxYear(start, end)
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(minuteFile(code, s.dir, 2000)), "*.db"))
+	files, err := listFiles(filepath.Dir(minuteFile(code, s.dir, 2000)), ".db")
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +282,38 @@ func minMaxYear(start, end string) (int, int) {
 	return startYear, endYear
 }
 
-func exists(filename string) bool {
+// fileExists 返回文件是否存在；仅“确实不存在”视为缺数据，其他文件系统错误返回给调用方。
+func fileExists(filename string) (bool, error) {
 	_, err := os.Stat(filename)
-	return err == nil
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// minuteFileExists 检查分钟线文件是否存在，保留文件系统错误。
+func minuteFileExists(code model.Code, dir string, year int) (bool, error) {
+	return fileExists(minuteFile(code, dir, year))
+}
+
+// listFiles 列出目录内指定后缀的普通文件；目录不存在返回空，其他读取错误返回给调用方。
+func listFiles(dir, suffix string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), suffix) {
+			continue
+		}
+		files = append(files, filepath.Join(dir, entry.Name()))
+	}
+	return files, nil
 }

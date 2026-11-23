@@ -23,7 +23,11 @@ func (s *PullStore) LoadMinuteEmptyScan(code model.Code, year int) (*model.Minut
 		return nil, err
 	}
 	file := filepath.Join(s.dir, "minute-scans.db")
-	if !exists(file) {
+	ok, err := fileExists(file)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, nil
 	}
 	db, release, err := s.engine(file, new(emptyMinuteScan))

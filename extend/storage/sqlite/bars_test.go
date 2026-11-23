@@ -259,6 +259,69 @@ func TestQueryMinute(t *testing.T) {
 	}
 }
 
+func TestQueryPropagatesFileErrors(t *testing.T) {
+	s := testStore(t)
+	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}
+
+	// 文件确实不存在时仍返回原有空结果契约。
+	if ls, err := s.QueryDay(code, "", ""); err != nil || len(ls) != 0 {
+		t.Fatalf("缺库 QueryDay = %v, %v; want 空且无错误", ls, err)
+	}
+	if last, err := s.LastDayTime(code); err != nil || last != "" {
+		t.Fatalf("缺库 LastDayTime = %q, %v; want 空且无错误", last, err)
+	}
+	if ls, err := s.QueryMinute(code, "", ""); err != nil || len(ls) != 0 {
+		t.Fatalf("缺库 QueryMinute = %v, %v; want 空且无错误", ls, err)
+	}
+
+	// 自引用符号链接使 os.Stat/os.ReadDir 返回 ELOOP，查询必须传播该错误而不是伪装成无数据。
+	dayPath := s.DayFile(code)
+	if err := os.MkdirAll(filepath.Dir(dayPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dayPath, dayPath); err != nil {
+		t.Skipf("无法创建自引用符号链接: %v", err)
+	}
+	if _, err := s.QueryDay(code, "", ""); err == nil {
+		t.Fatal("QueryDay 吞掉了文件系统错误")
+	}
+	if _, err := s.LastDayTime(code); err == nil {
+		t.Fatal("LastDayTime 吞掉了文件系统错误")
+	}
+
+	// 分钟目录读取失败同样必须传播；使用独立代码避免日线链接干扰。
+	minCode := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
+	minDir := filepath.Dir(minuteFile(minCode, s.dir, 2025))
+	if err := os.MkdirAll(filepath.Dir(minDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(minDir, minDir); err != nil {
+		t.Skipf("无法创建自引用符号链接: %v", err)
+	}
+	if _, err := s.QueryMinute(minCode, "", ""); err == nil {
+		t.Fatal("QueryMinute 吞掉了分钟目录读取错误")
+	}
+}
+
+// TestQueryMinuteMultiYear 确认按年枚举仍保留跨年升序，且未受读取方式调整影响。
+func TestQueryMinuteMultiYear(t *testing.T) {
+	s := testStore(t)
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
+	for _, year := range []int{2025, 2024} {
+		ks := []*model.KlineMinute{{Time: time.Date(year, 1, 5, 9, 31, 0, 0, time.Local).Format("2006-01-02 15:04"), Open: 1, Close: 1, Volume: 100}}
+		if err := s.SaveMinute(code, year, "", ks, nil); err != nil {
+			t.Fatalf("SaveMinute %d: %v", year, err)
+		}
+	}
+	ls, err := s.QueryMinute(code, "", "")
+	if err != nil {
+		t.Fatalf("QueryMinute: %v", err)
+	}
+	if len(ls) != 2 || ls[0].Time != "2024-01-05 09:31" || ls[1].Time != "2025-01-05 09:31" {
+		t.Fatalf("跨年排序 = %+v", ls)
+	}
+}
+
 func TestEngineCache(t *testing.T) {
 	s := testStore(t)
 	code := model.Code{Market: protocol.MarketSH, Code: "sh600000"}

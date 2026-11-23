@@ -439,16 +439,18 @@ func (q *queries) GetKlineMinute241Until(code string, stop func(Kline) bool) (*K
 
 // splitMinute241 从首根 09:31 记录中拆出 09:30 竞价记录。
 // 返回值均为副本，不修改输入记录及其 Standard 指针。
+// 竞价金额按契约明确的统一口径计算：优先使用分笔现金额，否则用价格乘换算后的业务量，
+// 不再套用标准协议固定每手百股算法，以遵循各市场已声明的数量倍率。
 func splitMinute241(v Kline, auction Trade) (bar Kline, rest Kline) {
 	price := 0.0
 	if auction.Price != nil {
 		price = *auction.Price
 	}
 	amount := 0.0
-	if auction.Standard != nil {
-		amount = auction.Standard.Amount()
-	} else if auction.Amount != nil {
+	if auction.Amount != nil {
 		amount = *auction.Amount
+	} else if auction.Price != nil {
+		amount = *auction.Price * float64(auction.Volume)
 	}
 	order, wireVolume := 0, int64(0)
 	last := 0.0

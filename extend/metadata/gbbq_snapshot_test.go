@@ -8,6 +8,31 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+// TestQFQUsesTradingDay 回归 F01 的公开复权入口: 事件在 15:00, 本地日线在 00:00,
+// 同一交易日必须按同一阶段处理。前日收盘 10、除权日收盘 9, 每 10 股派 10 元。
+func TestQFQUsesTradingDay(t *testing.T) {
+	event := time.Date(2026, 11, 20, 15, 0, 0, 0, protocol.Location())
+	g, err := NewGbbq([]*model.Gbbq{{Code: "sz000001", Time: event, Category: 1, C1: 10}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hour := range []int{0, 15} {
+		ks := protocol.Klines{
+			dayKline(20261119, hour, 10),
+			dayKline(20261120, hour, 9),
+		}
+		out := g.QFQ("sz000001", ks)
+		if out[0].Close != 9 || out[1].Close != 9 {
+			t.Fatalf("hour=%d 前复权收盘 = %v, %v; want 9, 9", hour, out[0].Close, out[1].Close)
+		}
+	}
+}
+
+func dayKline(yyyymmdd, hour int, close float64) *protocol.Kline {
+	t := time.Date(yyyymmdd/10000, time.Month(yyyymmdd/100%100), yyyymmdd%100, hour, 0, 0, 0, protocol.Location())
+	return &protocol.Kline{Time: t, Open: close, High: close, Low: close, Close: close, Last: close}
+}
+
 func TestHistoricalEquityAndSnapshotOwnership(t *testing.T) {
 	day := time.Date(2026, 1, 5, 15, 0, 0, 0, protocol.Location())
 	old := &model.Gbbq{Code: "sz000001", Time: day.AddDate(0, 0, -1), Category: 5, C3: 100, C4: 200}

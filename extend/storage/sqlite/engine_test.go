@@ -23,8 +23,12 @@ func TestMinuteCoverageRollback(t *testing.T) {
 	if last, err := s.LastMinuteTime(c, 2025); err != nil || last != "" || s.MinuteExists(c, 2025) {
 		t.Fatalf("读取空库创建了文件或返回异常: %s %v", last, err)
 	}
-	if last, err := s.LastDayTime(c); err != nil || last != "" || exists(s.DayFile(c)) {
-		t.Fatal("读取空日线库创建了文件", err)
+	last, err := s.LastDayTime(c)
+	if err != nil || last != "" {
+		t.Fatal("读取空日线库返回异常", last, err)
+	}
+	if ok, statErr := fileExists(s.DayFile(c)); statErr != nil || ok {
+		t.Fatal("读取空日线库创建了文件", ok, statErr)
 	}
 	ks := []*model.KlineMinute{{Time: "2025-01-05 09:31", Close: 2}}
 	if err := s.SaveMinute(c, 2025, "", ks, nil); err != nil {

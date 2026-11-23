@@ -199,6 +199,58 @@ func TestFactorsHFQAffine(t *testing.T) {
 	}
 }
 
+// TestFactorsTradingDayComparison 回归 F01: 本地 .day 日线时间为当天 00:00,
+// 协议股本事件时间为当天 15:00。同一交易日必须视为同一生效阶段, 不能因完整时刻不同
+// 把除权日前后的日线分到不同阶段。
+//
+// 样本: 前日收盘 10, 除权日收盘 9, 每 10 股派 10 元(即每股派 1 元)。
+// 前日前复权价应为 9, 与日线时刻 00:00 / 15:00 无关; 除权日仍为 9。
+func TestFactorsTradingDayComparison(t *testing.T) {
+	event := time.Date(2026, 11, 20, 15, 0, 0, 0, Location())
+	for _, hour := range []int{0, 15} {
+		ks := []*Kline{
+			gbbqTestDay(20261119, hour, 10),
+			gbbqTestDay(20261120, hour, 9),
+		}
+		fs := XRXDs{{Time: event, Fenhong: 10}}.Pre(ks).Factors()
+		if len(fs) != 2 {
+			t.Fatalf("hour=%d 因子数量=%d", hour, len(fs))
+		}
+		if got := fs[0].QFQPrice(10); !approxYuan(got, 9) {
+			t.Errorf("hour=%d 除权日前收盘前复权 got %.2f, 期望 9", hour, got)
+		}
+		if got := fs[1].QFQPrice(9); !approxYuan(got, 9) {
+			t.Errorf("hour=%d 除权日收盘前复权 got %.2f, 期望 9", hour, got)
+		}
+	}
+}
+
+// TestFactorsEventOnMiddleDay 覆盖事件位于中间交易日的情况: 事件只影响其之前的日线,
+// 中间日与之后的日线均不施加, 与日线时刻无关。
+func TestFactorsEventOnMiddleDay(t *testing.T) {
+	event := time.Date(2026, 11, 20, 15, 0, 0, 0, Location())
+	for _, hour := range []int{0, 15} {
+		ks := []*Kline{
+			gbbqTestDay(20261119, hour, 10),
+			gbbqTestDay(20261120, hour, 9),
+			gbbqTestDay(20261123, hour, 9),
+		}
+		fs := XRXDs{{Time: event, Fenhong: 10}}.Pre(ks).Factors()
+		wants := []float64{9, 9, 9}
+		for i, want := range wants {
+			if got := fs[i].QFQPrice(ks[i].Close); !approxYuan(got, want) {
+				t.Errorf("hour=%d 第%d日前复权 got %.2f, 期望 %.2f", hour, i, got, want)
+			}
+		}
+	}
+}
+
+// gbbqTestDay 构造指定交易日与收盘价的日线, hour=0 模拟本地 .day, hour=15 模拟协议日线。
+func gbbqTestDay(yyyymmdd, hour int, close float64) *Kline {
+	t := time.Date(yyyymmdd/10000, time.Month(yyyymmdd/100%100), yyyymmdd%100, hour, 0, 0, 0, Location())
+	return &Kline{Time: t, Open: close, High: close, Low: close, Close: close, Last: close}
+}
+
 // TestFactorsFutureExDayIgnored 回归: gbbq 含【已公告但 ex-day 在未来】的除权记录时,
 // 不得提前施加, 否则前复权锚定日 B!=0, 整条历史被平移一个未发生的分红额。
 // 还原 600887 场景: 最新交易日为 2016-01-05, gbbq 却有一条 ex-day 在未来的派9元记录。

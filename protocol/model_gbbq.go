@@ -265,6 +265,8 @@ type PreKlines []*PreKline
 
 // Factors 计算每个交易日的仿射复权系数(前复权 QFQMul/QFQAdd, 后复权 HFQMul/HFQAdd)。
 //
+// 事件与日线均按东八区交易日期比较，日线 00:00 与事件 15:00 属同一交易日，不因时刻不同而分属不同生效阶段。
+//
 // QFQ(前复权): 锚定最新交易日 A=1,B=0, 自今向过去回溯, 遇 ex-day:
 //
 //	A <- A / m ; B <- B - A_new * c
@@ -304,14 +306,14 @@ func (ks PreKlines) Factors() []*Factor {
 	if len(ks) > 0 {
 		src = ks[0].events
 	}
-	latest := ks[len(ks)-1].Time // 最新交易日
+	latest := tradeDay(ks[len(ks)-1].Time) // 最新交易日
 	evs := make([]ev, 0, len(src))
 	for _, x := range src {
-		if x.Time.After(latest) {
+		if tradeDay(x.Time).After(latest) {
 			continue // 未来 ex-day(已公告未生效), 不施加
 		}
 		m, c := x.mc()
-		evs = append(evs, ev{t: x.Time, m: m, c: c})
+		evs = append(evs, ev{t: tradeDay(x.Time), m: m, c: c})
 	}
 	sort.Slice(evs, func(i, j int) bool { return evs[i].t.Before(evs[j].t) }) //按 ex-day 升序
 
@@ -322,7 +324,7 @@ func (ks PreKlines) Factors() []*Factor {
 	ei := len(evs) - 1
 	for i := len(ks) - 1; i >= 0; i-- {
 		k := ks[i]
-		for ei >= 0 && evs[ei].t.After(k.Time) { // ex-day 严格晚于当前交易日
+		for ei >= 0 && evs[ei].t.After(tradeDay(k.Time)) { // ex-day 严格晚于当前交易日
 			m, c := evs[ei].m, evs[ei].c
 			a = a / m
 			b = b - a*c
@@ -376,6 +378,12 @@ func (f *Factor) HFQPrice(raw float64) float64 {
 func roundHalfUpYuan(yuan float64) float64 {
 	cents := math.Round(yuan * 100)
 	return cents / 100
+}
+
+// tradeDay 返回 t 在东八区标准行情下的交易日零点，仅用于按交易日比较，不修改输入时间。
+func tradeDay(t time.Time) time.Time {
+	t = t.In(Location())
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, Location())
 }
 
 // ApplyQFQ 用前复权因子 fs 按日期对齐, 把不复权日线 ks 整段转为前复权日线。
