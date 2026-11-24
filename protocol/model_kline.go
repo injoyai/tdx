@@ -183,7 +183,11 @@ func (kline) Decode(bs []byte, c KlineCache) (*KlineResp, error) {
 		if d.err != nil {
 			return nil, fmt.Errorf("K线记录 %d: %w", i, d.err)
 		}
-		k := &Kline{Time: GetTime([4]byte(date), c.Type)}
+		at, err := decodeTime([4]byte(date), c.Type)
+		if err != nil {
+			return nil, fmt.Errorf("K线记录 %d: %w", i, err)
+		}
+		k := &Kline{Time: at}
 		open := int64(d.number())
 		closePrice := int64(d.number())
 		high := int64(d.number())

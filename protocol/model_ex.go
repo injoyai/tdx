@@ -326,7 +326,10 @@ func (exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
 	for i := 0; i < cnt; i++ {
 		var dt [4]byte
 		copy(dt[:], r.bytes(4))
-		t := GetTime(dt, c.Category)
+		t, err := decodeTime(dt, c.Category)
+		if err != nil {
+			return nil, fmt.Errorf("扩展K线记录 %d: %w", i, err)
+		}
 		base := r.p
 		open := r.f32()
 		high := r.f32()
@@ -491,8 +494,11 @@ func (exHq) DecodeBarsRange(bs []byte) ([]ExRangeKline, error) {
 	}
 	out := make([]ExRangeKline, 0, cnt)
 	for i := 0; i < cnt; i++ {
-		d1 := int(r.u16())
-		d2 := int(r.u16())
+		date, minute := int(r.u16()), int(r.u16())
+		at, err := minuteTime(date, minute)
+		if err != nil {
+			return nil, fmt.Errorf("扩展区间K线记录 %d: %w", i, err)
+		}
 		open := r.f32()
 		high := r.f32()
 		low := r.f32()
@@ -500,13 +506,8 @@ func (exHq) DecodeBarsRange(bs []byte) ([]ExRangeKline, error) {
 		position := r.u32()
 		trade := r.u32()
 		settle := r.f32()
-		year := d1/2048 + 2004
-		month := (d1 % 2048) / 100
-		day := (d1 % 2048) % 100
-		hour := d2 / 60
-		minute := d2 % 60
 		out = append(out, ExRangeKline{
-			Datetime: fmtDatetime(year, month, day, hour, minute),
+			Datetime: at.Format(TimeLayout),
 			Open:     open, High: high, Low: low, Close: cls,
 			Position: position, Trade: trade, SettlementPrice: settle,
 		})
@@ -618,24 +619,6 @@ func parseExFutures(bs []byte, p int, it *QuoteListItem) {
 	it.Ask[0] = rd.f32()  // MaiRuJia
 	rd.skip(16)           // 4 未知
 	it.AskVol[0] = rd.u32()
-}
-
-// fmtDatetime 格式化 "YYYY-MM-DD HH:MM"。
-func fmtDatetime(y, mo, d, h, mi int) string {
-	buf := []byte("0000-00-00 00:00")
-	put2 := func(off, v int) {
-		buf[off] = byte('0' + (v/10)%10)
-		buf[off+1] = byte('0' + v%10)
-	}
-	buf[0] = byte('0' + (y/1000)%10)
-	buf[1] = byte('0' + (y/100)%10)
-	buf[2] = byte('0' + (y/10)%10)
-	buf[3] = byte('0' + y%10)
-	put2(5, mo)
-	put2(8, d)
-	put2(11, h)
-	put2(14, mi)
-	return string(buf)
 }
 
 // exReader 小端游标读取器。

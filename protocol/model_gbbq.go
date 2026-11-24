@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"sort"
@@ -67,10 +68,14 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 	bs = bs[11:]
 
 	for i := uint16(0); i < count; i++ {
+		at, err := decodeTime([4]byte(bs[8:12]), TypeKlineDay)
+		if err != nil {
+			return nil, fmt.Errorf("股本变迁记录 %d: %w", i, err)
+		}
 		g := &Gbbq{
 			//Exchange: Exchange(bs[0]),
 			Code:     Exchange(bs[0]).String() + string(bs[1:7]),
-			Time:     GetTime([4]byte(bs[8:12]), 100),
+			Time:     at,
 			Category: int(bs[12]),
 		}
 		bs = bs[13:]
@@ -315,7 +320,6 @@ func (ks PreKlines) Factors() []*Factor {
 		m, c := x.mc()
 		evs = append(evs, ev{t: tradeDay(x.Time), m: m, c: c})
 	}
-	sort.Slice(evs, func(i, j int) bool { return evs[i].t.Before(evs[j].t) }) //按 ex-day 升序
 
 	ls := make([]*Factor, len(ks))
 
@@ -395,14 +399,14 @@ func ApplyQFQ(ks Klines, fs []*Factor) Klines { return applyFQ(ks, fs, true) }
 func ApplyHFQ(ks Klines, fs []*Factor) Klines { return applyFQ(ks, fs, false) }
 
 func applyFQ(ks Klines, fs []*Factor, qfq bool) Klines {
-	fm := make(map[int64]*Factor, len(fs))
+	fm := make(map[time.Time]*Factor, len(fs))
 	for _, f := range fs {
-		fm[f.Time.Unix()] = f
+		fm[tradeDay(f.Time)] = f
 	}
 	out := make(Klines, len(ks))
 	for i, k := range ks {
 		nk := *k
-		if f := fm[k.Time.Unix()]; f != nil {
+		if f := fm[tradeDay(k.Time)]; f != nil {
 			price := f.QFQPrice
 			if !qfq {
 				price = f.HFQPrice

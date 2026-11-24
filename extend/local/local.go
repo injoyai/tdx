@@ -13,6 +13,12 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+const (
+	minuteBaseYear = 2004
+	minuteYearStep = 2048
+	minuteMaxYear  = minuteBaseYear + math.MaxUint16/minuteYearStep
+)
+
 // 通达信本地数据文件解析
 // 官方协议参考 pytdx(TdxDailyBarReader/TdxLCMinBarReader) 与 mootdx:
 //
@@ -111,8 +117,8 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 	for i := 0; i+32 <= len(bs); i += 32 {
 		rec := bs[i : i+32]
 		// 00~01 日期
-		d := binary.LittleEndian.Uint16(rec[0:2])
-		year, month, day := int(d/2048)+2004, int(d%2048/100), int(d%2048%100)
+		d := int(binary.LittleEndian.Uint16(rec[0:2]))
+		year, month, day := d/minuteYearStep+minuteBaseYear, d%minuteYearStep/100, d%minuteYearStep%100
 		// 02~03 当日分钟数
 		m := binary.LittleEndian.Uint16(rec[2:4])
 		hour, minute := int(m/60), int(m%60)
@@ -142,8 +148,7 @@ func readMinute(dir string, code string, sub, ext string, skipTailPlaceholder bo
 		}
 		// 1分钟线(.lc1)每个交易日 14:59(偶见14:58)有一条"量=0额=0"的占位记录,
 		// 尾盘无真实成交,这里跳过;5分钟线(.lc5)无占位,全保留。
-		// 只跳过尾盘(>=14:58)的量额全零,避免误删盘中真实无成交分钟。
-		if skipTailPlaceholder && int(m) >= 898 && amount == 0 && vol == 0 {
+		if skipTailPlaceholder && isTailPlaceholder(int(m), k.Volume, k.Amount) {
 			continue
 		}
 		ks = append(ks, k)
@@ -210,7 +215,7 @@ func WriteDay(code string, ks protocol.Klines) ([]byte, error) {
 	index := protocol.IsIndex(c)
 	bs := make([]byte, 0, len(ks)*32)
 	for i, k := range ks {
-		if err := validateKline(k, true); err != nil {
+		if err := validateWriteKline(k, true, index); err != nil {
 			return nil, fmt.Errorf("日线记录 %d: %w", i, err)
 		}
 		bs = append(bs, encodeDay(k, index)...)
@@ -241,13 +246,12 @@ func writeMinute(code string, placeholder bool, ks protocol.Klines) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	index := protocol.IsIndex(c)
 	for i, k := range ks {
-		if err := validateKline(k, false); err != nil {
+		if err := validateWriteKline(k, false, index); err != nil {
 			return nil, fmt.Errorf("分钟记录 %d: %w", i, err)
 		}
 	}
-	// decodeCode 返回的 c 已带交易所前缀(如 sh000001),直接用于判断指数
-	index := protocol.IsIndex(c)
 	bs := make([]byte, 0, len(ks)*32)
 	// 按交易日分组处理,便于判断每个交易日是否已含尾盘占位
 	for start := 0; start < len(ks); {
@@ -292,15 +296,40 @@ func validateKline(k *protocol.Kline, day bool) error {
 	return nil
 }
 
-// dayHasTailPlaceholder 判断该交易日数据是否已含尾盘占位记录(当日分钟>=898 即 14:58 及之后 且 量=0额=0)
+func validateWriteKline(k *protocol.Kline, day, index bool) error {
+	if err := validateKline(k, day); err != nil {
+		return err
+	}
+	firstYear, lastYear := minuteBaseYear, minuteMaxYear
+	if day {
+		firstYear, lastYear = 1, 9999
+	}
+	if year := k.Time.Year(); year < firstYear || year > lastYear {
+		return fmt.Errorf("年份 %d 超出文件支持范围 %d..%d", year, firstYear, lastYear)
+	}
+	maxVolume := int64(math.MaxUint32)
+	if !index {
+		maxVolume /= protocol.SharesPerLot
+	}
+	if k.Volume < 0 || k.Volume > maxVolume {
+		return fmt.Errorf("成交量 %d 手超出文件支持范围 0..%d", k.Volume, maxVolume)
+	}
+	return nil
+}
+
+// dayHasTailPlaceholder 判断该交易日数据是否已含 14:58 或 14:59 尾盘占位。
 func dayHasTailPlaceholder(dayKs protocol.Klines) bool {
 	for _, k := range dayKs {
 		m := k.Time.Hour()*60 + k.Time.Minute()
-		if m >= 898 && k.Amount == 0 && k.Volume == 0 {
+		if isTailPlaceholder(m, k.Volume, k.Amount) {
 			return true
 		}
 	}
 	return false
+}
+
+func isTailPlaceholder(minute int, volume int64, amount float64) bool {
+	return (minute == 14*60+58 || minute == 14*60+59) && volume == 0 && amount == 0
 }
 
 // encodeMinutePlaceholder 编码一条分钟线占位记录(量=0额=0,时间取该日末分钟 14:59,
@@ -308,7 +337,7 @@ func dayHasTailPlaceholder(dayKs protocol.Klines) bool {
 func encodeMinutePlaceholder(k *protocol.Kline) []byte {
 	b := make([]byte, 32)
 	// 日期 2048 进制: (year-2004)*2048 + month*100 + day
-	num := uint16((k.Time.Year()-2004)*2048 + int(k.Time.Month())*100 + k.Time.Day())
+	num := uint16((k.Time.Year()-minuteBaseYear)*minuteYearStep + int(k.Time.Month())*100 + k.Time.Day())
 	binary.LittleEndian.PutUint16(b[0:2], num)
 	// 当日分钟数固定为当日末分钟(14:59=899),与真实文件一致
 	binary.LittleEndian.PutUint16(b[2:4], 899)
@@ -340,7 +369,7 @@ func encodeDay(k *protocol.Kline, index bool) []byte {
 func encodeMinute(k *protocol.Kline, index bool) []byte {
 	b := make([]byte, 32)
 	// 日期 2048 进制: (year-2004)*2048 + month*100 + day
-	num := uint16((k.Time.Year()-2004)*2048 + int(k.Time.Month())*100 + k.Time.Day())
+	num := uint16((k.Time.Year()-minuteBaseYear)*minuteYearStep + int(k.Time.Month())*100 + k.Time.Day())
 	binary.LittleEndian.PutUint16(b[0:2], num)
 	// 当日分钟数
 	binary.LittleEndian.PutUint16(b[2:4], uint16(k.Time.Hour()*60+k.Time.Minute()))

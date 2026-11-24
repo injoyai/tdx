@@ -116,6 +116,8 @@ _ = quotes; _ = err
 
 `protocol.ParseInstrument` 做离线格式解析并返回 `{Exchange, Code}`。数字港股缺少协议编号时返回需要品种快照的错误，并列出候选编号。`protocol.ResolveInstrument(code, nil)` 可以使用已导入或内置的归属完成离线解析。pull 处理配置和存储归属时也接受调用方提供的品种快照。已知编号可直接解析 `00823.49`。`Exchange.String()` 返回证券代码前缀，`Instrument.String()` 返回点分隔代码，例如港股股票 `hk.00700`、香港基金 `hk.02800`、港股指数 `hk.HSI`。按协议市场查询时，股票、基金、指数分别使用 `31`、`49`、`27`。仅传入简称 `hk` 查询市场列表时解析为主板 `31`。
 
+解析依次识别完整市场键、显式市场前缀、显式市场后缀，再尝试拼接前缀。`WIX.US` 和 `us.WIX` 等价，`us.BRK.B` 中的点保留在代码主体。数字市场编号须在协议的 0..255 范围内。
+
 统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
 业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 SendFrame、Write 系列及 Done／Closed／Err／GetKey 从具体连接使用，业务接口不包含这些能力。底层 Client、Wait、Logger／Event 及 Reset／Restart／Read 等入口不再公开；日志及重连使用构造选项配置。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
@@ -188,7 +190,7 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 
 ### 扩展品种发现
 
-通过 `Client.GetInstruments()` 获取扩展服务器可分页提供的全局品种表。MarketClient 自动使用扩展连接，标准连接返回不支持错误。pull 只在本轮 Update 内共享返回快照。
+通过 `Client.GetInstruments()` 获取扩展服务器可分页提供的全局品种表。MarketClient 自动使用扩展连接，标准连接返回不支持错误。pull 只在本轮 Update 内共享返回快照。扫描期间连接更换时，调用返回可重试的 `io.ErrUnexpectedEOF`，重试从查询总数开始。
 
 应用可在启动时调用 `protocol.LoadInstrumentMarkets(dir)` 加载已保存的证券归属。目录由应用指定，首次没有文件时从空表开始；目录和归属表是进程级共享数据，重复调用会替换所有 Client 共用的数据源，因此应在启动时配置一次。每次完整的 `GetInstruments()` 成功后，调用 `protocol.ImportInstruments(items)` 一次。只有实现内部导入能力的市场会接收数据（当前仅香港），其他市场不参与。
 
@@ -213,6 +215,7 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 - 历史分时等报文不带逐条时间的布局按路由声明的交易时段从记录序号推导钟面；沪深北共用 09:30-11:30、13:00-15:00，无午休时段按连续交易生成。市场未声明时段时明确报错，不回退到沪深钟面。标准日内 K 线的午休修正只在路由声明适用时启用。
 - 行情结果只保留源日期／日期时分、分时／分笔钟面时间及已确认的交易日；已移除 `TimeZone` 和 `Timestamp()`，不附加或生成 Unix 时间戳。不根据证券所在地猜测来源时区，不修改全局 `time.Local`。需要真实时刻转换时，由调用方在确认来源口径后自行处理。
 - 标准原始 `Kline.Time`／`Trade.Time`／`Gbbq.Time`、本地文件及同花顺适配沿用 `protocol.Location()` 的固定东八区约定；原始日线的 15:00／00:00 是内部日期标签。pull 按源日期时分保存和查询，扩展不再按东八区生成 Unix。新存储格式及接口变更见 [迁移说明](v2-migration.md#源时间交易日与真实时刻)。
+- K 线和股本事件解码校验报文中的原始日期，日内 K 线同时校验分钟数。无效记录使整页返回错误。直接调用 `protocol.GetTime` 解析无效编码时得到零值。
 
 `Dial*` 返回的单协议连接 与 `NewClient()` 门面共享基础行情与代码查询的名称、参数和返回结构。单连接绑定建连时的协议，查询另一类品种会返回协议不匹配错误，不会额外建连；混合市场查询使用 `NewClient()`。K线全部周期及 `All/Until`、完整分笔查询均返回统一类型；指数 K线自动选择解码，独立 `GetIndex*` K线入口已移除。`Until` 回调接收 `Kline`，标准跨页昨收保留在原始 `Standard.Last`。财务、除权、公司资料、集合竞价、板块及报表等标准能力已接入业务接口，门面自动选择标准连接；扩展品种和扩展单连接不支持这些接口。它们使用标准返回类型。`GetFinanceInfo` 的财务金额按千元转元，股本按万股转换，股东户数保留原值。统一结果不是 `protocol.Klines`，不能直接传给现有指标、复权或存储方法；需要原始协议响应时调用 `StandardResponse()`；它保留浮点元值价格、时间和原始量单位，不转换扩展数据，并检查旧 uint16 数量上限。指标和本地文件编码使用下述 `Klines()` 整数手适配。K 线、分时和分笔都提供该方法；Count 按实际 List 长度生成，缺少 Standard 原始记录时返回错误。
 

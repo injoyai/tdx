@@ -78,7 +78,12 @@ func TestStandardIndexDayAndMinuteVolume(t *testing.T) {
 		// 一条指数记录：价格差值为零，原始量 123400，额和涨跌家数为零。
 		data := make([]byte, 22)
 		binary.LittleEndian.PutUint16(data, 1)
-		binary.LittleEndian.PutUint32(data[2:6], 20261009)
+		if protocol.IsIntraday(spec.Category) {
+			binary.LittleEndian.PutUint16(data[2:4], (2026-2004)*2048+1009)
+			binary.LittleEndian.PutUint16(data[4:6], 9*60+31)
+		} else {
+			binary.LittleEndian.PutUint32(data[2:6], 20261009)
+		}
 		binary.LittleEndian.PutUint32(data[10:14], math.Float32bits(123400))
 		bars, err := protocol.MKline.Decode(data, protocol.KlineCache{Type: spec.Category, Kind: info.Kind, Code: "sh000001"})
 		if err != nil || len(bars.List) != 1 {

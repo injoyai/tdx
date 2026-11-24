@@ -28,3 +28,43 @@ func TestGetTimeIndependentOfHostTimezone(t *testing.T) {
 		}
 	}
 }
+
+func TestKlineDecodersRejectInvalidWireTimes(t *testing.T) {
+	var badDay, badMinuteDate, badClock [4]byte
+	binary.LittleEndian.PutUint32(badDay[:], 20260230)
+	binary.LittleEndian.PutUint16(badMinuteDate[:], (2026-2004)*2048+230)
+	binary.LittleEndian.PutUint16(badClock[:], (2026-2004)*2048+228)
+	binary.LittleEndian.PutUint16(badClock[2:], 24*60)
+	for _, tc := range []struct {
+		name     string
+		category uint8
+		raw      [4]byte
+	}{
+		{"day", TypeKlineDay, badDay},
+		{"minute date", TypeKlineMinute, badMinuteDate},
+		{"minute clock", TypeKlineMinute, badClock},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			std := make([]byte, 2+16)
+			std[0] = 1
+			copy(std[2:], tc.raw[:])
+			if got, err := MKline.Decode(std, KlineCache{Type: tc.category}); err == nil || got != nil {
+				t.Errorf("standard accepted invalid time: %+v, %v", got, err)
+			}
+			ex := make([]byte, 20+32)
+			ex[18] = 1
+			copy(ex[20:], tc.raw[:])
+			if got, err := MEx.DecodeBars(ex, ExBarsCache{Category: tc.category}); err == nil || got != nil {
+				t.Errorf("extended accepted invalid time: %+v, %v", got, err)
+			}
+			if tc.category == TypeKlineMinute {
+				interval := make([]byte, 14+32)
+				interval[12] = 1
+				copy(interval[14:], tc.raw[:])
+				if got, err := MEx.DecodeBarsRange(interval); err == nil || got != nil {
+					t.Errorf("extended range accepted invalid time: %+v, %v", got, err)
+				}
+			}
+		})
+	}
+}

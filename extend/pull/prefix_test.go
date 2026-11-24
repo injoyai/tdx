@@ -39,6 +39,8 @@ func TestMarketPrefixForms(t *testing.T) {
 		{[]string{"hkCES120", "HK.CES120"}, protocol.MarketHKIndex, "CES120"},
 		{[]string{"hk.HZ5021", "hkHZ5021"}, protocol.MarketHKIndex, "HZ5021"},
 		{[]string{"usAAPL", "US.AAPL", "Us.aapl"}, protocol.MarketUS, "AAPL"},
+		{[]string{"WIX.US", "us.WIX"}, protocol.MarketUS, "WIX"},
+		{[]string{"USB.Us", "us.USB"}, protocol.MarketUS, "USB"},
 		{[]string{"usBRK.B", "us.BRK.B", "US.BRK.B", "BRK.B", "brk.b"}, protocol.MarketUS, "BRK.B"},
 		{[]string{"usABC1", "us.ABC1", "US.abc1"}, protocol.MarketUS, "ABC1"},
 		{[]string{"cffIF2609", "CFF.IF2609", "cff/IF2609"}, protocol.MarketCFF, "IF2609"},

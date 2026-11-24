@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/injoyai/tdx/v2/protocol/market"
@@ -26,28 +27,33 @@ func KlineTime(t time.Time, category uint8) string {
 // 扩展行情的钟面时间仍按原值保留，不推断证券当地时区或夜盘自然日。
 func Location() *time.Location { return location }
 
+// GetTime 解析协议时间。无效编码返回零值。
 func GetTime(bs [4]byte, category uint8) time.Time {
-	switch category {
-	case TypeKlineMinute, TypeKlineMinute2, TypeKline5Minute, TypeKline15Minute, TypeKline30Minute, TypeKline60Minute:
+	t, _ := decodeTime(bs, category)
+	return t
+}
 
-		yearMonthDay := Uint16(bs[:2])
-		hourMinute := Uint16(bs[2:4])
-		year := int(yearMonthDay>>11 + 2004)
-		month := yearMonthDay % 2048 / 100
-		day := int((yearMonthDay % 2048) % 100)
-		hour := int(hourMinute / 60)
-		minute := int(hourMinute % 60)
-		return time.Date(year, time.Month(month), day, hour, minute, 0, 0, Location())
-
-	default:
-
-		yearMonthDay := Uint32(bs[:4])
-		year := int(yearMonthDay / 10000)
-		month := int((yearMonthDay % 10000) / 100)
-		day := int(yearMonthDay % 100)
-		return time.Date(year, time.Month(month), day, 15, 0, 0, 0, Location())
-
+func decodeTime(bs [4]byte, category uint8) (time.Time, error) {
+	if IsIntraday(category) {
+		date := int(Uint16(bs[:2]))
+		return minuteTime(date, int(Uint16(bs[2:])))
 	}
+	date := int(Uint32(bs[:]))
+	return checkedTime(date/10000, date/100%100, date%100, 15*60)
+}
+
+func minuteTime(date, minute int) (time.Time, error) {
+	monthDay := date % 2048
+	return checkedTime(date/2048+2004, monthDay/100, monthDay%100, minute)
+}
+
+func checkedTime(year, month, day, minute int) (time.Time, error) {
+	t := time.Date(year, time.Month(month), day, minute/60, minute%60, 0, 0, Location())
+	if year < 1 || year > 9999 || minute >= 24*60 ||
+		t.Year() != year || int(t.Month()) != month || t.Day() != day {
+		return time.Time{}, fmt.Errorf("无效协议时间 %04d-%02d-%02d %02d:%02d", year, month, day, minute/60, minute%60)
+	}
+	return t, nil
 }
 
 func minutes(t time.Time) int {

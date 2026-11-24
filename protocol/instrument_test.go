@@ -24,6 +24,8 @@ func TestParseInstrument(t *testing.T) {
 		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
 		{"us.bRk.B", ExchangeUS, "BRK.B"}, {"BRK.B", ExchangeUS, "BRK.B"},
 		{"WIX", ExchangeUS, "WIX"}, {"WING", ExchangeUS, "WING"},
+		{"WIX.US", ExchangeUS, "WIX"}, {"USB.Us", ExchangeUS, "USB"},
+		{"US.BRK.B", ExchangeUS, "BRK.B"}, {"BRK.B.US", ExchangeUS, "BRK.B"},
 		{"wi.A_IXIC", ExchangeWI, "A_IXIC"}, {"Wi/a_ndx", ExchangeWI, "A_NDX"},
 		{"wiA_SOX", ExchangeWI, "A_SOX"}, {"A_IXIC.12", ExchangeWI, "A_IXIC"},
 		{"B_SDAX.K.WI", ExchangeWI, "B_SDAX.K"},
@@ -47,7 +49,7 @@ func TestParseInstrument(t *testing.T) {
 			t.Errorf("accepted invalid/unsupported code %q as %s", s, i)
 		}
 	}
-	for _, s := range []string{"wi.", "wi.1234", "wi.A__IXIC", "wi.A_IXIC.", "wi.ABCDEFGHIJ", "qhz.1234", "qhz.IM_CI", "us.A_IXIC"} {
+	for _, s := range []string{"wi.", "wi.1234", "wi.A__IXIC", "wi.A_IXIC.", "wi.ABCDEFGHIJ", "qhz.1234", "qhz.IM_CI", "us.A_IXIC", "AAPL.330"} {
 		if i, err := ParseInstrument(s); err == nil {
 			t.Errorf("accepted invalid code %q as %s", s, i)
 		}

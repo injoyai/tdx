@@ -274,6 +274,30 @@ func TestFactorsFutureExDayIgnored(t *testing.T) {
 	}
 }
 
+func TestFactorsUseTradeDate(t *testing.T) {
+	day := func(date, hour int) time.Time {
+		return time.Date(2026, 9, date, hour, 0, 0, 0, Location())
+	}
+	xs := XRXDs{{Time: day(2, 15), Fenhong: 10}}
+	midnight := Klines{{Time: day(1, 0), Close: 10}, {Time: day(2, 0), Close: 9}, {Time: day(3, 0), Close: 9}}
+	closeTime := Klines{{Time: day(1, 15), Close: 10}, {Time: day(2, 15), Close: 9}, {Time: day(3, 15), Close: 9}}
+	for _, n := range []int{2, 3} {
+		for _, rows := range []Klines{midnight, closeTime} {
+			factors := xs.Pre(rows[:n]).Factors()
+			for _, prices := range []Klines{midnight[:n], closeTime[:n]} {
+				qfq := ApplyQFQ(prices, factors)
+				hfq := ApplyHFQ(prices, factors)
+				for i := range prices {
+					if qfq[i].Close != 9 || hfq[i].Close != 10 {
+						t.Fatalf("明细截至 %s，因子日期 %s，行情日期 %s，前复权 %g，后复权 %g",
+							rows[n-1].Time, factors[i].Time, prices[i].Time, qfq[i].Close, hfq[i].Close)
+					}
+				}
+			}
+		}
+	}
+}
+
 // ───────── 测试夹具(通达信不复权日线 + gbbq category=1 事件) ─────────
 // 日线为"最小交易日历": 仅含每个 ex-day 的首个>=该日交易日 + 断言日 + 最新锚定日,
 // 因仿射系数在两 ex-day 之间恒定, 该子集即可精确复现完整序列结果。

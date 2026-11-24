@@ -35,3 +35,25 @@ func TestCodeFileLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryMinuteWithLiteralBracketsInDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "archive [old]")
+	s, err := NewPull(dir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	code := model.Code{Market: protocol.MarketSZ, Code: "sz000001"}
+	old := "2025-12-31 14:59"
+	newer := "2026-01-05 09:31"
+	if err := s.SaveMinute(code, 2026, newer, []*model.KlineMinute{{Time: newer}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMinute(code, 2025, old, []*model.KlineMinute{{Time: old}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryMinute(code, "", "")
+	if err != nil || len(got) != 2 || got[0].Time != old || got[1].Time != newer {
+		t.Fatalf("query returned %+v, %v, want 2 rows in year order", got, err)
+	}
+}

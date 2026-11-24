@@ -136,8 +136,10 @@ func (c *ExConn) GetCodeAll(ex protocol.Exchange) (*CodeResp, error) {
 
 const instrumentPageSize = 800
 
+var errInstrumentConnectionChanged = fmt.Errorf("扩展品种扫描期间连接已更换: %w", io.ErrUnexpectedEOF)
+
 // GetInstruments 读取扩展服务器可分页提供的全局品种表。
-// 报告总数与实读数之间的尾部差异经同一连接复查后允许返回，其他缺页报错。
+// 整次扫描使用同一连接。报告总数与实读数的尾部差异经复查后允许返回。
 func (c *ExConn) GetInstruments() ([]protocol.ExInstrument, error) {
 	writer := c.currentWriter()
 	items, err := c.scanInstruments()
@@ -210,6 +212,9 @@ func (c *ExConn) scanInstruments() ([]protocol.ExInstrument, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.currentWriter() != writer {
+		return nil, errInstrumentConnectionChanged
+	}
 	out := []protocol.ExInstrument{}
 	shortTail := false
 	for start := 0; start < total; {
@@ -218,13 +223,18 @@ func (c *ExConn) scanInstruments() ([]protocol.ExInstrument, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(items) == 0 && shortTail && c.currentWriter() == writer {
+		if c.currentWriter() != writer {
+			return nil, errInstrumentConnectionChanged
+		}
+		if len(items) == 0 && shortTail {
 			confirmed, err := c.confirmInstrumentEnd(start, total, out[start-1])
 			if err != nil {
 				return nil, err
 			}
-			// 重连后无法使用另一条连接上的响应确认原扫描的末尾。
-			if confirmed && c.currentWriter() == writer {
+			if c.currentWriter() != writer {
+				return nil, errInstrumentConnectionChanged
+			}
+			if confirmed {
 				c.logger().Warn("扩展品种报告总数高于可读条数", "server", writer.server, "reported_total", total, "read_total", start)
 				return out, nil
 			}

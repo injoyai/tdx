@@ -83,6 +83,40 @@ func instrumentPage(n int, market uint8, code string) []byte {
 	return data
 }
 
+func TestInstrumentsRejectConnectionChange(t *testing.T) {
+	for _, position := range []string{"count", "last page"} {
+		t.Run(position, func(t *testing.T) {
+			var c *testClient
+			changeWriter := func() {
+				c.waitMu.Lock()
+				next := *c.writer
+				next.server = "replacement connection"
+				c.writer = &next
+				c.waitMu.Unlock()
+			}
+			c = respondingTestClient(t, true, func(h, b []byte) []byte {
+				if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeExCount {
+					if position == "count" {
+						changeWriter()
+					}
+					data := make([]byte, 23)
+					binary.LittleEndian.PutUint32(data[19:23], 801)
+					return data
+				}
+				n := int(binary.LittleEndian.Uint16(b[4:6]))
+				if position == "last page" && binary.LittleEndian.Uint32(b[:4]) == 800 {
+					changeWriter()
+				}
+				return instrumentPage(n, protocol.ExchangeUS.Uint8(), "AAPL")
+			})
+			rows, err := c.GetInstruments()
+			if !errors.Is(err, io.ErrUnexpectedEOF) || rows != nil {
+				t.Fatalf("changed connection returned %d rows, err=%v", len(rows), err)
+			}
+		})
+	}
+}
+
 func TestInstrumentsReportedTail(t *testing.T) {
 	const total, lastPage, end = 110910, 110400, 110893
 	for _, tc := range []struct {

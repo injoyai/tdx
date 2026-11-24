@@ -38,11 +38,16 @@ func pullMinutesResult(s *pull.Service, code model.Code, now time.Time,
 		result.SkipReason = pull.SkipFuture
 		return result, nil
 	}
+	historyBefore := now.Year()
+	if known && info.Protocol == protocol.ProtocolExtended {
+		// 扩展源时区未知。等最晚进入新年的 UTC−12 也跨年后，才认证上一年。
+		historyBefore = now.UTC().Add(-12 * time.Hour).Year()
+	}
 	var targets []minuteTarget
 	var earliest string
 	for year := start.Year(); year <= max(start.Year(), now.Year()); year++ {
 		from := max(fmt.Sprintf("%04d-01-01 00:00", year), start.Format(protocol.TimeLayout))
-		historical := year < now.Year()
+		historical := year < historyBefore
 		through := fmt.Sprintf("%04d-01-01 00:00", year+1)
 		if !historical {
 			through = now.Add(time.Minute).Format(protocol.TimeLayout)

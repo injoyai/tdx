@@ -438,7 +438,12 @@ func TestUnifiedConvenienceAndRange(t *testing.T) {
 					if binary.LittleEndian.Uint32(b[14:18]) != 0 {
 						return make([]byte, 20)
 					}
-					return testExtendedBar(20261009)
+					bar := testExtendedBar(20261009)
+					if protocol.IsIntraday(uint8(binary.LittleEndian.Uint16(b[10:12]))) {
+						binary.LittleEndian.PutUint16(bar[20:22], (2026-2004)*2048+1009)
+						binary.LittleEndian.PutUint16(bar[22:24], 9*60+31)
+					}
+					return bar
 				}
 				if typ != protocol.TypeKline {
 					t.Error("unexpected query", h)
@@ -579,6 +584,27 @@ func TestUnifiedKlinePaginationLast(t *testing.T) {
 	}
 	if r.List[0].Time != "2026-10-07" || r.List[1].Time != "2026-10-08" || r.List[2].Time != "2026-10-09" || r.List[1].Standard.Last != 10 {
 		t.Fatal("cross-page order or previous close changed", r.List)
+	}
+}
+
+type benchmarkKlineSource struct{ querySource }
+
+func (benchmarkKlineSource) GetKline(_ uint8, _ string, start, count uint16) (*KlineResp, error) {
+	n := min(int(count), max(0, 64000-int(start)))
+	return &KlineResp{List: make([]Kline, n), Count: n}, nil
+}
+
+func BenchmarkKlineLongPagination(b *testing.B) {
+	q := queries{source: benchmarkKlineSource{}}
+	b.ReportAllocs()
+	for b.Loop() {
+		r, err := q.GetKlineAll(protocol.TypeKlineMinute, "sz000001")
+		if err != nil {
+			b.Fatal(err)
+		}
+		if r.Count != 64000 {
+			b.Fatalf("got %d rows, want 64000", r.Count)
+		}
 	}
 }
 

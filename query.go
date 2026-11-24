@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -138,7 +139,11 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 	const pageSize = 700
 	var out *KlineResp
 	var last *protocol.Kline
-	for start := 0; start <= 65535; {
+	var pages [][]Kline
+	for start := 0; ; {
+		if start > 65535 {
+			return nil, errors.New("K线分页偏移超过协议 uint16 上限，历史未完整读取")
+		}
 		if err := q.context().Err(); err != nil {
 			return nil, err
 		}
@@ -153,7 +158,7 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 		count := len(r.List)
 		// 服务端可能返回非末页的短页，读到空页才确认历史耗尽。
 		if count == 0 {
-			return out, nil
+			break
 		}
 		if r.List[0].Standard != nil {
 			if last != nil {
@@ -169,14 +174,21 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 				break
 			}
 		}
-		out.List = append(r.List, out.List...)
-		out.Count = len(out.List)
+		pages = append(pages, r.List)
 		if matched {
-			return out, nil
+			break
 		}
 		start += count
 	}
-	return nil, errors.New("K线分页偏移超过协议 uint16 上限，历史未完整读取")
+	// 页按新到旧到达，页内已有升序。最后一次拼接，避免每页复制全部历史。
+	if len(pages) == 1 {
+		out.List = pages[0]
+	} else {
+		slices.Reverse(pages)
+		out.List = slices.Concat(pages...)
+	}
+	out.Count = len(out.List)
+	return out, nil
 }
 
 func (q *queries) GetKlineAll(category uint8, code string) (*KlineResp, error) {

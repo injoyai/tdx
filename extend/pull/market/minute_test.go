@@ -169,6 +169,48 @@ type pagingClient struct {
 	calls int
 }
 
+func TestPullMinutesKeepsPriorExtendedYearOpenAtNewYear(t *testing.T) {
+	code := model.Code{Market: protocol.MarketUS, Code: "AAPL"}
+	store := testStore(t.Name())
+	s, err := pull.New(&pull.Config{Store: store, StartAt: "20251201", Codes: []string{"us.AAPL"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	now := time.Date(2026, 1, 1, 1, 0, 0, 0, protocol.Location())
+	start := "2025-12-01 00:00"
+	early := &model.KlineMinute{Time: "2025-12-31 12:00"}
+	late := &model.KlineMinute{Time: "2025-12-31 15:59"}
+	if err := pullMinutes(s, code, now, func(from string) ([]*model.KlineMinute, error) {
+		if from != start {
+			t.Fatalf("initial scan starts at %s, want %s", from, start)
+		}
+		return []*model.KlineMinute{early}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := s.MinuteYearComplete(code, 2025, start); done || err != nil {
+		t.Fatalf("marked previous year complete during rollover: %v, %v", done, err)
+	}
+
+	// A legacy marker must not hide the tail while the prior year is still open.
+	if err := s.SaveMinuteComplete(code, 2025, start, []*model.KlineMinute{early}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pullMinutes(s, code, now.Add(9*time.Hour), func(from string) ([]*model.KlineMinute, error) {
+		if from != early.Time {
+			t.Fatalf("incremental scan starts at %s, want %s", from, early.Time)
+		}
+		return []*model.KlineMinute{early, late}, nil
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.QueryMinute(code, "", "")
+	if err != nil || len(rows) != 2 || rows[1].Time != late.Time {
+		t.Fatalf("prior-year tail: %+v, %v", rows, err)
+	}
+}
+
 func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
 	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20261231", Codes: []string{"usAAPL"}})
 	if err != nil {

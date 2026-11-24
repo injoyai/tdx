@@ -49,7 +49,9 @@ return export.KlinesToCSV("./output/export/sz000001.csv", "sz000001", "平安银
 
 CSV 接受统一 Client 的 []tdx.Kline 或 []tdx.Trade，直接输出股数，不再经过整数手转换。保留原表头与 UTF-8 BOM；日线没有来源时刻时，时间列为空；未知成交额或价格留空。表头适用于人民币、股数口径的数据。原始 protocol.Klines、复权和本地文件结果须按明确来源单位显式转换后再导出。本地 Write* 仍只返回字节，不写文件。spider.Factor 是第三方比例因子，与 protocol.Factor 的仿射复权模型不同，不能互换。
 
-local.ReadDay／ReadMinute1／ReadMinute5 拒绝非完整 32 字节记录、非法日期／时分和非有限量价值；股票成交量不能整除 100 时返回错误，避免转换为整数手时丢失零股。失败不返回部分数据，截断错误可通过 errors.Is(err, io.ErrUnexpectedEOF) 判断。指数仍保留原始整数手，分钟价格保留 float32 来源精度，合法 `.lc1` 尾盘占位过滤规则不变。
+local.ReadDay／ReadMinute1／ReadMinute5 拒绝非完整 32 字节记录、非法日期／时分和非有限量价值；股票成交量不能整除 100 时返回错误，避免转换为整数手时丢失零股。失败不返回部分数据，截断错误可通过 errors.Is(err, io.ErrUnexpectedEOF) 判断。指数保留原始整数手，分钟价格保留 float32 来源精度。`.lc1` 只区分 14:58、14:59 的零量零额占位，保留 15:00 收盘记录。
+
+本地写入校验日期和成交量位宽。日线年份支持 1 至 9999，分钟线支持 2004 至 2035。成交量必须非负，按文件单位换算后须能写入 32 位无符号整数。
 
 httpclient.New 不联网，调用 FetchCodes(ctx)/FetchGbbq(ctx) 后获得独立查询快照；应用安排刷新和成功后的发布。元数据服务使用 CodesHandler，由应用监听和关闭。原始 JSON 返回格式见 [HTTP 服务说明](httpserver/README.md)。
 

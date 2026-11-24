@@ -31,6 +31,13 @@ func TestExDecodeBounds(t *testing.T) {
 				t.Fatal("valid zero count rejected", err)
 			}
 			binary.LittleEndian.PutUint16(b[tc.count:], 2)
+			if tc.name == "bars" || tc.name == "bars range" {
+				for i := range 2 {
+					at := b[tc.header+i*tc.size:]
+					binary.LittleEndian.PutUint16(at[:2], (2026-2004)*2048+1009)
+					binary.LittleEndian.PutUint16(at[2:4], uint16(9*60+31+i))
+				}
+			}
 			if err := tc.decode(b); err != nil {
 				t.Fatal("complete records rejected", err)
 			}
