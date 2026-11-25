@@ -312,23 +312,35 @@ func (exHq) FrameBars(category uint8, market uint8, code string, start, count ui
 	return exFrame(TypeExBars, Control01, data)
 }
 
-// DecodeBars 解析K线。
-func (exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
+// DecodeBars 解析 K 线，过滤全零日线占位。
+func (m exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
+	bars, _, err := m.DecodeBarsPage(bs, c)
+	return bars, err
+}
+
+// DecodeBarsPage 解析 K 线并返回报文记录数，后者包含被过滤的全零日线占位。
+func (exHq) DecodeBarsPage(bs []byte, c ExBarsCache) ([]ExKline, int, error) {
 	if len(bs) < 20 {
-		return nil, io.ErrUnexpectedEOF
+		return nil, 0, io.ErrUnexpectedEOF
 	}
+	const recordSize = 32
 	r := &exReader{b: bs, p: 18}
 	cnt := int(r.u16())
-	if cnt > r.remain()/32 {
-		return nil, io.ErrUnexpectedEOF
+	if cnt > r.remain()/recordSize {
+		return nil, 0, io.ErrUnexpectedEOF
 	}
 	out := make([]ExKline, 0, cnt)
+	day := c.Category == TypeKlineDay || c.Category == TypeKlineDay2
 	for i := 0; i < cnt; i++ {
+		if day && [recordSize]byte(bs[r.p:r.p+recordSize]) == ([recordSize]byte{}) {
+			r.p += recordSize
+			continue
+		}
 		var dt [4]byte
 		copy(dt[:], r.bytes(4))
 		t, err := decodeTime(dt, c.Category)
 		if err != nil {
-			return nil, fmt.Errorf("扩展K线记录 %d: %w", i, err)
+			return nil, 0, fmt.Errorf("扩展K线记录 %d: %w", i, err)
 		}
 		base := r.p
 		open := r.f32()
@@ -345,7 +357,7 @@ func (exHq) DecodeBars(bs []byte, c ExBarsCache) ([]ExKline, error) {
 			Position: position, Trade: trade, Price: price, Amount: amount,
 		})
 	}
-	return out, nil
+	return out, cnt, nil
 }
 
 // ---- 分时 ----

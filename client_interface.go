@@ -14,6 +14,7 @@ type DialClientFunc func() (Client, error)
 // 只读取 K 线的消费者无需依赖完整 Client。
 type KlineReader interface {
 	// GetKline 使用 protocol.TypeKline* 周期，start 从最新端偏移，count 为 1..800。
+	// 单页结果按 Count + Skipped 推进偏移，两者均为零时已读到空页。
 	// 标准指数日内 K 线的成交量不可用，Volume 为 0，原始字段保留在 Standard。
 	GetKline(category uint8, code string, start, count uint16) (*KlineResp, error)
 }

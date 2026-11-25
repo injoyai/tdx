@@ -155,10 +155,14 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 			out = &KlineResp{Instrument: r.Instrument, Category: r.Category}
 			code = pinInstrumentCode(code, r.Instrument)
 		}
-		count := len(r.List)
+		count := len(r.List) + r.Skipped
 		// 服务端可能返回非末页的短页，读到空页才确认历史耗尽。
 		if count == 0 {
 			break
+		}
+		start += count
+		if len(r.List) == 0 {
+			continue
 		}
 		if r.List[0].Standard != nil {
 			if last != nil {
@@ -178,7 +182,6 @@ func (q *queries) GetKlineUntil(category uint8, code string, stop func(Kline) bo
 		if matched {
 			break
 		}
-		start += count
 	}
 	// 页按新到旧到达，页内已有升序。最后一次拼接，避免每页复制全部历史。
 	if len(pages) == 1 {

@@ -68,3 +68,24 @@ func TestKlineDecodersRejectInvalidWireTimes(t *testing.T) {
 		})
 	}
 }
+
+func TestExtendedBarsSkipOnlyZeroDayRecords(t *testing.T) {
+	b := make([]byte, 20+2*32)
+	b[18] = 2
+	// 有效日期的零价零量日线仍是有效记录。
+	binary.LittleEndian.PutUint32(b[20+32:], 20261124)
+	for _, category := range []uint8{TypeKlineDay, TypeKlineDay2} {
+		got, count, err := MEx.DecodeBarsPage(b, ExBarsCache{Category: category})
+		if err != nil || count != 2 || len(got) != 1 || got[0].Datetime != "2026-11-24" {
+			t.Fatalf("category %d: bars=%+v count=%d err=%v", category, got, count, err)
+		}
+	}
+	// 分钟线全零记录和含非零字段的零日期日线仍应报错。
+	if got, err := MEx.DecodeBars(b, ExBarsCache{Category: TypeKlineMinute2}); err == nil || got != nil {
+		t.Fatalf("accepted zero minute record: %+v, %v", got, err)
+	}
+	b[20+31] = 1
+	if got, err := MEx.DecodeBars(b, ExBarsCache{Category: TypeKlineDay2}); err == nil || got != nil {
+		t.Fatalf("accepted non-empty record with zero date: %+v, %v", got, err)
+	}
+}

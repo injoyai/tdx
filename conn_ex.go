@@ -37,12 +37,15 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 	if err != nil {
 		return nil, err
 	}
-	bars, err := c.getExtendedKline(out.Category, i.Exchange.Uint8(), i.Code, start, count)
+	page, err := c.getExtendedKline(out.Category, i.Exchange.Uint8(), i.Code, start, count)
 	if err != nil {
 		return nil, err
 	}
-	for j := range bars {
-		k := &bars[j]
+	if page.count > int(count) {
+		return nil, errors.New("K线响应数量超过请求数量")
+	}
+	for j := range page.bars {
+		k := &page.bars[j]
 		row := Kline{Time: k.Datetime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Extended: k}
 		if scale > 0 {
 			row.Volume, err = scaleVolume(int64(k.Trade), scale)
@@ -57,10 +60,8 @@ func (c *ExConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 		row.applyFields(rule.Fields)
 		out.List = append(out.List, row)
 	}
-	if len(out.List) > int(count) {
-		return nil, errors.New("K线响应数量超过请求数量")
-	}
 	out.Count = len(out.List)
+	out.Skipped = page.count - out.Count
 	return out, nil
 }
 
@@ -475,13 +476,20 @@ func (c *ExConn) getQuoteList(market, category uint8, start, count uint16) ([]pr
 	return r.([]protocol.QuoteListItem), nil
 }
 
+type exBarsPageCache protocol.ExBarsCache
+
+type exBarsPage struct {
+	bars  []protocol.ExKline
+	count int
+}
+
 // getExtendedKline K线(category 同标准 KLINE 类型)。
-func (c *ExConn) getExtendedKline(category, market uint8, code string, start, count uint16) ([]protocol.ExKline, error) {
-	r, err := c.SendFrame(protocol.MEx.FrameBars(category, market, code, start, count), protocol.ExBarsCache{Category: category})
+func (c *ExConn) getExtendedKline(category, market uint8, code string, start, count uint16) (exBarsPage, error) {
+	r, err := c.SendFrame(protocol.MEx.FrameBars(category, market, code, start, count), exBarsPageCache{Category: category})
 	if err != nil {
-		return nil, err
+		return exBarsPage{}, err
 	}
-	return r.([]protocol.ExKline), nil
+	return r.(exBarsPage), nil
 }
 
 // getExtendedMinute 当日分时。
@@ -549,6 +557,10 @@ func (*ExConn) decode(f *protocol.Response, val any) (resp any, err error) {
 		resp, err = protocol.MEx.DecodeQuoteList(f.Data, val.(protocol.ExQuoteListCache))
 
 	case protocol.TypeExBars:
+		if cache, ok := val.(exBarsPageCache); ok {
+			bars, count, err := protocol.MEx.DecodeBarsPage(f.Data, protocol.ExBarsCache(cache))
+			return exBarsPage{bars: bars, count: count}, err
+		}
 		resp, err = protocol.MEx.DecodeBars(f.Data, val.(protocol.ExBarsCache))
 
 	case protocol.TypeExMinute:

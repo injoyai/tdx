@@ -16,8 +16,9 @@ import (
 type KlineResp struct {
 	Instrument protocol.Instrument
 	Category   uint8 // 实际发送的协议周期
-	Count      int
+	Count      int   // List 中的有效记录数
 	List       []Kline
+	Skipped    int `json:",omitempty"` // 单页中跳过的占位数，分页偏移增加 Count + Skipped
 }
 
 // Kline 是统一 K 线记录，Standard/Extended/RangeExtended 按查询来源保留原始字段。

@@ -668,6 +668,64 @@ func TestExtendedKlineShortPage(t *testing.T) {
 	}
 }
 
+func TestExtendedDayPaginationSkipsPlaceholders(t *testing.T) {
+	const total = 704
+	oldest := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	starts := []uint32{0, 0, 700, 702, total}
+	var requests atomic.Int32
+	c := marketTestClient(t, nil, func(_, b []byte) []byte {
+		start := binary.LittleEndian.Uint32(b[14:18])
+		page := int(requests.Add(1)) - 1
+		if page >= len(starts) || start != starts[page] {
+			t.Errorf("unexpected offset for request %d: %d", page, start)
+			return make([]byte, 20)
+		}
+		n := min(700, total-int(start))
+		if start == 700 {
+			n = 2 // 整页均为占位记录。
+		}
+		data := make([]byte, 20+32*n)
+		binary.LittleEndian.PutUint16(data[18:20], uint16(n))
+		for j := range n {
+			if start == 700 || (start == 0 && j == 436) {
+				continue
+			}
+			year, month, day := oldest.AddDate(0, 0, total-int(start)-n+j).Date()
+			copy(data[20+32*j:], testExtendedBar(uint32(year*10000 + int(month)*100 + day))[20:])
+		}
+		return data
+	})
+
+	const code = "00277.31"
+	page, err := c.GetKlineDay(code, 0, 700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Count != 699 || len(page.List) != 699 || page.Skipped != 1 {
+		t.Fatalf("single page count=%d, list length=%d, skipped=%d", page.Count, len(page.List), page.Skipped)
+	}
+	all, err := c.GetKlineDayAll(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := int(requests.Load()); got != len(starts) {
+		t.Fatalf("got %d requests, want %d", got, len(starts))
+	}
+	if all.Count != 701 || len(all.List) != 701 {
+		t.Fatalf("history count=%d, list length=%d", all.Count, len(all.List))
+	}
+	var j int
+	for i := range total {
+		if i == 2 || i == 3 || i == 4+436 {
+			continue
+		}
+		if want := oldest.AddDate(0, 0, i).Format(time.DateOnly); all.List[j].Time != want {
+			t.Fatalf("bar %d date=%s, want %s", j, all.List[j].Time, want)
+		}
+		j++
+	}
+}
+
 func TestUnifiedTradePaging(t *testing.T) {
 	for _, extended := range []bool{false, true} {
 		for _, historical := range []bool{false, true} {
