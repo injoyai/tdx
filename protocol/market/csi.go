@@ -1,5 +1,7 @@
 package market
 
+import "strings"
+
 const (
 	MarketCSI   ID       = "csi"
 	ExchangeCSI Exchange = 62
@@ -15,7 +17,9 @@ func (csi) Info() MarketInfo {
 }
 
 func (csi) Resolve(code Code, _ InstrumentSnapshot) (Instrument, error) {
-	return validateInstrument(ExchangeCSI, code, len(code.Symbol) == 6 && isDigits(code.Symbol))
+	_, _, valid := symbolParts(code.Symbol, "")
+	code.Symbol = strings.ToUpper(code.Symbol)
+	return validateInstrument(ExchangeCSI, code, valid && len(code.Symbol) >= 6 && len(code.Symbol) <= 9)
 }
 
 func (csi) Rules(i Instrument) (InstrumentRules, error) {
