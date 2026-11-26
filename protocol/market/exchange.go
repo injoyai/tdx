@@ -23,8 +23,6 @@ func (e Exchange) String() string {
 		return "sho"
 	case ExchangeSZO:
 		return "szo"
-	case ExchangeCSI:
-		return "csi"
 	case ExchangeCNI:
 		return "cni"
 	case ExchangeHG:
@@ -57,8 +55,6 @@ func (e Exchange) Name() string {
 		return "上海个股期权"
 	case ExchangeSZO:
 		return "深圳个股期权"
-	case ExchangeCSI:
-		return "中证指数"
 	case ExchangeCNI:
 		return "国证指数"
 	case ExchangeHG:
@@ -108,7 +104,7 @@ func ParseExchange(s string) (Exchange, error) {
 var rawExchanges = []Exchange{
 	ExchangeNQ, ExchangeSHO, ExchangeSZO, ExchangeCFFO, ExchangeCZCO,
 	ExchangeDCEO, ExchangeSHFO, ExchangeGFEO, ExchangeOF,
-	ExchangeCSI, ExchangeHG, ExchangeCNI,
+	ExchangeHG, ExchangeCNI,
 }
 
 func allExchanges() []Exchange {
@@ -143,7 +139,6 @@ const (
 	ExchangeSHO Exchange = 8  //上海个股期权
 	ExchangeSZO Exchange = 9  //深圳个股期权
 
-	ExchangeCSI Exchange = 62  //中证指数
 	ExchangeCNI Exchange = 102 //国证指数
 	ExchangeHG  Exchange = 38  //国内宏观指标
 

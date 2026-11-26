@@ -45,6 +45,7 @@ const (
 	MarketHK                 = market.MarketHK
 	MarketHKFund             = market.MarketHKFund
 	MarketHKIndex            = market.MarketHKIndex
+	MarketCSI                = market.MarketCSI
 	MarketUS                 = market.MarketUS
 	MarketInternationalIndex = market.MarketInternationalIndex
 	MarketCFF                = market.MarketCFF

@@ -22,7 +22,8 @@ type unifiedClient struct {
 func (*unifiedClient) Close() error { return nil }
 
 func (*unifiedClient) GetInstruments() ([]protocol.ExInstrument, error) {
-	return []protocol.ExInstrument{{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"}}, nil
+	return []protocol.ExInstrument{{Market: 31, Code: "00700"}, {Market: 49, Code: "02800"}, {Market: 49, Code: "00823"},
+		{Market: 62, Code: "000300", Name: "沪深300"}, {Market: 1, Code: "000300"}}, nil
 }
 
 func (c *unifiedClient) GetKlineUntil(category uint8, code string, stop func(tdx.Kline) bool) (*tdx.KlineResp, error) {
@@ -69,6 +70,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 		{"cffIF2609", "cff.IF2609"}, {"czcTA2609", "czc.TA2609"},
 		{"dceM2609", "dce.M2609"}, {"shfcu2609", "shf.cu2609"},
 		{"gfeSI2609", "gfe.SI2609"}, {"qhzIFL9", "qhz.IFL9"}, {"qhz.IMCI", "qhz.IMCI"},
+		{"csi.000300", "csi.000300"},
 		{"wi.A_IXIC", "wi.A_IXIC"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
@@ -104,6 +106,13 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 			u, ok := pull.Get(code.Market.String())
 			if !ok {
 				t.Fatal("missing unit", code.Market)
+			}
+			if code.Market == protocol.MarketCSI {
+				codes, err := u.Codes(s)
+				want := model.Code{Market: protocol.MarketCSI, Code: "000300", Name: "沪深300"}
+				if err != nil || len(codes) != 1 || codes[0] != want {
+					t.Fatalf("market 62 discovery = %+v, err = %v", codes, err)
+				}
 			}
 			if err := u.FetchDay(s, code); err != nil {
 				t.Fatal(err)
