@@ -148,6 +148,59 @@ func TestHKIndexKlineWithoutVolume(t *testing.T) {
 	}
 }
 
+func TestCSIIndexKlineQuantity(t *testing.T) {
+	const code = "csi.000300"
+	for _, tc := range []struct {
+		name      string
+		period    uint8
+		minute    uint16
+		rawVolume uint32
+		rawAmount float32
+		volume    int64
+		amount    float64
+	}{
+		{"day", protocol.TypeKlineDay2, 0, 15995, 371397.59375, 15_995_000_000, 371_397_593_750},
+		{"minute", protocol.TypeKlineMinute2, 15 * 60, 339, 6430.875, 339_000_000, 6_430_875_000},
+		{"zero minute", protocol.TypeKlineMinute2, 14*60 + 59, 0, 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := marketTestClient(t, nil, func(h, request []byte) []byte {
+				if request[0] != byte(protocol.ExchangeCSI) || string(request[1:7]) != "000300" {
+					t.Errorf("CSI request routed incorrectly: %x", request)
+				}
+				reply := testExtendedBar(20261126)
+				binary.LittleEndian.PutUint32(reply[40:44], math.Float32bits(tc.rawAmount))
+				binary.LittleEndian.PutUint32(reply[44:48], tc.rawVolume)
+				if tc.minute != 0 {
+					binary.LittleEndian.PutUint16(reply[20:22], (2026-2004)*2048+1126)
+					binary.LittleEndian.PutUint16(reply[22:24], tc.minute)
+				}
+				if binary.LittleEndian.Uint16(h[10:12]) == protocol.TypeExBarsRange {
+					return reply[6:]
+				}
+				if request[10] != tc.period {
+					t.Errorf("CSI request category = %d, want %d", request[10], tc.period)
+				}
+				return reply
+			})
+			check := func(r *KlineResp, err error) {
+				t.Helper()
+				if err != nil || r.Count != 1 {
+					t.Fatal(r, err)
+				}
+				row := r.List[0]
+				if row.Volume != tc.volume || row.Amount == nil || *row.Amount != tc.amount {
+					t.Fatalf("CSI quantity = %+v, want volume %d and amount %f", row, tc.volume, tc.amount)
+				}
+			}
+			check(c.GetKline(tc.period, code, 0, 1))
+			if tc.minute != 0 {
+				check(c.GetKlineRange(code, "20261126", "20261126"))
+			}
+		})
+	}
+}
+
 func TestDomesticDefaultVolume(t *testing.T) {
 	for _, code := range []string{"sh019001", "sz131810", "sh000001"} {
 		i, info, err := instrumentInfo(code)

@@ -86,7 +86,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 | `protocol.MarketHKFund` | `hk/fund` | 香港基金（含 ETF） | 7727 | 市场编码 49，由通达信品种快照确认 |
 | `protocol.MarketHKIndex` | `hk/index` | 港股指数（恒生系/中华系） | 7727 | `GetKline`，市场编码27，含 HSI/VHSI/CES100 等 |
 | `protocol.MarketUS` | `us/stock` | 美股 | 7727 | `GetKline`，股票/ETF/指数混合（协议层无法区分） |
-| `protocol.MarketCSI` | `csi` | 中证指数 | 7727 | 市场编码 62，如 `csi.000300`，通过 `ExPool` 发现品种并同步日线和 1 分钟 K 线 |
+| `protocol.MarketCSI` | `csi` | 中证指数 | 7727 | 市场编码 62，如 `csi.000300`，通过 `ExPool` 同步日线和 1 分钟 K 线，量为股、额为元 |
 | `protocol.MarketInternationalIndex` | `global/index` | 国际指数 | 7727 | 市场编码 12，如 `wi.A_IXIC`。通过 `Config.Schedules` 配置调度 |
 
 市场键由 `protocol.MarketID` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
