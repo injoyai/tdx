@@ -13,9 +13,13 @@ func (e Exchange) Uint8() uint8 { return uint8(e) }
 
 // String 返回证券代码前缀。港股股票、基金和指数共用 hk。
 func (e Exchange) String() string {
-	if route, ok := exchangeRoutes[e]; ok {
-		return route.prefix
+	if route, ok := routeFor(e); ok {
+		return route.owner.info.Prefix
 	}
+	return e.rawPrefix()
+}
+
+func (e Exchange) rawPrefix() string {
 	switch e {
 	case ExchangeNQ:
 		return "nq"
@@ -45,9 +49,13 @@ func (e Exchange) String() string {
 }
 
 func (e Exchange) Name() string {
-	if route, ok := exchangeRoutes[e]; ok {
+	if route, ok := routeFor(e); ok {
 		return route.Name
 	}
+	return e.rawName()
+}
+
+func (e Exchange) rawName() string {
 	switch e {
 	case ExchangeNQ:
 		return "新三板"
@@ -92,9 +100,11 @@ func ParseExchange(s string) (Exchange, error) {
 		}
 		return Exchange(n), nil
 	}
-	for _, e := range allExchanges() {
-		if s == strings.ToLower(e.String()) || s == strings.ToLower(e.Name()) {
-			return e, nil
+	if s != "" {
+		for _, e := range allExchanges() {
+			if s == strings.ToLower(e.String()) || s == strings.ToLower(e.Name()) {
+				return e, nil
+			}
 		}
 	}
 	return 0, fmt.Errorf("无法识别的市场: %q", s)
@@ -108,6 +118,12 @@ var rawExchanges = []Exchange{
 }
 
 func allExchanges() []Exchange {
+	marketMu.RLock()
+	defer marketMu.RUnlock()
+	return allExchangesLocked()
+}
+
+func allExchangesLocked() []Exchange {
 	out := make([]Exchange, 0, len(rawExchanges)+len(markets))
 	out = append(out, rawExchanges...)
 	out = append(out, instrumentExchanges...)
@@ -124,6 +140,9 @@ func allExchanges() []Exchange {
 // 用于 DecodeCode 校验前缀,避免 "000001.SZ" 之类输入把数字前缀 "000" 误当市场编码。
 func isExchangeName(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return false
+	}
 	for _, e := range allExchanges() {
 		if s == strings.ToLower(e.String()) || s == strings.ToLower(e.Name()) {
 			return true

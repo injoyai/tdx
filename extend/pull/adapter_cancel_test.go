@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -44,7 +43,7 @@ func TestCanceledFetchDoesNotSaveBarsOrCompletion(t *testing.T) {
 			t.Fatal(err)
 		}
 		store := testStore(t.TempDir())
-		s, err := pull.New(&pull.Config{Store: store, Codes: []string{"sz000001"}, StartAt: "20260101",
+		s, err := New(&Config{Store: store, Codes: []string{"sz000001"}, StartAt: "20260101",
 			Day: !minute, Minute: minute, Pool: pool, Retry: 1})
 		if err != nil {
 			cancel()
@@ -94,7 +93,7 @@ func TestUpdateCancellationWhileWaitingForPool(t *testing.T) {
 			unblock := func() { release.Do(func() { pool.Put(held) }) }
 			defer unblock()
 			waiting := &waitingPool{Pool: pool, entered: make(chan struct{})}
-			s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{code},
+			s, err := New(&Config{Store: testStore(t.TempDir()), Codes: []string{code},
 				Day: true, Retry: 1, Pool: waiting, ExPool: waiting})
 			if err != nil {
 				t.Fatal(err)

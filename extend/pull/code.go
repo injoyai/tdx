@@ -24,10 +24,8 @@ func parseMarketPrefix(s string, resolve func(protocol.InstrumentLookup) (protoc
 			prefixes = append(prefixes, m.String())
 		}
 	}
-	for _, u := range Units() {
-		if _, builtin := protocol.MarketID(u.Name()).Exchange(); !builtin {
-			prefixes = append(prefixes, u.Name())
-		}
+	for _, u := range customUnits() {
+		prefixes = append(prefixes, u.Name())
 	}
 	sort.SliceStable(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
 	for _, prefix := range prefixes {

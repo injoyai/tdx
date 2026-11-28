@@ -93,7 +93,7 @@ go test ./...
 
 ### T4　将代码发现来源移入市场定义
 
-**入口**：`protocol/market/bj.go`、`conn_st.go: getStandardCodeAll / GetCount / GetCode`、`extend/pull/market/standard.go` 与 `block.go`。
+**入口**：`protocol/market/bj.go`、`conn_st.go: getStandardCodeAll / GetCount / GetCode`、`extend/pull/adapter_standard.go` 与 `adapter_block.go`。
 
 **改法**：标准列表分页、扩展全局名录过滤、压缩报表下载各复用现有实现。对于报表来源，让市场选择文件成员和解析方法。把北交所使用 `FileTdxBjMore` 与 `ParseTdxBjMore` 的对应关系放到其市场定义可选择的策略中；保持 Go 包依赖单向，避免 `protocol/market` 反向导入 `protocol`。可以在低层声明来源标识，在拥有解码器的层绑定已有函数。板块补录使用已确定的目标路由生成规范代码，避免重新猜测归属。
 
@@ -111,7 +111,7 @@ go test ./...
 
 ### T6　交易时段、竞价和分笔补线分别声明
 
-**入口**：`protocol/model_history_minute.go`、`protocol/model_kline.go: FixKlineTime`、`query.go: GetKlineMinute241Until`、`extend/pull/market/standard.go` 与 `fallback.go`。
+**入口**：`protocol/model_history_minute.go`、`protocol/model_kline.go: FixKlineTime`、`query.go: GetKlineMinute241Until`、`extend/pull/adapter_standard.go` 与 `adapter_fallback.go`。
 
 **改法**：区分三种时间用途。调度使用 `MarketInfo.TimeZone / CloseTime`；报文带时间时保留其来源语义；只有需要从序号推导分钟钟面的布局才使用交易时段规则。让已解析的市场规则随请求到达需要它的解码位置。沪深时段仍可共用一份定义。分别表达“支持拆竞价”和“允许用分笔补分钟”，补线使用对应品种的分笔数量、金额规则。仅在确认适用的市场和布局启用午休时间修正。
 

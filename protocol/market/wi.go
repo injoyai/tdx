@@ -28,7 +28,7 @@ func (wi) Rules(i Instrument) (InstrumentRules, error) {
 	if err := checkExchange(i.Exchange, ExchangeWI); err != nil {
 		return InstrumentRules{}, err
 	}
-	return extendedRules(SecurityIndex), nil
+	return ExtendedRules(SecurityIndex), nil
 }
 
 func init() { registerMarket(wi{}) }

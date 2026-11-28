@@ -72,9 +72,13 @@ func (gbbq) Decode(bs []byte) (*GbbqResp, error) {
 		if err != nil {
 			return nil, fmt.Errorf("股本变迁记录 %d: %w", i, err)
 		}
+		i := Instrument{Exchange: Exchange(bs[0]), Code: string(bs[1:7])}
+		code := i.Exchange.String() + i.Code
+		if route, ok := i.Exchange.Route(); ok && route.Protocol == ProtocolStandard {
+			code = i.CodeKey()
+		}
 		g := &Gbbq{
-			//Exchange: Exchange(bs[0]),
-			Code:     Exchange(bs[0]).String() + string(bs[1:7]),
+			Code:     code,
 			Time:     at,
 			Category: int(bs[12]),
 		}

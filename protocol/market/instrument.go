@@ -20,10 +20,26 @@ func (i Instrument) String() string {
 
 // QueryCode formats an instrument so another query preserves its known wire market.
 func (i Instrument) QueryCode() string {
-	if UsesInstrumentSnapshot(i.Exchange) {
-		return fmt.Sprintf("%s.%d", i.Code, i.Exchange.Uint8())
+	route, ok := routeFor(i.Exchange)
+	if ok {
+		info := route.owner.info
+		if route.Snapshot || (len(info.Routes) > 1 && route.ID.String() == info.Prefix) {
+			return fmt.Sprintf("%s.%d", i.Code, i.Exchange.Uint8())
+		}
+		if len(info.Routes) > 1 {
+			return route.ID.String() + "." + i.Code
+		}
 	}
 	return i.String()
+}
+
+// CodeKey preserves the compact code used by single-route standard markets
+// and uses an exact route for securities sharing a market prefix.
+func (i Instrument) CodeKey() string {
+	if route, ok := routeFor(i.Exchange); ok && route.Protocol == ProtocolStandard && len(route.owner.info.Routes) == 1 {
+		return route.owner.info.Prefix + i.Code
+	}
+	return i.QueryCode()
 }
 
 // Market returns the storage key associated with the instrument's wire exchange.
@@ -45,11 +61,11 @@ func (i Instrument) Kind() SecurityKind {
 // Rules returns the quote, K-line, time-share, and trade rules for the instrument.
 // 协议类型以路由声明为准，规则实现无需重复声明。
 func (i Instrument) Rules() (InstrumentRules, bool) {
-	route, ok := exchangeRoutes[i.Exchange]
+	route, ok := routeFor(i.Exchange)
 	if !ok {
 		return InstrumentRules{}, false
 	}
-	rules, err := route.market.Rules(i)
+	rules, err := route.owner.Rules(i)
 	if err != nil {
 		return InstrumentRules{}, false
 	}
@@ -59,7 +75,8 @@ func (i Instrument) Rules() (InstrumentRules, bool) {
 
 // StorageCode returns the code used with its market key in pull and storage.
 func (i Instrument) StorageCode() string {
-	if exchangeRoutes[i.Exchange].Protocol == ProtocolStandard {
+	route, _ := routeFor(i.Exchange)
+	if route.Protocol == ProtocolStandard {
 		return i.Exchange.String() + i.Code
 	}
 	return i.Code
@@ -69,11 +86,11 @@ func (i Instrument) StorageCode() string {
 type InstrumentLookup struct {
 	Code          string
 	Exchanges     []Exchange
-	prefix        string
+	Prefix        string
 	knownExchange Exchange
 }
 
-func (l InstrumentLookup) String() string { return l.prefix + "." + l.Code }
+func (l InstrumentLookup) String() string { return l.Prefix + "." + l.Code }
 
 // Candidates returns the candidate wire market numbers.
 func (l InstrumentLookup) Candidates() string {
@@ -115,15 +132,18 @@ func ResolveInstrument(input string, load func(InstrumentLookup) (InstrumentSnap
 	if !snapshot.Loaded() && lookup.knownExchange != 0 {
 		return Instrument{Exchange: lookup.knownExchange, Code: lookup.Code}, nil
 	}
-	route, ok := exchangeRoutes[lookup.Exchanges[0]]
+	route, ok := routeFor(lookup.Exchanges[0])
 	if !ok {
 		return Instrument{}, fmt.Errorf("未定义的快照候选市场 %d", lookup.Exchanges[0])
 	}
-	return route.market.Resolve(Code{Symbol: lookup.Code, Exchange: lookup.Exchanges[0]}, snapshot)
+	return route.resolve(Code{Symbol: lookup.Code, Exchange: lookup.Exchanges[0]}, snapshot)
 }
 
 // UsesInstrumentSnapshot reports whether an exchange participates in snapshot routing.
-func UsesInstrumentSnapshot(ex Exchange) bool { return exchangeRoutes[ex].Snapshot }
+func UsesInstrumentSnapshot(ex Exchange) bool {
+	route, _ := routeFor(ex)
+	return route.Snapshot
+}
 
 // ParseInstrument parses a bare code within an explicit market.
 func (m ID) ParseInstrument(body string) (Instrument, error) {
@@ -131,7 +151,8 @@ func (m ID) ParseInstrument(body string) (Instrument, error) {
 	if !ok {
 		return Instrument{}, fmt.Errorf("未定义的行情市场 %s", m)
 	}
-	return exchangeRoutes[ex].market.Resolve(Code{Symbol: body, Exchange: ex, explicit: true}, InstrumentSnapshot{})
+	route, _ := routeFor(ex)
+	return route.resolve(Code{Symbol: body, Exchange: ex, explicit: true}, InstrumentSnapshot{})
 }
 
 // ParseInstrument 支持完整市场键、显式市场前缀/后缀和可判定的裸代码。
@@ -140,23 +161,25 @@ func (m ID) ParseInstrument(body string) (Instrument, error) {
 // 期货保留合约大小写；港股股票、基金和指数分别路由到市场 31、49 和 27。
 func ParseInstrument(s string) (Instrument, error) {
 	resolve := func(ex Exchange, body string) (Instrument, error) {
-		route, ok := exchangeRoutes[ex]
+		route, ok := routeFor(ex)
 		if !ok {
 			return Instrument{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
 		}
-		return route.market.Resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
+		return route.resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
 	}
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return Instrument{}, fmt.Errorf("代码不能为空")
 	}
-	if ex, ok := bareInstruments[strings.ToUpper(s)]; ok {
+	marketMu.RLock()
+	ex, bare := bareInstruments[strings.ToUpper(s)]
+	marketMu.RUnlock()
+	if bare {
 		return resolve(ex, s)
 	}
 	// 1. 完整市场键显式选择协议路由，代码主体可以包含点。
-	if prefix, body, ok := strings.Cut(s, "."); ok && strings.Contains(prefix, "/") {
-		id := ID(strings.ToLower(prefix))
-		if _, registered := id.Exchange(); registered {
+	if prefix, body, ok := strings.Cut(s, "."); ok {
+		if id, exact := exactRoute(prefix); exact {
 			return id.ParseInstrument(body)
 		}
 	}
@@ -172,8 +195,8 @@ func ParseInstrument(s string) (Instrument, error) {
 		if ex, ok := parseMarketToken(s[:i]); ok {
 			body := s[i+1:]
 			if body != "" {
-				route := exchangeRoutes[ex]
-				if strings.EqualFold(s[:i], route.Name) && route.Name != route.market.Info().Name {
+				route, _ := routeFor(ex)
+				if strings.EqualFold(s[:i], route.Name) && route.Name != route.owner.info.Name {
 					return route.ID.ParseInstrument(body)
 				}
 				return resolve(ex, body)
@@ -183,20 +206,23 @@ func ParseInstrument(s string) (Instrument, error) {
 	// 3. 显式后缀：数字编号必须落在 0-255，越界立即报错，不能回绕到其他市场。
 	if p := strings.LastIndexByte(s, '.'); p > 0 {
 		suffix := s[p+1:]
+		if id, exact := exactRoute(suffix); exact {
+			return id.ParseInstrument(s[:p])
+		}
 		if isDigits(suffix) {
 			n, err := strconv.Atoi(suffix)
 			if err != nil || n > 255 {
 				return Instrument{}, fmt.Errorf("市场编号 %q 超出协议编号范围 0-255", suffix)
 			}
 			ex := Exchange(n)
-			if route, ok := exchangeRoutes[ex]; ok {
+			if route, ok := routeFor(ex); ok {
 				return route.ID.ParseInstrument(s[:p])
 			}
 			return resolve(ex, s[:p])
 		}
 		if ex, err := ParseExchange(suffix); err == nil {
-			if route, ok := exchangeRoutes[ex]; ok &&
-				(suffix == route.Name && route.Name != route.market.Info().Name) {
+			if route, ok := routeFor(ex); ok &&
+				(strings.EqualFold(suffix, route.Name) && route.Name != route.owner.info.Name) {
 				return route.ID.ParseInstrument(s[:p])
 			}
 			return resolve(ex, s[:p])
@@ -208,12 +234,12 @@ func ParseInstrument(s string) (Instrument, error) {
 		if _, err := (Instrument{ex, body}).Market(); err != nil {
 			return Instrument{}, err
 		}
-		route := exchangeRoutes[ex]
-		if strings.HasPrefix(s, route.Name) && route.Name != route.market.Info().Name {
+		route, _ := routeFor(ex)
+		if route.Name != "" && strings.HasPrefix(strings.ToLower(s), strings.ToLower(route.Name)) && route.Name != route.owner.info.Name {
 			return route.ID.ParseInstrument(body)
 		}
 	}
-	for _, ex := range instrumentExchanges {
+	for _, ex := range instrumentRoutes() {
 		prefix := ex.String()
 		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
 			continue
@@ -223,7 +249,8 @@ func ParseInstrument(s string) (Instrument, error) {
 		if explicit {
 			body = body[1:]
 		}
-		if exchangeRoutes[ex].preferBareSymbol && !explicit && isStockSymbol(s) {
+		route, _ := routeFor(ex)
+		if route.owner.info.PreferBareSymbol && !explicit && isStockSymbol(s) {
 			continue // WIX 等裸美股代码保持原路由。
 		}
 		i, err := resolve(ex, body)
@@ -241,14 +268,40 @@ func ParseInstrument(s string) (Instrument, error) {
 	return resolve(ex, body)
 }
 
+// exactRoute recognizes a route key distinct from the logical market prefix.
+func exactRoute(token string) (ID, bool) {
+	id := ID(strings.ToLower(token))
+	ex, ok := id.Exchange()
+	if !ok {
+		return "", false
+	}
+	route, _ := routeFor(ex)
+	return id, route.owner.info.Prefix != id.String()
+}
+
+func (r registeredRoute) resolve(code Code, snapshot InstrumentSnapshot) (Instrument, error) {
+	i, err := r.owner.Resolve(code, snapshot)
+	if err != nil {
+		return Instrument{}, err
+	}
+	target, ok := routeFor(i.Exchange)
+	if !ok || target.owner != r.owner || (code.Explicit() && i.Exchange != r.Exchange) {
+		return Instrument{}, fmt.Errorf("代码 %q 解析到了不匹配的协议市场 %d", code.Symbol, i.Exchange)
+	}
+	return i, nil
+}
+
 // parseMarketToken 解析显式前缀里市场标识部分（不含斜杠的简称、缩写或中文名）。
 func parseMarketToken(token string) (Exchange, bool) {
 	token = strings.ToLower(strings.TrimSpace(token))
 	if token == "" || strings.Contains(token, "/") {
 		return 0, false
 	}
-	if m, ok := prefixMarkets[token]; ok {
-		return m.Info().Routes[0].Exchange, true
+	marketMu.RLock()
+	m, known := prefixMarkets[token]
+	marketMu.RUnlock()
+	if known {
+		return m.info.Routes[0].Exchange, true
 	}
 	for _, e := range allExchanges() {
 		if token == strings.ToLower(e.String()) || token == strings.ToLower(e.Name()) {
@@ -259,11 +312,11 @@ func parseMarketToken(token string) (Exchange, bool) {
 }
 
 func checkedInstrument(ex Exchange, body string) (Instrument, error) {
-	route, ok := exchangeRoutes[ex]
+	route, ok := routeFor(ex)
 	if !ok {
 		return Instrument{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
 	}
-	return route.market.Resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
+	return route.resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
 }
 
 // symbolParts validates an extended wire code and describes its ASCII contents.

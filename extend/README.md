@@ -11,7 +11,7 @@
 | `extend/metadata` | 证券、股本、历史日历的内存查询 | NewCodes、NewGbbq、NewWorkday |
 | `extend/metadata/httpclient` | 显式获取 HTTP 元数据快照 | New、FetchCodes、FetchGbbq |
 | `extend/storage`、`extend/storage/sqlite` | 存储契约与 SQLite 实现 | BarStore；sqlite.New 提供行情与元数据具体方法 |
-| `extend/pull`、`extend/pull/market` | 元数据获取、行情同步与历史分笔下载 | pull.New、pull.NewTrade |
+| `extend/pull` | 元数据获取、行情同步与历史分笔下载 | pull.New、pull.NewTrade |
 | `extend/httpserver` | 行情 HTTP 服务，以及独立代码/股本 HTTP 服务 | `New`、`CodesHandler` |
 
 扩展均位于 extend：同步入口见 [pull](pull/README.md)，内存查询见 [metadata](metadata/README.md)，持久化契约与实现见 [storage](storage/README.md)，共享数据见 model。元数据 HTTP 客户端位于 metadata/httpclient。

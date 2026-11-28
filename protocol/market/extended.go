@@ -1,6 +1,7 @@
 package market
 
-func extendedRules(kind SecurityKind) InstrumentRules {
+// ExtendedRules returns the common price-only extended K-line rules.
+func ExtendedRules(kind SecurityKind) InstrumentRules {
 	return InstrumentRules{
 		Protocol: ProtocolExtended, Security: kind,
 		KlinePeriods: AllPeriods, RangePeriods: 1 << TypeKlineMinute2,
@@ -11,7 +12,7 @@ func extendedRules(kind SecurityKind) InstrumentRules {
 }
 
 func quantityRules(kind SecurityKind, dayVolume, longVolume int64) InstrumentRules {
-	rules := extendedRules(kind)
+	rules := ExtendedRules(kind)
 	fields := Fields{Price: true, Volume: true}
 	rules.DayFields, rules.IntradayFields, rules.LongFields = fields, fields, fields
 	rules.Day.VolumeScale, rules.Minute.VolumeScale, rules.LongVolumeScale = dayVolume, dayVolume, longVolume
@@ -24,7 +25,7 @@ func quantityRules(kind SecurityKind, dayVolume, longVolume int64) InstrumentRul
 func equityRules(dayVolume, longVolume int64) InstrumentRules {
 	rules := quantityRules(SecurityOther, dayVolume, longVolume)
 	rules.DayFields.Amount, rules.IntradayFields.Amount, rules.LongFields.Amount = true, true, true
-	rules.extendedKlineAmountScale = 1
+	rules.DayAmountScale, rules.MinuteAmountScale, rules.LongAmountScale, rules.RangeAmountScale = 1, 1, 1, 1
 	return rules
 }
 

@@ -102,16 +102,18 @@ func (m InstrumentRules) Kline(category uint8, mode KlineMode) KlineRule {
 		rule.Fields = Fields{}
 		return rule
 	}
+	if m.Protocol == ProtocolExtended && mode == KlineRange {
+		rule.Fields.Amount = m.RangeAmountScale != 0
+	}
 	if !rule.Fields.Amount {
 		return rule
 	}
 	if m.Protocol == ProtocolStandard {
 		rule.AmountField, rule.AmountScale = AmountInAmount, 1
-	} else if scale := m.ExtendedKlineAmountScale(category); scale > 0 {
-		rule.AmountField, rule.AmountScale = AmountInAmount, scale
-		if mode == KlineRange {
-			rule.AmountField = AmountInPosition
-		}
+	} else if mode == KlineRange {
+		rule.AmountField, rule.AmountScale = AmountInPosition, m.RangeAmountScale
+	} else {
+		rule.AmountField, rule.AmountScale = AmountInAmount, m.ExtendedKlineAmountScale(category)
 	}
 	return rule
 }
@@ -155,10 +157,14 @@ type InstrumentRules struct {
 	Quote            QuoteRule
 	TimeShare, Trade TickRule
 
-	extendedKlineAmountScale    float64
-	standardMinuteVolumeDivisor int64
-	financeSharesScale          float64
-	financeAmountScale          float64
+	// Extended K-line amount scales convert source fields to the quote currency.
+	// Paged bars use Amount. Range bars use the Position slot.
+	DayAmountScale, MinuteAmountScale, LongAmountScale, RangeAmountScale float64
+
+	// StandardMinuteVolumeDivisor divides the raw standard intraday quantity slot.
+	StandardMinuteVolumeDivisor int64
+	FinanceSharesScale          float64
+	FinanceAmountScale          float64
 }
 
 func (m *InstrumentRules) setTickVolume(scale int64) {
@@ -209,20 +215,22 @@ func (m InstrumentRules) HasExtendedKlineAmount(category uint8) bool {
 
 // ExtendedKlineAmountScale 返回扩展 K 线金额转为原币种的倍率，0 表示协议不提供金额。
 func (m InstrumentRules) ExtendedKlineAmountScale(category uint8) float64 {
-	switch category {
-	case TypeKlineDay2, TypeKlineWeek, TypeKlineMonth, TypeKlineQuarter, TypeKlineYear:
-		return m.extendedKlineAmountScale
+	switch {
+	case category == TypeKlineDay || category == TypeKlineDay2:
+		return m.DayAmountScale
+	case IsIntraday(category):
+		return m.MinuteAmountScale
+	case AllPeriods.Supports(category):
+		return m.LongAmountScale
+	default:
+		return 0
 	}
-	if IsIntraday(category) {
-		return m.extendedKlineAmountScale
-	}
-	return 0
 }
 
 // StandardKlineVolume normalizes the standard wire quantity slot.
 func (m InstrumentRules) StandardKlineVolume(volume int64, category uint8, kind string) int64 {
-	if IsIntraday(category) || category == TypeKlineDay2 {
-		volume /= m.standardMinuteVolumeDivisor
+	if (IsIntraday(category) || category == TypeKlineDay2) && m.StandardMinuteVolumeDivisor > 0 {
+		volume /= m.StandardMinuteVolumeDivisor
 	}
 	if kind == KindIndex {
 		volume *= SharesPerLot
@@ -250,7 +258,7 @@ func (m InstrumentRules) StandardKlineBusinessVolume(volume int64, category uint
 	}
 	divisor := int64(1)
 	if IsIntraday(category) || category == TypeKlineDay2 {
-		divisor = m.standardMinuteVolumeDivisor
+		divisor = m.StandardMinuteVolumeDivisor
 		if divisor <= 0 {
 			return 0, fmt.Errorf("分钟成交量除数无效: %d", divisor)
 		}
@@ -275,5 +283,5 @@ func (m InstrumentRules) StandardKlineBusinessVolume(volume int64, category uint
 
 // FinanceScales returns the standard protocol's share and currency scales.
 func (m InstrumentRules) FinanceScales() (shares, amount float64) {
-	return m.financeSharesScale, m.financeAmountScale
+	return m.FinanceSharesScale, m.FinanceAmountScale
 }

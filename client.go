@@ -300,8 +300,6 @@ func (c *MarketClient) instrument(code string) (protocol.Instrument, protocol.In
 	return link.instrument(code)
 }
 
-func standardCode(i protocol.Instrument) string { return i.Exchange.String() + i.Code }
-
 // GetKline 使用公开 TypeKline* 常量；日线和一分钟别名按市场配置映射。
 func (c *MarketClient) GetKline(category uint8, code string, start, count uint16) (*KlineResp, error) {
 	if err := klineBounds(category, count); err != nil {
@@ -334,7 +332,7 @@ func (c *MarketClient) GetQuote(codes ...string) ([]Quote, error) {
 				return nil, err
 			}
 			indexes = append(indexes, j)
-			standard = append(standard, standardCode(i))
+			standard = append(standard, i.QueryCode())
 		}
 	}
 	// 2 字节通讯类型 + 10 字节固定请求体 + 每个标准品种 7 字节。

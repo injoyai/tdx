@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"strings"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -65,7 +64,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 		{"sz000001", "sz000001"}, {"sh000001", "sh000001"},
 		{"sh510300", "sh510300"}, {"sh880001", "sh880001"},
 		{"sh110075", "sh110075"}, {"sh019001", "sh019001"},
-		{"hk00700", "00700.31"}, {"hk.HSI", "hk.HSI"}, {"usAAPL", "us.AAPL"},
+		{"hk00700", "00700.31"}, {"hk.HSI", "hk/index.HSI"}, {"usAAPL", "us.AAPL"},
 		{"hk02800", "02800.49"}, {"hk.00823", "00823.49"}, {"hk/fund.00823", "00823.49"},
 		{"cffIF2609", "cff.IF2609"}, {"czcTA2609", "czc.TA2609"},
 		{"dceM2609", "dce.M2609"}, {"shfcu2609", "shf.cu2609"},
@@ -81,20 +80,20 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer pool.Close()
-			cfg := &pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{tc.input},
+			cfg := &Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{tc.input},
 				Pool: pool, ExPool: pool}
 			if tc.input == "wi.A_IXIC" {
-				if s, err := pull.New(cfg); err == nil || !strings.Contains(err.Error(), "显式配置 Schedule") {
+				if s, err := New(cfg); err == nil || !strings.Contains(err.Error(), "显式配置 Schedule") {
 					if s != nil {
 						_ = s.Close()
 					}
 					t.Fatalf("missing schedule: %v", err)
 				}
-				cfg.Schedules = map[protocol.MarketID]pull.Schedule{
+				cfg.Schedules = map[protocol.MarketID]Schedule{
 					protocol.MarketInternationalIndex: {TimeZone: "America/New_York", CloseTime: "16:00", Delay: 5 * time.Minute},
 				}
 			}
-			s, err := pull.New(cfg)
+			s, err := New(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +102,7 @@ func TestUnitsStoreUnifiedKlines(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			u, ok := pull.Get(code.Market.String())
+			u, ok := Get(code.Market.String())
 			if !ok {
 				t.Fatal("missing unit", code.Market)
 			}

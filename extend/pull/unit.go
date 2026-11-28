@@ -2,6 +2,7 @@ package pull
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -9,60 +10,40 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// Unit 代表一个可拉取的独立市场（可插拔）。
-//
-// 内置市场由 market 包按协议定义注册。自定义市场需实现并 Register，且须通过 Config.Schedules
-// 或可选的 Schedule() Schedule 方法声明更新边界。
+// Unit 代表一个可拉取的独立市场。协议市场自动选用标准或扩展实现。
+// 自定义拉取流程使用 Register，并通过 Config.Schedules 或 Schedule() Schedule 声明更新边界。
+// 可选 Identity() string 用稳定的非空标识绑定持久数据定义。
 type Unit interface {
-	// Name 唯一标识（protocol.MarketID 枚举值，如 protocol.MarketSH、protocol.MarketHK、protocol.MarketCFF），用于日志/进度条/去重。
+	// Name 是市场的唯一标识，用于存储、日志和去重。
 	Name() string
 
-	// Codes 返回该市场需要拉取的代码列表（动态获取，可被 Config.Codes 覆盖）。
-	// s 提供连接池（Pool 标准行情 / ExPool 扩展行情）和已持久化代码快照／代码列表函数访问。
+	// Codes 返回市场的代码列表（动态获取，可被 Config.Codes 覆盖）。
 	Codes(s *Service) ([]model.Code, error)
 
-	// FetchDay 拉取并存储某代码日线；实现需读取最后源日期、控制增量边界并调用 SaveDay。
+	// FetchDay 拉取并存储某代码日线；实现需控制增量边界并调用 SaveDay。
 	FetchDay(s *Service, code model.Code) error
 
-	// FetchMinute 拉取并存储某代码1分钟线；实现需管理分页、年度覆盖状态并调用存储方法。
+	// FetchMinute 拉取并存储某代码1分钟线；实现需管理分页和年度覆盖状态。
 	FetchMinute(s *Service, code model.Code) error
 }
 
-// registry 市场注册表（可插拔核心）。
-var registry struct {
+var registry = struct {
 	sync.RWMutex
 	units map[string]Unit
-}
+}{units: make(map[string]Unit)}
 
-func init() {
-	registry.units = map[string]Unit{}
-}
-
-// Register 注册一个市场 Unit；忽略大小写后重名 panic。
-func Register(u Unit) { register(u, false) }
-
-// RegisterMarket installs the pull adapter for an exact built-in market key.
-func RegisterMarket(u Unit) { register(u, true) }
-
-func register(u Unit, builtin bool) {
-	if u == nil {
+// Register 注册自定义 Unit。名称与协议路由、市场别名或其他 Unit 冲突时 panic。
+// 在应用启动时先完成 protocol.Register，再注册自定义 Unit。
+func Register(u Unit) {
+	if isNil(u) {
 		panic("pull: 注册的市场 Unit 不能为 nil")
 	}
 	name := u.Name()
-	if name == "" {
-		panic("pull: 注册的市场 Unit 缺少 Name")
+	if name == "" || name != strings.TrimSpace(name) {
+		panic("pull: 注册的市场 Unit 的 Name 无效")
 	}
-	if builtin {
-		if _, ok := protocol.MarketID(name).Exchange(); !ok {
-			panic(fmt.Sprintf("pull: 未定义的内置市场 %q", name))
-		}
-	} else {
-		for _, m := range protocol.Markets() {
-			ex, _ := m.Exchange()
-			if strings.EqualFold(name, m.String()) || strings.EqualFold(name, ex.String()) {
-				panic(fmt.Sprintf("pull: 市场 Unit %q 占用内置市场名称", name))
-			}
-		}
+	if protocolName(name) {
+		panic(fmt.Sprintf("pull: 市场 Unit %q 占用协议市场名称", name))
 	}
 	registry.Lock()
 	defer registry.Unlock()
@@ -74,29 +55,73 @@ func register(u Unit, builtin bool) {
 	registry.units[name] = u
 }
 
-// Get 按名称获取已注册的市场 Unit，不区分大小写。
+func protocolName(name string) bool {
+	if _, ok := protocol.MarketID(strings.ToLower(name)).Exchange(); ok {
+		return true
+	}
+	ex, err := protocol.ParseExchange(name)
+	if err != nil {
+		return false
+	}
+	_, ok := ex.Route()
+	return ok
+}
+
+func protocolUnit(id protocol.MarketID) (Unit, bool) {
+	ex, ok := id.Exchange()
+	if !ok {
+		return nil, false
+	}
+	route, _ := ex.Route()
+	switch route.Protocol {
+	case protocol.ProtocolStandard:
+		return &stdUnit{name: id}, true
+	case protocol.ProtocolExtended:
+		return &exUnit{name: id}, true
+	default:
+		return nil, false
+	}
+}
+
+// Get 按路由键或自定义 Unit 名称查询，不区分大小写。
 func Get(name string) (Unit, bool) {
-	registry.RLock()
-	defer registry.RUnlock()
-	u, ok := registry.units[name]
-	if ok {
+	if u, ok := protocolUnit(protocol.MarketID(strings.ToLower(name))); ok {
 		return u, true
 	}
-	for registered, unit := range registry.units {
+	if protocolName(name) {
+		return nil, false
+	}
+	registry.RLock()
+	defer registry.RUnlock()
+	for registered, u := range registry.units {
 		if strings.EqualFold(registered, name) {
-			return unit, true
+			return u, true
 		}
 	}
 	return nil, false
 }
 
-// Units 返回全部已注册的市场 Unit。
-func Units() []Unit {
+func customUnits() []Unit {
 	registry.RLock()
 	defer registry.RUnlock()
 	out := make([]Unit, 0, len(registry.units))
-	for _, u := range registry.units {
-		out = append(out, u)
+	for name, u := range registry.units {
+		if !protocolName(name) {
+			out = append(out, u)
+		}
 	}
+	return out
+}
+
+// Units 返回协议市场的每条路由以及已注册的自定义 Unit。
+func Units() []Unit {
+	ids := protocol.Markets()
+	out := customUnits()
+	for _, id := range ids {
+		if u, ok := protocolUnit(id); ok {
+			out = append(out, u)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out
 }

@@ -78,12 +78,13 @@ func (s *Service) FetchCodes(ctx context.Context, exchanges ...protocol.Exchange
 		if response == nil || response.Count != len(response.List) {
 			return model.CodeSnapshot{}, fmt.Errorf("pull: incomplete code snapshot for %s", ex)
 		}
+		scope := model.CodeScope(ex)
 		for _, item := range response.List {
 			row := item.Standard
 			if row == nil {
 				return model.CodeSnapshot{}, fmt.Errorf("pull: standard code metadata required")
 			}
-			out.Rows = append(out.Rows, &model.CodeModel{Exchange: ex.String(), Code: row.Code, Name: row.Name, Multiple: row.Multiple, Decimal: row.Decimal, LastPrice: row.LastPrice})
+			out.Rows = append(out.Rows, &model.CodeModel{Exchange: scope, Code: row.Code, Name: row.Name, Multiple: row.Multiple, Decimal: row.Decimal, LastPrice: row.LastPrice})
 		}
 	}
 	if err := out.Validate(); err != nil {

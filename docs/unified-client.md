@@ -119,7 +119,7 @@ _ = quotes; _ = err
 
 解析依次识别完整市场键、显式市场前缀、显式市场后缀，再尝试拼接前缀。`WIX.US` 和 `us.WIX` 等价，`us.BRK.B` 中的点保留在代码主体。数字市场编号须在协议的 0..255 范围内。
 
-统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
+统一门面覆盖上表市场；期权、外汇、新三板、其他扩展市场和 `pull` 自定义市场不因存在市场枚举而自动获得支持。复用现有协议格式的市场可以注册市场对象。见 [注册行情市场](#注册行情市场)。未接入统一路由的市场可使用既有 `SendFrame` 配合 `protocol.MEx.Frame*` 请求，并按响应类型取原始结构；不再有公开的 `Ex*` Client 行情业务方法。
 
 业务变量和参数使用 `Client` 接口。`NewClient()` 按需连接两类协议，标准 `Dial*` 返回 `*StConn`，`DialEx*` 返回 `*ExConn`。`Close()` 结束生命周期并停止重连，`SetTimeout()` 配置请求超时。原始 SendFrame、Write 系列及 Done／Closed／Err／GetKey 从具体连接使用，业务接口不包含这些能力。底层 Client、Wait、Logger／Event 及 Reset／Restart／Read 等入口不再公开；日志及重连使用构造选项配置。连接池工厂为 `func() (Client, error)`，Get/Put/Do/Go 均使用 `Client`；原始扩展全局请求须取得池中 `*ExConn` 后发送，HTTP/pull 已同步适配。完整迁移见 [v2 指南](v2-migration.md)。
 
@@ -200,6 +200,20 @@ fmt.Println(time.Now().In(loc)) // 查看调度时区的当前时间
 当前由香港市场处理其中市场 31 和 49 的五位数字证券。相同代码以本次结果中最后一条归属为准，本次缺席的旧代码继续保留。变更原子写入 `dir/hk-instruments.json`，写入成功后才更新进程内的共享归属。所有 Client 都优先使用导入的归属，再使用内置代码表，仍未知时查询候选市场。显式传给 `ResolveInstrument` 的品种快照优先于这份共享归属。同一个目录由一个进程负责写入。
 
 当覆盖报告末尾的一页少于请求条数、下一页为空时，SDK 在同一连接复查最后读到的品种、首个空偏移、报告末条偏移和总数。复查通过后返回实际读取的品种，并在连接日志记录服务器、报告数和实读数。其他缺页、请求失败或复查矛盾仍返回错误。扩展市场的 `GetCodeAll`、`GetCode` 和 `GetCount` 使用这个可读列表。
+
+## 注册行情市场
+
+`protocol.Register(m)` 在应用启动时注册一个 `protocol.Market`。SDK 直接使用现有 `GetKline`、`GetKlineDayAll`、`GetKlineMinuteAll` 等入口，`pull.New` 按路由自动选择标准和扩展适配器。完整示例见 [pull 自定义市场](../extend/pull/README.md#复用-7727-日线和分钟-k-线)。
+
+普通 7727 市场可用 `protocol.NewMarket(protocol.MarketDef{...})` 构造，配置可由应用从文件读入。这种定义支持分页日线（4）和 1 分钟线（8）。`Key` 同时是代码前缀和存储键。它以小写英文字母开头，后续可包含小写英文字母、数字、下划线和短横线。`CodePattern` 匹配完整代码并保留大小写，证券代码最多 9 字节。`DayVolumeScale`、`MinuteVolumeScale`、`DayAmountScale`、`MinuteAmountScale` 分别声明量额倍率。通用的 `AmountScale` 可同时指定两个周期的成交额倍率。倍率为 0 表示字段缺失。
+
+多路由或需要其他现有行情接口时，可直接实现 `protocol.Market`。
+
+- `Info() MarketInfo` 提供共享市场前缀、默认调度和按优先级排列的 `[]protocol.RouteInfo`，每条有自己的路由键、协议市场号、协议类型和代码来源。注册会复制这些元数据，重复键或编号时整次失败。
+- `Resolve(MarketCode, InstrumentSnapshot)` 验证并规范化证券代码。共享前缀传入首条路由，应用可选择同市场的其他路由。显式指定路由时 `MarketCode.Explicit()` 返回 true，返回值须保持指定编号。需要时可用 `InstrumentSnapshot.Resolve` 按候选市场查询。
+- `Rules(Instrument)` 返回品种使用的报文周期、字段和单位。可从 `protocol.StandardRules(kind)` 或 `protocol.ExtendedRules(kind)` 开始。扩展分页行情用 `DayAmountScale`、`MinuteAmountScale`、`LongAmountScale` 和对应的 `Fields.Amount` 声明金额。扩展区间报文使用 `RangeAmountScale` 声明持仓槽中的金额。日线和分钟量分别通过 `Day.VolumeScale` 和 `Minute.VolumeScale` 配置。`Resolve` 与 `Rules` 可被并发调用，影响历史数据的规则变化应同步更新 `MarketInfo.Version`。
+
+可注册的范围取决于已有请求与响应格式。接入新的报文格式需增加相应的解码器。
 
 ## 数据契约
 

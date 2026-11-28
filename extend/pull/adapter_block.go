@@ -1,17 +1,16 @@
-package market
+package pull
 
 import (
 	"fmt"
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // blockCodes 从板块文件(block_zs.dat)拉取板块指数代码列表。
 // 板块指数代码如 880xxx/881xxx，归 sh 市场。
-func (u *stdUnit) blockCodes(s *pull.Service) ([]model.Code, error) {
+func (u *stdUnit) blockCodes(s *Service) ([]model.Code, error) {
 	pool, err := u.pool(s)
 	if err != nil {
 		return nil, err

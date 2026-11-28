@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -53,7 +52,7 @@ func TestZZQAuctionWithoutTradeFallback(t *testing.T) {
 	}
 	defer store.Close()
 	c := &zzqPullClient{}
-	s, err := pull.New(&pull.Config{
+	s, err := New(&Config{
 		Store: store, Pool: fixedPool{c}, StartAt: "20260101", Minute: true, TradeFallback: true,
 	})
 	if err != nil {

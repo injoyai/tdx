@@ -50,4 +50,6 @@ go test ./examples/...
 
 `pull` 默认写入 `./output/pull/`；继续使用原示例数据目录时传入 `-dir ./output/pullv2`，已有数据不会自动搬迁。日线和分钟线至少开启一种；全市场需显式传入 `-all`，`-force` 可提前拉取，但仍按更新边界去重。拉取会更新同名数据库，配置与存储单位见 [pull 文档](../extend/pull/README.md)。
 
+7727 自定义市场可通过 `go run ./examples/pull -market ./market.json demoex.Aa12` 加载。该文件对应 `protocol.MarketDef`，启动时构造并注册一次。配置字段和 SDK 用法见 [市场接入示例](../extend/pull/README.md#复用-7727-日线和分钟-k-线)。
+
 联网结果取决于证券、交易日和服务器保留范围；真实验证遵循 [项目规则](../PROJECT_RULES.md) 的预算与限流要求。更多接口见 [统一 Client](../docs/unified-client.md)、[项目 README](../README.md) 和 [HTTP 服务](../extend/httpserver/README.md)。

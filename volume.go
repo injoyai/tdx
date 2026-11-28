@@ -2,6 +2,7 @@ package tdx
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -36,7 +37,7 @@ func klineVolumeScale(i protocol.Instrument, rule protocol.KlineRule) (int64, er
 	if err := checkSupport(i, fmt.Sprintf("K线周期 %d", rule.Category), rule.Supported); err != nil {
 		return 0, err
 	}
-	if rule.Fields.Amount && (rule.AmountField == protocol.NoKlineAmount || rule.AmountScale <= 0) {
+	if rule.Fields.Amount && (rule.AmountField == protocol.NoKlineAmount || !(rule.AmountScale > 0 && rule.AmountScale <= math.MaxFloat64/math.MaxFloat32)) {
 		return 0, fmt.Errorf("%s 周期 %d 的成交额规则无效", i, rule.Category)
 	}
 	if !rule.Fields.Volume {

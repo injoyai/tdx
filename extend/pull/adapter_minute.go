@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -21,21 +20,21 @@ type minuteTarget struct {
 
 // pullMinutes 所有缺失年份共用一次从新到旧的扫描；扫描成功后再按年提交。
 // 完成指已读完服务器可提供的区间，不保证服务器保留了上市以来的全部历史。
-func pullMinutes(s *pull.Service, code model.Code, now time.Time,
+func pullMinutes(s *Service, code model.Code, now time.Time,
 	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) error {
 	_, err := pullMinutesResult(s, code, now, fetch, supplement)
 	return err
 }
 
-func pullMinutesResult(s *pull.Service, code model.Code, now time.Time,
-	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) (result pull.FetchResult, err error) {
-	result = pull.FetchResult{Known: true}
+func pullMinutesResult(s *Service, code model.Code, now time.Time,
+	fetch func(string) ([]*model.KlineMinute, error), supplement *minuteFallback) (result FetchResult, err error) {
+	result = FetchResult{Known: true}
 	start := s.Start()
 	now = now.In(start.Location())
 	ex, known := code.Market.Exchange()
 	info, _ := ex.Route()
 	if start.After(now) && known && info.Protocol == protocol.ProtocolStandard {
-		result.SkipReason = pull.SkipFuture
+		result.SkipReason = SkipFuture
 		return result, nil
 	}
 	historyBefore := now.Year()
@@ -94,7 +93,7 @@ func pullMinutesResult(s *pull.Service, code model.Code, now time.Time,
 		}
 	}
 	if len(targets) == 0 {
-		result.SkipReason = pull.SkipCovered
+		result.SkipReason = SkipCovered
 		return result, nil
 	}
 	ks, err := fetch(earliest)

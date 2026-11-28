@@ -14,7 +14,7 @@ type Code struct {
 	Name   string
 }
 
-// Instrument validates a canonical code in a built-in market.
+// Instrument validates a canonical code in a registered protocol market.
 func (c Code) Instrument() (protocol.Instrument, error) {
 	ex, known := c.Market.Exchange()
 	if !known {

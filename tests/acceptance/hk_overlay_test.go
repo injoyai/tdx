@@ -15,7 +15,6 @@ import (
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
-	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )

@@ -29,7 +29,7 @@ type StConn struct {
 
 type quoteState struct {
 	quoteGate     chan struct{}
-	quoteDecimals map[string]int8
+	quoteDecimals map[protocol.Exchange]map[string]int8
 }
 
 func (c *StConn) instrument(code string) (protocol.Instrument, protocol.InstrumentRules, error) {
@@ -81,7 +81,6 @@ func (c *StConn) GetKline(category uint8, code string, start, count uint16) (*Kl
 func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 	instruments := make([]protocol.Instrument, len(codes))
 	infos := make([]protocol.InstrumentRules, len(codes))
-	standard := make([]string, len(codes))
 	for j, code := range codes {
 		i, info, err := protocolInstrument(code, false)
 		if err != nil {
@@ -90,16 +89,16 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 		if _, err := volumeScale(i); err != nil {
 			return nil, err
 		}
-		instruments[j], standard[j], infos[j] = i, standardCode(i), info
+		instruments[j], infos[j] = i, info
 	}
-	if len(standard) > (65535-12)/7 {
+	if len(instruments) > (65535-12)/7 {
 		return nil, errors.New("标准报价请求超过协议 uint16 帧长上限")
 	}
 	out := make([]Quote, len(codes))
 	if len(codes) == 0 {
 		return out, nil
 	}
-	quotes, err := c.standardQuotes(standard, infos)
+	quotes, err := c.standardQuotes(instruments, infos)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +122,7 @@ func (c *StConn) GetQuote(codes ...string) ([]Quote, error) {
 }
 
 // standardQuotes 在需要价格精度校准时取元数据，避免额外数据库/连接。
-func (c *StConn) standardQuotes(codes []string, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
+func (c *StConn) standardQuotes(instruments []protocol.Instrument, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
 	ctx := c.requestContext()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -138,33 +137,23 @@ func (c *StConn) standardQuotes(codes []string, infos []protocol.InstrumentRules
 		return nil, err
 	}
 	loaded := map[protocol.Exchange]bool{}
-	for j, code := range codes {
-		_, cached := c.quoteDecimals[code]
-		if !infos[j].Quote.UseCodeDecimals || cached {
+	for j, i := range instruments {
+		_, cached := c.quoteDecimals[i.Exchange][i.Code]
+		if !infos[j].Quote.UseCodeDecimals || cached || loaded[i.Exchange] {
 			continue
 		}
-		ex, _, err := protocol.DecodeCode(code)
+		r, err := c.getStandardCodeAll(i.Exchange)
 		if err != nil {
 			return nil, err
 		}
-		if loaded[ex] {
-			continue
+		decimals := make(map[string]int8, len(r.List))
+		for _, row := range r.List {
+			decimals[row.Code] = row.Decimal
 		}
-		r, err := c.getStandardCodeAll(ex)
-		if err != nil {
-			return nil, err
-		}
-		for key := range c.quoteDecimals {
-			if strings.HasPrefix(key, ex.String()) {
-				delete(c.quoteDecimals, key)
-			}
-		}
-		for _, m := range r.List {
-			c.quoteDecimals[ex.String()+m.Code] = m.Decimal
-		}
-		loaded[ex] = true
+		c.quoteDecimals[i.Exchange] = decimals
+		loaded[i.Exchange] = true
 	}
-	return c.getStandardQuotes(codes, infos)
+	return c.getStandardQuotes(instruments, infos)
 }
 
 // GetCode 获取标准市场代码的一页；北交所使用完整报表列表后分页。
@@ -229,7 +218,7 @@ func (c *StConn) minutePage(date, code string) (*MinuteResp, error) {
 	if err := checkTickRule(i, "分时", rule); err != nil {
 		return nil, err
 	}
-	code = standardCode(i)
+	code = i.QueryCode()
 	out := &MinuteResp{Instrument: i, Date: date}
 	var r *protocol.MinuteResp
 	if date == "" {
@@ -269,9 +258,9 @@ func (c *StConn) tradePage(date, code string, start, count uint16) (*TradeResp, 
 	out := &TradeResp{Instrument: i, Date: date}
 	var r *protocol.TradeResp
 	if date == "" {
-		r, err = c.getStandardTrade(standardCode(i), start, count)
+		r, err = c.getStandardTrade(i.QueryCode(), start, count)
 	} else {
-		r, err = c.getStandardHistoryTrade(date, standardCode(i), start, count)
+		r, err = c.getStandardHistoryTrade(date, i.QueryCode(), start, count)
 	}
 	if err != nil {
 		return nil, err
@@ -435,8 +424,8 @@ func (c *StConn) codeList(ls []string, match func(string) bool, exchanges ...pro
 }
 
 // getStandardQuotes 按代码元数据校准标准行情价格。
-func (c *StConn) getStandardQuotes(codes []string, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
-	f, err := protocol.MQuote.Frame(codes...)
+func (c *StConn) getStandardQuotes(instruments []protocol.Instrument, infos []protocol.InstrumentRules) (protocol.QuotesResp, error) {
+	f, err := protocol.MQuote.FrameInstruments(instruments)
 	if err != nil {
 		return nil, err
 	}
@@ -446,16 +435,16 @@ func (c *StConn) getStandardQuotes(codes []string, infos []protocol.InstrumentRu
 	}
 	quotes := result.(protocol.QuotesResp)
 
-	if len(quotes) != len(codes) {
-		return nil, fmt.Errorf("预期%d个，实际%d个", len(codes), len(quotes))
+	if len(quotes) != len(instruments) {
+		return nil, fmt.Errorf("预期%d个，实际%d个", len(instruments), len(quotes))
 	}
-	for j, code := range codes {
+	for j, i := range instruments {
 		if !infos[j].Quote.UseCodeDecimals {
 			continue
 		}
-		decimal, ok := c.quoteDecimals[code]
+		decimal, ok := c.quoteDecimals[i.Exchange][i.Code]
 		if !ok {
-			return nil, fmt.Errorf("未查询到代码[%s]相关信息", code)
+			return nil, fmt.Errorf("未查询到代码[%s]相关信息", i.QueryCode())
 		}
 		q := quotes[j]
 		scale := infos[j].Quote.PriceScale(decimal)
@@ -480,7 +469,7 @@ func (c *StConn) GetCallAuction(code string) (*protocol.CallAuctionResp, error) 
 	if err != nil {
 		return nil, err
 	}
-	code = standardCode(i)
+	code = i.QueryCode()
 	f, err := protocol.MCallAuction.Frame(code)
 	if err != nil {
 		return nil, err
@@ -497,7 +486,7 @@ func (c *StConn) GetGbbq(code string) (*protocol.GbbqResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	code = standardCode(i)
+	code = i.QueryCode()
 	f, err := protocol.MGbbq.Frame(code)
 	if err != nil {
 		return nil, err
@@ -843,7 +832,7 @@ func (c *StConn) getStandardKline(category uint8, i protocol.Instrument, start, 
 	if err != nil {
 		return nil, err
 	}
-	cache := protocol.KlineCache{Type: category, Kind: kind, Code: standardCode(i), Session: session, Rules: &info}
+	cache := protocol.KlineCache{Type: category, Kind: kind, Code: i.QueryCode(), Session: session, Rules: &info}
 	result, err := c.SendFrame(f, cache)
 	if err != nil {
 		return nil, err
@@ -912,7 +901,7 @@ func (*StConn) decode(f *protocol.Response, val any) (resp any, err error) {
 	return resp, err
 }
 func newStConn(core *conn) *StConn {
-	c := &StConn{conn: core, quoteState: &quoteState{quoteGate: make(chan struct{}, 1), quoteDecimals: make(map[string]int8)}}
+	c := &StConn{conn: core, quoteState: &quoteState{quoteGate: make(chan struct{}, 1), quoteDecimals: make(map[protocol.Exchange]map[string]int8)}}
 	c.queries = &queries{source: c}
 	return c
 }

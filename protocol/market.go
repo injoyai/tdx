@@ -3,8 +3,14 @@ package protocol
 import "github.com/injoyai/tdx/v2/protocol/market"
 
 type (
+	Market          = market.Market
 	MarketID        = market.ID
+	RouteInfo       = market.RouteInfo
+	CodeSource      = market.CodeSource
+	MarketCode      = market.Code
+	KlineAmount     = market.KlineAmount
 	MarketInfo      = market.MarketInfo
+	MarketDef       = market.Definition
 	InstrumentRules = market.InstrumentRules
 	KlineRule       = market.KlineRule
 	KlineMode       = market.KlineMode
@@ -91,6 +97,19 @@ const (
 	SecurityOther            = market.SecurityOther
 	SecurityStock            = market.SecurityStock
 )
+
+// NewMarket constructs a 7727 market from a configuration value.
+func NewMarket(def MarketDef) (Market, error) { return market.New(def) }
+
+// Register adds a market and all its wire routes at application startup.
+func Register(m Market) error { return market.Register(m) }
+
+// StandardRules returns the base rules for an existing 7709 layout and security kind.
+func StandardRules(kind SecurityKind) InstrumentRules { return market.StandardRulesFor(kind) }
+
+// ExtendedRules returns the base rules for an existing 7727 layout. The caller
+// declares which quantity, amount and other optional fields its market supplies.
+func ExtendedRules(kind SecurityKind) InstrumentRules { return market.ExtendedRules(kind) }
 
 // Markets returns the registered market keys.
 func Markets() []MarketID { return market.Markets() }

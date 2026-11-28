@@ -45,9 +45,9 @@ func (m *hk) Resolve(code Code, snapshot InstrumentSnapshot) (Instrument, error)
 	case ExchangeHK, ExchangeHKFund:
 		if len(code.Symbol) == 5 && isDigits(code.Symbol) {
 			if !code.explicit {
-				return snapshot.resolve(InstrumentLookup{
+				return snapshot.Resolve(InstrumentLookup{
 					Code: code.Symbol, Exchanges: []Exchange{ExchangeHK, ExchangeHKFund},
-					prefix: "hk", knownExchange: m.knownExchange(code.Symbol),
+					Prefix: "hk", knownExchange: m.knownExchange(code.Symbol),
 				})
 			}
 			return Instrument{Exchange: code.Exchange, Code: code.Symbol}, nil
@@ -76,8 +76,9 @@ func (*hk) Rules(i Instrument) (InstrumentRules, error) {
 		rules.Trade.Nature = TradeHK
 		return rules, nil
 	case ExchangeHI:
-		rules := extendedRules(SecurityIndex)
-		rules.extendedKlineAmountScale = 1_000_000
+		rules := ExtendedRules(SecurityIndex)
+		const million = 1_000_000
+		rules.DayAmountScale, rules.MinuteAmountScale, rules.LongAmountScale, rules.RangeAmountScale = million, million, million, million
 		rules.DayFields = Fields{Price: true, Amount: true}
 		rules.IntradayFields, rules.LongFields = rules.DayFields, rules.DayFields
 		return rules, nil

@@ -1,18 +1,17 @@
-package market
+package pull
 
 import (
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 )
 
 // saveDays 排除 Until 返回的界外停止记录，仅覆盖实际返回的尾部。
-func saveDays(s *pull.Service, code model.Code, from string, rows []*model.KlineDay) error {
+func saveDays(s *Service, code model.Code, from string, rows []*model.KlineDay) error {
 	_, err := saveDaysResult(s, code, from, rows)
 	return err
 }
 
-func saveDaysResult(s *pull.Service, code model.Code, from string, rows []*model.KlineDay) (pull.FetchResult, error) {
-	result := pull.FetchResult{Known: true, Fetched: len(rows)}
+func saveDaysResult(s *Service, code model.Code, from string, rows []*model.KlineDay) (FetchResult, error) {
+	result := FetchResult{Known: true, Fetched: len(rows)}
 	var out []*model.KlineDay
 	var writeFrom string
 	for _, k := range rows {

@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"errors"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -87,7 +86,7 @@ func TestTradesToMinutesTimeAndValues(t *testing.T) {
 }
 
 func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +170,7 @@ func TestMinuteFallbackRecoveryAndCoverage(t *testing.T) {
 }
 
 func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260105", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20260105", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +214,7 @@ func TestMinuteFallbackEmptyAndNativeFailure(t *testing.T) {
 }
 
 func TestMinuteFallbackYearRollover(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,8 +262,8 @@ func TestMinuteFallbackYearRollover(t *testing.T) {
 }
 
 func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
-	cfg := &pull.Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}, TradeFallback: true}
-	s, err := pull.New(cfg)
+	cfg := &Config{Store: testStore(t.TempDir()), StartAt: "20251230", Codes: []string{"sz000001"}, TradeFallback: true}
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +300,7 @@ func TestMinuteFallbackDisabledAfterPartialYear(t *testing.T) {
 }
 
 func TestMinuteFallbackIgnoresEmptyNativeScanCache(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20250106", Codes: []string{"sz000001"}, TradeFallback: true})
 	if err != nil {
 		t.Fatal(err)
 	}

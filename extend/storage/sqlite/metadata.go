@@ -128,8 +128,8 @@ func (s *Metadata) LoadCodes(ctx context.Context, exchanges []protocol.Exchange)
 	var scope []string
 	var keys []string
 	for _, ex := range exchanges {
-		scope = append(scope, ex.String())
-		keys = append(keys, "codes:"+ex.String())
+		scope = append(scope, model.CodeScope(ex))
+		keys = append(keys, "codes:"+model.CodeScope(ex))
 	}
 	err := transactionContext(ctx, s.db, func(tx *xorm.Session) error {
 		if err := tx.Table("codes").In(s.column("Exchange"), scope).Asc(s.column("Exchange"), s.column("Code")).Find(&out.Rows); err != nil {
@@ -151,20 +151,22 @@ func (s *Metadata) ReplaceCodes(ctx context.Context, snapshot model.CodeSnapshot
 	return transactionContext(ctx, s.db, func(tx *xorm.Session) error {
 		var scope []string
 		for _, ex := range snapshot.Exchanges {
-			scope = append(scope, ex.String())
+			scope = append(scope, model.CodeScope(ex))
 		}
 		var old []*codeRecord
 		if err := tx.In(s.column("Exchange"), scope).Find(&old); err != nil {
 			return err
 		}
-		existing := map[string]*codeRecord{}
-		fresh := map[string]bool{}
+		type security struct{ exchange, code string }
+		existing := map[security]*codeRecord{}
+		fresh := map[security]bool{}
 		for _, row := range snapshot.Rows {
-			fresh[row.FullCode()] = true
+			fresh[security{row.Exchange, row.Code}] = true
 		}
 		for _, row := range old {
-			existing[row.Exchange+row.Code] = row
-			if !fresh[row.Exchange+row.Code] {
+			key := security{row.Exchange, row.Code}
+			existing[key] = row
+			if !fresh[key] {
 				if _, err := tx.ID(row.ID).Delete(new(codeRecord)); err != nil {
 					return err
 				}
@@ -174,7 +176,7 @@ func (s *Metadata) ReplaceCodes(ctx context.Context, snapshot model.CodeSnapshot
 		now := snapshot.FetchedAt.Unix()
 		for _, row := range snapshot.Rows {
 			v := &codeRecord{Name: row.Name, Code: row.Code, Exchange: row.Exchange, Multiple: row.Multiple, Decimal: row.Decimal, LastPrice: row.LastPrice}
-			prior := existing[row.FullCode()]
+			prior := existing[security{row.Exchange, row.Code}]
 			if prior == nil {
 				v.InDate, v.EditDate = now, now
 				inserts = append(inserts, v)
@@ -195,7 +197,7 @@ func (s *Metadata) ReplaceCodes(ctx context.Context, snapshot model.CodeSnapshot
 			}
 		}
 		for _, ex := range snapshot.Exchanges {
-			if err := saveState(tx, metadataState{Key: "codes:" + ex.String(), FetchedAt: snapshot.FetchedAt.UnixNano()}); err != nil {
+			if err := saveState(tx, metadataState{Key: "codes:" + model.CodeScope(ex), FetchedAt: snapshot.FetchedAt.UnixNano()}); err != nil {
 				return err
 			}
 		}

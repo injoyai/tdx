@@ -1,11 +1,14 @@
 package pull
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/extend/storage"
+	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 )
 
 type scopeTestUnit struct {
@@ -112,5 +115,77 @@ func TestUpdateIgnoresLegacyUnscopedMarkers(t *testing.T) {
 	}
 	if len(u.days) != 1 || len(u.minutes) != 1 {
 		t.Fatal("legacy markers suppressed scoped task")
+	}
+}
+
+type identifiedUnit struct {
+	scopeTestUnit
+	identity string
+}
+
+func (u *identifiedUnit) Identity() string { return u.identity }
+
+func TestChangedUnitIdentityRejectsStoredData(t *testing.T) {
+	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
+	cfg := Config{Store: testStore(t.TempDir()), Codes: []string{"test.one"}, Day: true, StartAt: "20260101"}
+	at := time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)
+	for _, identity := range []string{"market-247-scale-10", "market-247-scale-20"} {
+		s, err := New(&cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := &identifiedUnit{scopeTestUnit: scopeTestUnit{mockUnit: mockUnit{name: "test"}}, identity: identity}
+		s.units = []Unit{u}
+		err = s.update(at, true)
+		_ = s.Close()
+		if identity == "market-247-scale-10" {
+			if err != nil || len(u.days) != 1 {
+				t.Fatal(err, u.days)
+			}
+		} else if err == nil || len(u.days) != 0 {
+			t.Fatal("changed definition reused old data", err, u.days)
+		}
+	}
+}
+
+type failingDefinitionStore struct {
+	storage.BarStore
+	once bool
+}
+
+func (s *failingDefinitionStore) SaveUpdate(key string, value int64) error {
+	if key == "pull:definition:test" && s.once {
+		s.once = false
+		return errors.New("injected binding write failure")
+	}
+	return s.BarStore.SaveUpdate(key, value)
+}
+
+func TestDefinitionRetryAfterFailedBinding(t *testing.T) {
+	db, err := sqlite.NewPull(t.TempDir(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	u := &identifiedUnit{scopeTestUnit: scopeTestUnit{mockUnit: mockUnit{name: "test"}}, identity: "A"}
+	wrapped := &Service{store: &failingDefinitionStore{BarStore: db, once: true}}
+	if err := wrapped.checkIdentity(u); err == nil {
+		t.Fatal("write failure was ignored")
+	}
+	// Bind B through the wrapped store (SaveUpdate path) after A fails.
+	u.identity = "B"
+	if err := wrapped.checkIdentity(u); err != nil {
+		t.Fatal(err)
+	}
+	native := &Service{store: db}
+	if err := native.checkIdentity(u); err != nil {
+		t.Fatal("same definition could not verify through native store", err)
+	}
+	u.identity = "A"
+	if err := wrapped.checkIdentity(u); err == nil {
+		t.Fatal("failed definition became valid after a different definition was bound")
+	}
+	if err := native.checkIdentity(u); err == nil {
+		t.Fatal("native store accepted A after B was bound")
 	}
 }

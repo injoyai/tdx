@@ -26,8 +26,8 @@ func (e *snapshotRequired) Error() string {
 	return fmt.Sprintf("%s 缺少通达信品种快照（候选市场 %s）", e.lookup, e.lookup.Candidates())
 }
 
-// resolve returns the unique instrument in the candidate markets.
-func (s InstrumentSnapshot) resolve(lookup InstrumentLookup) (Instrument, error) {
+// Resolve returns the unique instrument in the candidate markets.
+func (s InstrumentSnapshot) Resolve(lookup InstrumentLookup) (Instrument, error) {
 	if len(lookup.Exchanges) == 0 {
 		return Instrument{}, fmt.Errorf("%s 没有指定品种快照候选市场", lookup)
 	}

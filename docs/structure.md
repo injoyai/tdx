@@ -12,7 +12,7 @@ tdx/
 │   ├── metadata/        证券、股本、历史日历的内存查询
 │   │   └── httpclient/  可选的元数据 HTTP 获取与刷新
 │   ├── pull/            元数据获取与行情同步、历史分笔下载
-│   │   └── market/      内置市场适配器及注册
+│   │   └── market/      旧导入路径兼容包
 │   ├── storage/         行情 BarStore 和事务契约
 │   │   ├── storagetest/ 可被外部适配器调用的契约测试
 │   │   └── sqlite/      SQLite/XORM 实现、表模型及文件布局
@@ -31,7 +31,7 @@ tdx/
 
 依赖方向为扩展使用 SDK；根包和 protocol 不导入 extend。标准连接仅在连接内保存报价 Decimal，用于协议价格校准，不引用扩展证券索引、存储接口或业务模型。
 
-每个逻辑市场在 `protocol/market/` 下用一个无状态类型实现 `Market`，例如 `type sh struct{}`、`type hk struct{}`。`Info` 直接返回登记资料、协议路由与调度，`Resolve` 直接处理代码和协议市场归属，`Rules` 直接返回证券规则并复用公共协议默认值。`init` 只调用 `registerMarket(hk{})` 完成注册。通用层按接口读取市场行为，港股三条协议路由在 `hk.go` 中声明。需要品种快照时，由 `Resolve` 返回候选市场，通用层加载快照后继续解析。
+内置逻辑市场分别在 `protocol/market/` 中实现 `Market`。`Info` 直接返回登记资料、协议路由与调度，`Resolve` 直接处理代码和协议市场归属，`Rules` 直接返回证券规则并复用公共协议默认值。内置定义和应用的 `protocol.Register(m)` 共用注册校验。pull 按每条已注册路由的协议类型选用自身的标准或扩展适配器。通用层按接口读取市场行为，港股三条协议路由在 `hk.go` 中声明。需要品种快照时，由 `Resolve` 返回候选市场，通用层加载快照后继续解析。
 
 扩展内部，pull 通过 Client 获取数据，元数据直接返回快照，行情通过 storage.BarStore 提交，model 提供共享记录与校验。metadata 直接查询内存数据，不依赖 pull、storage 或 HTTP 客户端。metadata/httpclient 是独立子包，显式请求后返回完整查询快照；调度和快照发布由应用负责，客户端不持有后台任务，不需要 Close。导入 metadata 不会引入该子包。
 

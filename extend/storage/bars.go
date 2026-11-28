@@ -13,6 +13,7 @@ type BarStore interface {
 	// 完成标记使用 Unix 秒，独立于行情源时间；pull 保存本轮已处理的更新窗口边界。
 	// 缺少记录时返回 has=false。
 	// LoadUpdate 只读；SaveUpdate 须支持首次写入和覆盖已有标记。
+	// pull:definition: 前缀下的标记使用负 int64 指纹，不是任务完成时间。
 	LoadUpdate(key string) (unix int64, has bool, err error)
 	SaveUpdate(key string, unix int64) error
 	Identity() string
@@ -25,4 +26,12 @@ type BarStore interface {
 	QueryMinuteCoverage(code model.Code, year int) (*model.MinuteCoverage, error)
 	LoadMinuteEmptyScan(code model.Code, year int) (*model.MinuteEmptyScan, error)
 	SaveMinuteEmptyScan(code model.Code, year int, scan model.MinuteEmptyScan) error
+}
+
+// DefinitionStore optionally provides an atomic definition claim for a BarStore
+// shared by multiple processes. key identifies the market, token is its negative
+// binding fingerprint, and legacyKey identifies the older definition marker.
+// Implementations must preserve a matching claim and reject a different claim.
+type DefinitionStore interface {
+	BindDefinition(key, legacyKey string, token int64) (matches bool, err error)
 }

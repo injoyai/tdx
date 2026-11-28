@@ -16,6 +16,7 @@ import (
 )
 
 var _ storage.BarStore = (*PullStore)(nil)
+var _ storage.DefinitionStore = (*PullStore)(nil)
 
 // PullStore 保留一代码一日线库、一代码一年一分钟库的存储布局。
 // 注入 Service 后仍由调用方关闭。

@@ -3,6 +3,7 @@ package pull
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,7 +116,7 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 
 	// 代码列表：一次性解析并按市场分组。
 	// Codes 非空 = 白名单模式：只拉这些代码（拉取范围限定为涉及的市场）；
-	// Codes 为空时，有默认调度或已经配置调度的内置市场自动发现代码。
+	// Codes 为空时，自动发现使用已配置连接池且有默认调度的协议路由，或显式配置调度的路由。
 	overrides := map[protocol.MarketID][]model.Code{}
 	if len(cfg.Codes) > 0 {
 		resolve := func(protocol.InstrumentLookup) (protocol.InstrumentSnapshot, error) {
@@ -154,8 +155,16 @@ func NewContext(ctx context.Context, cfg *Config) (*Service, error) {
 		for _, u := range Units() {
 			market := protocol.MarketID(u.Name())
 			info, known := market.Info()
-			if _, explicit := cfg.Schedules[market]; !explicit && known && info.TimeZone == "" {
-				continue
+			if _, explicit := cfg.Schedules[market]; !explicit && known {
+				if info.TimeZone == "" {
+					continue
+				}
+				ex, _ := market.Exchange()
+				route, _ := ex.Route()
+				if (route.Protocol == protocol.ProtocolStandard && cfg.Pool == nil) ||
+					(route.Protocol == protocol.ProtocolExtended && cfg.ExPool == nil) {
+					continue
+				}
 			}
 			units = append(units, u)
 		}
@@ -358,6 +367,13 @@ func (s *Service) updateWithOptions(now time.Time, options UpdateOptions) error 
 			}
 			cutoff = cutoff.AddDate(0, 0, -1)
 		}
+		if err := s.checkIdentity(u); err != nil {
+			s.emit(Event{Market: u.Name(), Status: StatusFailed, Err: err})
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
 		key := s.updateKey("pull:" + u.Name())
 		unix, has, err := s.store.LoadUpdate(key)
 		if err != nil {
@@ -403,9 +419,57 @@ func (s *Service) updateWithOptions(now time.Time, options UpdateOptions) error 
 	return firstErr
 }
 
+// Stores without an atomic binding method share this lock within the process.
+var definitionMu sync.Mutex
+
+// checkIdentity binds each market to a single persistent definition before fetching.
+func (s *Service) checkIdentity(u Unit) error {
+	identified, ok := u.(interface{ Identity() string })
+	if !ok {
+		return nil
+	}
+	identity := identified.Identity()
+	if identity == "" {
+		return nil
+	}
+	key := "pull:definition:" + u.Name()
+	digest := sha256.Sum256([]byte(identity))
+	// Negative values distinguish definition fingerprints from the old Unix-second markers.
+	token := int64(binary.BigEndian.Uint64(digest[:8]) | (uint64(1) << 63))
+	var matches bool
+	var err error
+	if store, ok := s.store.(storage.DefinitionStore); ok {
+		matches, err = store.BindDefinition(key, fmt.Sprintf("%s:%x", key, digest), token)
+	} else {
+		matches, err = s.bindDefinition(key, token)
+	}
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return fmt.Errorf("pull: 市场 %s 的定义已改变或旧绑定无法唯一确认，须使用独立数据集或显式重建历史数据", u.Name())
+	}
+	return nil
+}
+
+func (s *Service) bindDefinition(key string, token int64) (bool, error) {
+	definitionMu.Lock()
+	defer definitionMu.Unlock()
+	previous, bound, err := s.store.LoadUpdate(key)
+	if err != nil {
+		return false, err
+	}
+	if bound {
+		return previous == token, nil
+	}
+	err = s.store.SaveUpdate(key, token)
+	return err == nil, err
+}
+
 // updateKey 将去重标记限定到实际配置；代码和市场顺序不影响任务身份。
 func (s *Service) updateKey(prefix string) string {
 	var codes, units []string
+	identities := map[string]string{}
 	for market, override := range s.overrides {
 		for _, code := range override {
 			codes = append(codes, market.String()+"."+code.Code)
@@ -413,6 +477,11 @@ func (s *Service) updateKey(prefix string) string {
 	}
 	for _, unit := range s.units {
 		units = append(units, unit.Name())
+		if identified, ok := unit.(interface{ Identity() string }); ok {
+			if identity := identified.Identity(); identity != "" {
+				identities[unit.Name()] = identity
+			}
+		}
 	}
 	sort.Strings(codes)
 	sort.Strings(units)
@@ -421,9 +490,10 @@ func (s *Service) updateKey(prefix string) string {
 		schedules[market] = schedule
 	}
 	for _, u := range s.units {
-		if _, known := protocol.MarketID(u.Name()).Info(); !known {
+		id := protocol.MarketID(u.Name())
+		if _, known := id.Info(); !known || id.Identity() != "" {
 			if schedule, err := s.schedule(u); err == nil {
-				schedules[protocol.MarketID(u.Name())] = schedule
+				schedules[id] = schedule
 			}
 		}
 	}
@@ -434,7 +504,8 @@ func (s *Service) updateKey(prefix string) string {
 		Codes, Units               []string
 		UniverseVersion            string                         `json:",omitempty"`
 		Schedules                  map[protocol.MarketID]Schedule `json:",omitempty"`
-	}{s.store.Identity(), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units, s.cfg.UniverseVersion, schedules})
+		Identities                 map[string]string              `json:",omitempty"`
+	}{s.store.Identity(), s.cfg.StartAt, s.day, s.minute, s.cfg.TradeFallback, codes, units, s.cfg.UniverseVersion, schedules, identities})
 	return fmt.Sprintf("%s:%x", prefix, sha256.Sum256(data))
 }
 

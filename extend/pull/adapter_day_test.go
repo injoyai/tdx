@@ -1,16 +1,15 @@
-package market
+package pull
 
 import (
 	"testing"
 	"time"
 
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20200101", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20200101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +39,7 @@ func TestSaveDaysPreservesExpiredHistoryAndRefreshesBoundary(t *testing.T) {
 }
 
 func TestSaveDaysFiltersStartAndEmptyResult(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,7 @@ if err != nil { return err }
 _ = index.GetName("sh600000")
 ```
 
-pool 与 ctx 由应用提供。只获取元数据无需存储或注册行情市场；仅在内存查询时可省略 backend 和 ReplaceCodes。加入 `Store: backend` 后可同步行情，需导入 pull/market。标准证券自动发现通过 ListCodes 提供列表；显式指定证券时可省略。
+pool 与 ctx 由应用提供。只获取元数据无需存储或注册行情市场；仅在内存查询时可省略 backend 和 ReplaceCodes。加入 `Store: backend` 后可通过 `pull` 同步已注册协议市场的行情。标准证券自动发现通过 ListCodes 提供列表；显式指定证券时可省略。
 
 ## 行情接口与元数据具体方法
 
@@ -33,7 +33,7 @@ pool 与 ctx 由应用提供。只获取元数据无需存储或注册行情市�
 | sqlite.Metadata 日历 | LoadWorkdays(ctx, market) | SaveWorkdays(ctx, snapshot) |
 | BarStore | 行情范围、最后时间和状态查询 | 增量行情、分钟覆盖与任务状态 |
 
-CodeSnapshot 的 Exchanges、GbbqSnapshot 的 Codes 明确替换范围。写入必须同时提交记录和 FetchedAt，失败保留旧记录与旧刷新状态。有效空快照仅清除指定范围。Load 返回调用方拥有的记录；缺少刷新状态时 FetchedAt 为零。查询多个范围时，FetchedAt 是这些范围中最早的刷新时间；任一范围未同步时返回零。
+`CodeSnapshot.Exchanges` 按协议市场号明确替换范围。共享市场简称时，代码表的 `Exchange` 保存路由键，且 `CodeModel.FullCode()` 保留路由，允许不同路由保存同一证券代码。单路由仍沿用简称及原有存储格式。`GbbqSnapshot.Codes` 按完整证券代码限定替换范围。写入必须同时提交记录和 FetchedAt，失败保留旧记录与旧刷新状态。有效空快照仅清除指定范围。Load 返回调用方拥有的记录；缺少刷新状态时 FetchedAt 为零。查询多个范围时，FetchedAt 是这些范围中最早的刷新时间；任一范围未同步时返回零。
 
 日历只接受同市场、同来源、相交或相接的覆盖区间。保存时修正本次扫描范围，保留范围之外已知的日期，并与刷新时间原子提交。拒绝不同来源和不相接的区间。Status 的覆盖语义见[架构说明](data-architecture.md)。
 
@@ -51,7 +51,9 @@ KlineDay／KlineMinute.Amount 与统一 Client 一样使用 *float64，nil 为�
 - Identity 稳定且非空，区分数据集，用于任务去重；不得含凭证。相同数据集的连接使用同一身份。
 - 市场拉取全部成功才可写完成标记；某市场失败后重试不应影响其他已成功市场。
 
-`BarStore` 直接定义 `LoadUpdate(key)` 和 `SaveUpdate(key, unix)`，完成状态与行情共用同一个存储入口。缺少标记返回 `has=false`，读取不创建占位行；写入支持首次保存和覆盖已有时间。标记使用 Unix 秒，独立于行情源时间。pull 在全部任务成功后保存本轮开始时选定的更新窗口边界，并据此去重，不能用任务结束时间认证后来出现的窗口。既有 Unix 秒标记继续按原比较读取，不自动重写历史状态，无需迁移表结构。pull 负责生成任务键和计算市场边界，存储只负责持久化。完成标记不提供跨进程执行锁。
+`BarStore` 直接定义 `LoadUpdate(key)` 和 `SaveUpdate(key, unix)`，完成状态与行情共用同一个存储入口。缺少标记返回 `has=false`，读取不创建占位行；写入支持首次保存和覆盖已有时间。任务完成标记使用 Unix 秒，独立于行情源时间。pull 在全部任务成功后保存本轮开始时选定的更新窗口边界，并据此去重，不能用任务结束时间认证后来出现的窗口。既有 Unix 秒标记继续按原比较读取，不自动重写历史状态，无需迁移表结构。pull 负责生成任务键和计算市场边界，存储只负责持久化。完成标记不提供跨进程执行锁。
+
+`pull:definition:` 是定义绑定的保留键前缀，值使用负整数指纹。SQLite 在同一事务中建立并校验唯一绑定，兼容能唯一确认的旧绑定。旧库含多个定义标记时会拒绝继续更新，以防沿用可能混写的历史。自定义 BarStore 使用标识过的市场时须原样保存有符号值。需要多进程原子绑定时，实现可选的 `storage.DefinitionStore`。
 
 ## 构造与所有权
 

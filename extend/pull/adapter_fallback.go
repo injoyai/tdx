@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -20,7 +19,7 @@ type minuteFallback struct {
 
 // fill 只补原生分钟最早日期之前的交易日，返回可落库数据和未完成错误。
 // 本地数据参与合并，避免补旧日期时被现有删尾重插规则删除；原生数据优先。
-func (f *minuteFallback) fill(s *pull.Service, code model.Code, fromValue, endValue, boundaryValue string,
+func (f *minuteFallback) fill(s *Service, code model.Code, fromValue, endValue, boundaryValue string,
 	native []*model.KlineMinute) ([]*model.KlineMinute, error) {
 	from, err := time.ParseInLocation(protocol.TimeLayout, fromValue, protocol.Location())
 	if err != nil {

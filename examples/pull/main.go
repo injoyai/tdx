@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,7 +13,6 @@ import (
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
-	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
@@ -31,7 +31,13 @@ func run() error {
 	minute := flag.Bool("minute", true, "拉取 1 分钟线")
 	all := flag.Bool("all", false, "全市场拉取；不能同时指定证券")
 	force := flag.Bool("force", false, "允许收盘前拉取，仍保留市场级去重")
+	marketFile := flag.String("market", "", "额外的 7727 市场定义 JSON 文件")
 	flag.Parse()
+	if *marketFile != "" {
+		if err := register(*marketFile); err != nil {
+			return err
+		}
+	}
 	if !*day && !*minute {
 		return fmt.Errorf("日线和分钟线至少启用一种")
 	}
@@ -146,4 +152,20 @@ func run() error {
 		}
 	}
 	return nil
+}
+
+func register(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var def protocol.MarketDef
+	if err := json.Unmarshal(data, &def); err != nil {
+		return err
+	}
+	m, err := protocol.NewMarket(def)
+	if err != nil {
+		return err
+	}
+	return protocol.Register(m)
 }

@@ -11,7 +11,7 @@
 - `KlineMinute.Source=""` 为原生分钟，`"trade"` 为分笔合成；合成结果不等于原生分钟精度。
 - `MinuteCoverage.From` 是已处理请求范围左端；原生扫描 `Through` 为空，分笔覆盖 `Through` 为右开端点。覆盖只证明已处理服务器可提供的范围，不证明历史无缺笔。
 - `MinuteEmptyScan.CheckedAt` 是缓存检查 Unix 秒；空扫描不是永久完成证明。
-- `CodeSnapshot.Exchanges`、`GbbqSnapshot.Codes` 定义显式替换范围。有效空 Rows 表示该范围内没有记录；`FetchedAt` 表示获取完成时间，不是行情源时间。
+- `CodeSnapshot.Exchanges` 按协议市场号限定范围，`GbbqSnapshot.Codes` 按证券代码限定范围。有效空 Rows 表示该范围内没有记录；`FetchedAt` 表示获取完成时间，不是行情源时间。
 - `WorkdaySnapshot` 是按市场、来源和闭区间描述的已观察日期，不是未来节假日预测。
 
 ## BarStore
@@ -22,7 +22,7 @@
 - `SaveDay/SaveMinute` 在一次原子操作内删除 `Time>=from` 的尾部后插入；分钟仅影响给定年，空 `from` 为全部日线／指定年分钟。空批次不删除、也不写覆盖状态。
 - 分钟行情和非 nil 覆盖状态原子提交；失败保留原数据和原覆盖。写入边界与覆盖左端可不同，不得因认证较早的请求范围而删除服务器未返回的本地前缀。
 - 相容原生覆盖取范围并集；分笔覆盖只合并相接或重叠区间，不跨过未扫描空隙。不相容覆盖按新范围替换。
-- `LoadUpdate` 缺少键返回 `has=false`，只读不创建占位；`SaveUpdate` 支持首次保存和覆盖，存 Unix 秒。任务完成键由 pull 生成，Store 不解释调度窗口。
+- `LoadUpdate` 缺少键返回 `has=false`，只读不创建占位；`SaveUpdate` 支持首次保存和覆盖，任务完成键存 Unix 秒，由 pull 生成。定义绑定使用 `pull:definition:` 保留键和负整数指纹，SQLite 支持原子绑定。
 - `Identity` 非空、稳定、区分数据集且不含凭证；同一数据集的连接使用相同身份。Store 由应用关闭。
 - 事务边界为单次保存，不保证多个年份、多个证券或行情与市场完成标记整体回滚，也不提供跨进程任务锁。
 

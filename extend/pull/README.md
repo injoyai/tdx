@@ -46,7 +46,6 @@ import (
     "context"
     "github.com/injoyai/tdx/v2"
     "github.com/injoyai/tdx/v2/extend/pull"
-    _ "github.com/injoyai/tdx/v2/extend/pull/market"
     "github.com/injoyai/tdx/v2/extend/storage/sqlite"
 )
 
@@ -69,7 +68,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 ### 两种拉取模式
 
-- **全量模式**（`Codes` 为空，上例）：已启用的市场各自自动发现代码。国际指数仅在配置该市场的调度后启用。
+- **全量模式**（`Codes` 为空，上例）：已启用的市场各自自动发现代码。协议市场在对应连接池可用且市场定义有调度时自动启用。也可通过 `Schedules` 显式启用路由，例如国际指数。
 - **白名单模式**（`Codes` 非空）：只拉列出的代码，市场由服务构造时解析；未涉及的市场不拉。
 
 ---
@@ -91,7 +90,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 
 市场键由 `protocol.MarketID` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
 
-内置市场在 [`protocol/market/`](../../protocol/market) 逐个声明。增加复用现有报文格式的市场时，在一个文件注册市场键、协议编号、代码规则、量价单位和调度。导入 `extend/pull/market` 后，通用拉取适配器根据定义自动注册。
+内置市场在 [`protocol/market/`](../../protocol/market) 逐个声明。增加复用现有报文格式的市场时，在一个文件注册市场键、协议编号、代码规则、量价单位和调度。`pull` 按路由键和协议类型直接选用标准或扩展适配器。
 
 ### 市场 K 线配置
 
@@ -129,16 +128,15 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | 期货 | 4 / 张（×1） | 8 / 张（×1） |
 | 美股 | 4 / 股（×1） | 8 / 股（×1） |
 | 港股指数 | 4 / 成交量不可用，统一 Volume 为 0 | 8 / 成交量不可用，统一 Volume 为 0 |
+| 中证指数（62） | 4 / 百万股 | 8 / 百万股 |
 
-`VolumeScale=0` 表示协议不提供成交量，`VolumeScale=1` 保留解码量，`100` 为百股换算或国内默认倍率。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数 K 线保留点位，报文金额 ×1,000,000 转为原币种。未匹配市场（含空值）的 `Info()` 也填充标准行情配置：股票解码、日线类型 9、分钟线类型 7，所有成交量倍率默认 100；布尔值仍返回 `false` 标明非内置市场，自定义 `Unit` 可按实际协议声明配置。
+`VolumeScale=0` 表示协议不提供成交量，`VolumeScale=1` 保留解码量，`100` 为百股换算或国内默认倍率。`ToStorageVolume` 返回 `(int64,error)`，拒绝零/负倍率、负数量和溢出。港股指数 K 线保留点位，报文金额 ×1,000,000 转为原币种。注册市场的品种通过 `Instrument.Rules()` 获得量额规则。
 
 沪深北及期货按新的交易所目录写入。旧 `cn/*` 数据目录不参与当前读写。可转债历史分笔和合成分钟线 CSV 的数量列为张。
 
 标准行情由 `GetKline*` 按代码选择解码类型。股票/ETF 分钟拉取使用 `GetKlineMinute241Until` 保留竞价拆分；可转债、其他国内品种及指数走普通分页，不套用股票竞价拆分。K 线与报价/分时/分笔使用各自声明的倍率，本地文件仍遵循自身协议单位。
 
 标准指数的日、周、月、季、年统一量均为解码量 ×100。港股主板、香港基金和美股周、月、季、年线由统一 Client 支持，香港市场量按 ×10000、美股量按 ×100，成交额使用原币种。拉取层仍只保存日线与 1 分钟线。港股日线类型 4 已用腾讯控股单根、五根请求及独立来源核对；整数百股精度无法恢复零股。类型 9 的该样本首条量字段为 43977，其他量近似万股，不能直接沿用手转股的换算。未知项需取得对应市场及周期的样本后调整配置。
-
-> `import _ "github.com/injoyai/tdx/v2/extend/pull/market"` 即注册全部；`Codes` 为空时自动发现已启用的市场。
 
 ---
 
@@ -161,7 +159,7 @@ fmt.Println(info.Protocol, info.Day.Category, volume)
 | `OnProgress` | 串行逐证券完成回调 | 无，默认不打印进度 |
 | `OnEvent` | 串行日线／分钟阶段及市场终态回调 | 无 |
 | `UniverseVersion` | 自动证券池版本，变化后允许同窗口补拉 | 空 |
-| `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 单地区内置市场有默认值，国际指数须显式配置 |
+| `Schedules` | 按市场覆盖 TimeZone、CloseTime 和 Delay | 使用市场时区和收盘时间，默认延迟 5 分钟。未声明调度的市场须显式配置 |
 | `Pool` | 标准行情(7709)连接池 | 无（std 行情拉取需要） |
 | `ExPool` | 扩展行情(7727)连接池 | 无（ex 市场需要） |
 | `ListCodes` | 标准证券自动发现回调，每轮只调用一次；指定 Codes 时跳过 | 无 |
@@ -380,6 +378,53 @@ m5Aligned, err := pull.MinuteToSessions(ms, 5, []pull.TradingSession{
 
 ## 🔌 自定义市场
 
+### 复用 7727 日线和分钟 K 线
+
+应用启动时从 Go 配置或 JSON 文件创建市场对象，然后调用一次 `protocol.Register`。下面的市场号、代码规则和倍率用于演示，接入时填入已确认的市场参数。
+
+```go
+m, err := protocol.NewMarket(protocol.MarketDef{
+    Key: "demoex", Exchange: 252, CodePattern: `[A-Z][a-z][0-9]{2}`,
+    DayVolumeScale: 10, MinuteVolumeScale: 2,
+    DayAmountScale: 100, MinuteAmountScale: 20,
+    TimeZone: "Asia/Shanghai", CloseTime: "15:00",
+})
+if err != nil {
+    return err
+}
+if err := protocol.Register(m); err != nil {
+    return err
+}
+
+// client 由应用创建，例如 tdx.NewClient() 或对应来源的 tdx.DialEx。
+if _, err := client.GetKlineDay("demoex.Aa12", 0, 1); err != nil {
+    return err
+}
+s, err := pull.New(&pull.Config{
+    Store: store,
+    ExPool: exPool,
+    Codes: []string{"demoex.Aa12"},
+})
+if err != nil {
+    return err
+}
+defer s.Close()
+return s.UpdateContext(ctx)
+```
+
+省略 `Codes` 时，`pull` 从扩展品种表按协议市场号发现代码。同一逻辑市场的多条路由分别使用各自的 `MarketID` 查询 Unit、配置调度及存储。例如港股 31、49、27 分别使用 `hk/stock`、`hk/fund`、`hk/index`。显式代码可用共享前缀 `hk.02800` 或路由键 `hk/fund.02800`。用 `pull.Get` 按路由键查询，用 `pull.Units` 枚举全部路由及应用 Unit。
+
+每个市场默认使用对象声明的时区、收盘时间和 5 分钟延迟，`Config.Schedules` 可以按路由键覆盖。跨时区市场可省略默认调度，由应用提供覆盖项。
+
+`CodePattern` 匹配完整代码，代码保留大小写且最多 9 字节。量或额倍率为 0 时该字段不可用。也可用 `AmountScale` 同时声明日线和分钟线的成交额倍率。更复杂的路由和数据规则见 [统一 Client](../../docs/unified-client.md#注册行情市场)。
+
+市场定义绑定数据集的历史行情和覆盖记录。SQLite 每条路由只接受一个绑定。首次绑定写入失败可重试，旧库存在多个定义标记时会拒绝继续写入。相同路由键改变协议编号、代码规则或量额换算后，更新会要求使用独立数据集或显式重建。应用实现 `protocol.Market` 时应通过 `MarketInfo.Version` 标识代码归属和量额等持久数据规则的版本。
+
+### 实现自己的拉取流程
+
+启动时先注册协议市场，应用专有流程再调用 `pull.Register(Unit)`。Unit 名称与已注册协议路由键、市场别名或其他 Unit 重名时会 panic，名称匹配忽略大小写。应用若晚于 Unit 注册同名协议市场，随后的查找和新服务会以协议市场为准。
+
+
 ```go
 type MyUnit struct{}
 
@@ -410,4 +455,4 @@ go test ./extend/pull/... -count=1
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/pull`。
 
-内置证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。自定义 `market.code` 必须先注册对应 Unit；完整内置市场键与简称使用相同的规范化文件名，例如 `sh.600000` 和 `sh600000` 的日线均使用 `sh/day/sh600000.db`。
+协议市场的证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。应用专有 Unit 使用自己的 `unit.code`。完整内置市场键与简称使用相同的规范化文件名，例如 `sh.600000` 和 `sh600000` 的日线均使用 `sh/day/sh600000.db`。

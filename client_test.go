@@ -1238,3 +1238,217 @@ func TestMarketClientCodeFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisteredMarketQueries(t *testing.T) {
+	const id protocol.MarketID = "configuredex"
+	if _, known := id.Exchange(); !known {
+		m, err := protocol.NewMarket(protocol.MarketDef{
+			Key: id, Exchange: 249, CodePattern: "[A-Z][a-z][0-9]{2}",
+			DayVolumeScale: 10, MinuteVolumeScale: 2, AmountScale: 100,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := protocol.Register(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := marketTestClient(t, nil, func(h, body []byte) []byte {
+		if body[0] != 249 || string(body[1:5]) != "Aa12" {
+			t.Errorf("wrong custom route: %x", body)
+		}
+		if binary.LittleEndian.Uint32(body[14:18]) > 0 {
+			return make([]byte, 20)
+		}
+		bar := testExtendedBar(20260105)
+		binary.LittleEndian.PutUint32(bar[40:], math.Float32bits(1.25))
+		if protocol.IsIntraday(body[10]) {
+			binary.LittleEndian.PutUint16(bar[20:], (2026-2004)*2048+105)
+			binary.LittleEndian.PutUint16(bar[22:], 571)
+		}
+		return bar
+	})
+	for _, input := range []string{"configuredex.Aa12", "Aa12.CONFIGUREDEX", "Aa12.249"} {
+		day, err := c.GetKlineDayAll(input)
+		if err != nil || day.Count != 1 || day.List[0].Volume != 4560 ||
+			day.List[0].Amount == nil || *day.List[0].Amount != 125 {
+			t.Fatal(input, day, err)
+		}
+		minute, err := c.GetKlineMinuteAll(input)
+		if err != nil || minute.Count != 1 || minute.List[0].Volume != 912 ||
+			minute.List[0].Time != "2026-01-05 09:31" || minute.List[0].Amount == nil || *minute.List[0].Amount != 125 {
+			t.Fatal(input, minute, err)
+		}
+	}
+	if _, err := c.GetKlineWeek("configuredex.Aa12", 0, 1); err == nil {
+		t.Fatal("undeclared period accepted")
+	}
+}
+
+type standardRouteMarket struct{ info protocol.MarketInfo }
+
+func (m standardRouteMarket) Info() protocol.MarketInfo { return m.info }
+
+func (standardRouteMarket) Resolve(c protocol.MarketCode, _ protocol.InstrumentSnapshot) (protocol.Instrument, error) {
+	if len(c.Symbol) != 6 || strings.Trim(c.Symbol, "0123456789") != "" {
+		return protocol.Instrument{}, errors.New("invalid standard symbol")
+	}
+	return protocol.Instrument{Exchange: c.Exchange, Code: c.Symbol}, nil
+}
+
+func (standardRouteMarket) Rules(protocol.Instrument) (protocol.InstrumentRules, error) {
+	r := protocol.StandardRules(protocol.SecurityStock)
+	r.Quote.UseCodeDecimals = true
+	return r, nil
+}
+
+func TestNamelessMarketPreservesBareCodes(t *testing.T) {
+	const id protocol.MarketID = "emptyex"
+	bare := map[string]protocol.Exchange{
+		"600000": protocol.ExchangeSH, "000001": protocol.ExchangeSZ, "899050": protocol.ExchangeBJ,
+		"SHOP": protocol.ExchangeUS, "HKL": protocol.ExchangeHI,
+	}
+	check := func() {
+		t.Helper()
+		for code, want := range bare {
+			i, err := protocol.ParseInstrument(code)
+			if err != nil || i.Exchange != want || i.Code != code {
+				t.Errorf("%s: %+v, %v; want wire market %d", code, i, err, want)
+			}
+		}
+	}
+	check()
+	if _, known := id.Exchange(); !known {
+		m := standardRouteMarket{protocol.MarketInfo{Prefix: "emptyex", Routes: []protocol.RouteInfo{
+			{ID: id, Exchange: 247, Protocol: protocol.ProtocolStandard},
+		}}}
+		if err := protocol.Register(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check()
+	i, err := protocol.ParseInstrument("emptyex.600000")
+	if err != nil || i.Exchange != 247 || i.Code != "600000" {
+		t.Fatal(i, err)
+	}
+	if _, err := protocol.ParseExchange(""); err == nil {
+		t.Fatal("empty alias resolved to a market")
+	}
+}
+
+func TestStandardQuotePreservesWireRoute(t *testing.T) {
+	const primary, secondary protocol.MarketID = "stprobe/one", "stprobe/two"
+	if _, known := primary.Exchange(); !known {
+		m := standardRouteMarket{protocol.MarketInfo{Prefix: "stprobe", Routes: []protocol.RouteInfo{
+			{ID: primary, Exchange: 239, Protocol: protocol.ProtocolStandard},
+			{ID: secondary, Exchange: 238, Protocol: protocol.ProtocolStandard},
+		}}}
+		if err := protocol.Register(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var codeRequests atomic.Int32
+	c := marketTestClient(t, func(h, b []byte) []byte {
+		switch binary.LittleEndian.Uint16(h[10:12]) {
+		case protocol.TypeCode:
+			codeRequests.Add(1)
+			payload := make([]byte, 31)
+			payload[0] = 1
+			copy(payload[2:], "123456")
+			switch b[0] {
+			case 238:
+				payload[22] = 4
+			case 239:
+				payload[22] = 2
+			default:
+				t.Errorf("wrong metadata route: %x", b)
+			}
+			return payload
+		case protocol.TypeQuote:
+			if len(b) != 31 || b[10] != 238 || b[17] != 239 || b[24] != 238 {
+				t.Errorf("wrong quote packet: %x", b)
+			}
+			return testQuoteResponse(b)
+		default:
+			t.Errorf("unexpected request %x", h)
+			return nil
+		}
+	}, nil)
+	for range 2 {
+		rows, err := c.GetQuote("stprobe/two.123456", "stprobe/one.123456", "123456.238")
+		if err != nil || len(rows) != 3 {
+			t.Fatal(rows, err)
+		}
+		for j, want := range []struct {
+			ex    protocol.Exchange
+			price float64
+		}{{238, 0.1}, {239, 10}, {238, 0.1}} {
+			if rows[j].Instrument.Exchange != want.ex || rows[j].Price != want.price {
+				t.Errorf("row %d: %+v; want %+v", j, rows[j], want)
+			}
+		}
+	}
+	if got := codeRequests.Load(); got != 2 {
+		t.Fatalf("decimal requests = %d; want one per route", got)
+	}
+
+	routeClient := marketTestClient(t, func(h, b []byte) []byte {
+		switch typ := binary.LittleEndian.Uint16(h[10:12]); typ {
+		case protocol.TypeKline:
+			if b[0] != 238 {
+				t.Errorf("kline wire market = %d, want 238", b[0])
+			}
+			return testStandardBar(false)
+		case protocol.TypeHistoryMinute:
+			if b[4] != 238 {
+				t.Errorf("history minute wire market = %d, want 238", b[4])
+			}
+			return make([]byte, 6)
+		case protocol.TypeTrade:
+			if b[0] != 238 {
+				t.Errorf("trade wire market = %d, want 238", b[0])
+			}
+			return make([]byte, 2)
+		case protocol.TypeHistoryTrade:
+			if b[4] != 238 {
+				t.Errorf("history trade wire market = %d, want 238", b[4])
+			}
+			return make([]byte, 6)
+		case protocol.TypeCallAuction:
+			if b[0] != 238 {
+				t.Errorf("call auction wire market = %d, want 238", b[0])
+			}
+			return make([]byte, 2)
+		case protocol.TypeGbbq:
+			if b[2] != 238 {
+				t.Errorf("gbbq wire market = %d, want 238", b[2])
+			}
+			return make([]byte, 11)
+		default:
+			t.Errorf("unexpected request %x", h)
+			return nil
+		}
+	}, nil)
+	const secondCode = "stprobe/two.123456"
+	if k, err := routeClient.GetKlineDay(secondCode, 0, 1); err != nil || k.Instrument.Exchange != 238 {
+		t.Fatal(k, err)
+	}
+	if m, err := routeClient.GetMinute(secondCode); err != nil || m.Instrument.Exchange != 238 {
+		t.Fatal(m, err)
+	}
+	if m, err := routeClient.GetHistoryMinute("20261009", secondCode); err != nil || m.Instrument.Exchange != 238 {
+		t.Fatal(m, err)
+	}
+	if tr, err := routeClient.GetTrade(secondCode, 0, 10); err != nil || tr.Instrument.Exchange != 238 {
+		t.Fatal(tr, err)
+	}
+	if tr, err := routeClient.GetHistoryTrade("20261009", secondCode, 0, 10); err != nil || tr.Instrument.Exchange != 238 {
+		t.Fatal(tr, err)
+	}
+	if _, err := routeClient.GetCallAuction(secondCode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := routeClient.GetGbbq(secondCode); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"fmt"
@@ -6,17 +6,19 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // exUnit pulls markets using the extended quote protocol.
 type exUnit struct{ name protocol.MarketID }
 
+// Identity ties configured market data to its protocol definition.
+func (u *exUnit) Identity() string { return u.name.Identity() }
+
 func (u *exUnit) Name() string { return u.name.String() }
 
-// Ex 取扩展行情连接池；未配置返回错误。
-func (u *exUnit) Ex(s *pull.Service) (tdx.ClientPool, error) {
+// pool 取扩展行情连接池；未配置返回错误。
+func (u *exUnit) pool(s *Service) (tdx.ClientPool, error) {
 	p := s.ExPool()
 	if p == nil {
 		return nil, fmt.Errorf("pull: 市场 %s 需要配置 ExPool（扩展行情7727连接池）", u.name)
@@ -25,7 +27,7 @@ func (u *exUnit) Ex(s *pull.Service) (tdx.ClientPool, error) {
 }
 
 // Codes filters the shared instrument inventory to this market's wire exchange.
-func (u *exUnit) Codes(s *pull.Service) ([]model.Code, error) {
+func (u *exUnit) Codes(s *Service) ([]model.Code, error) {
 	ex, ok := u.name.Exchange()
 	if !ok {
 		return nil, fmt.Errorf("pull: 未定义的扩展市场 %s", u.name)
@@ -50,11 +52,11 @@ func (u *exUnit) Codes(s *pull.Service) ([]model.Code, error) {
 }
 
 // bars 复用客户端分页；过滤 Until 包含的界外停止记录。
-func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from string) ([]tdx.Kline, error) {
+func (u *exUnit) bars(s *Service, code model.Code, category uint8, from string) ([]tdx.Kline, error) {
 	if code.Market != u.name {
 		return nil, fmt.Errorf("pull: 证券 %s 不属于市场 %s", code.Key(), u.name)
 	}
-	p, err := u.Ex(s)
+	p, err := u.pool(s)
 	if err != nil {
 		return nil, err
 	}
@@ -106,25 +108,25 @@ func (u *exUnit) bars(s *pull.Service, code model.Code, category uint8, from str
 }
 
 // FetchDay 增量拉日线，含最后一根以便重插修复。
-func (u *exUnit) FetchDay(s *pull.Service, code model.Code) error {
+func (u *exUnit) FetchDay(s *Service, code model.Code) error {
 	_, err := u.FetchDayResult(s, code)
 	return err
 }
 
-func (u *exUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
+func (u *exUnit) FetchDayResult(s *Service, code model.Code) (FetchResult, error) {
 	i, err := code.Instrument()
 	if err != nil {
-		return pull.FetchResult{Known: true}, err
+		return FetchResult{Known: true}, err
 	}
 	info, _ := i.Rules()
 	last, err := s.LastDayTime(code)
 	if err != nil {
-		return pull.FetchResult{Known: true}, err
+		return FetchResult{Known: true}, err
 	}
 	from := max(last, s.Start().Format(time.DateOnly))
 	bars, err := u.bars(s, code, info.Day.Category, from)
 	if err != nil {
-		return pull.FetchResult{Known: true}, err
+		return FetchResult{Known: true}, err
 	}
 	out := make([]*model.KlineDay, 0, len(bars))
 	for _, k := range bars {
@@ -139,15 +141,15 @@ func (u *exUnit) FetchDayResult(s *pull.Service, code model.Code) (pull.FetchRes
 }
 
 // FetchMinute 多年份共用一次分页，成功扫描后才提交年度完成标记。
-func (u *exUnit) FetchMinute(s *pull.Service, code model.Code) error {
+func (u *exUnit) FetchMinute(s *Service, code model.Code) error {
 	_, err := u.FetchMinuteResult(s, code)
 	return err
 }
 
-func (u *exUnit) FetchMinuteResult(s *pull.Service, code model.Code) (pull.FetchResult, error) {
+func (u *exUnit) FetchMinuteResult(s *Service, code model.Code) (FetchResult, error) {
 	i, err := code.Instrument()
 	if err != nil {
-		return pull.FetchResult{Known: true}, err
+		return FetchResult{Known: true}, err
 	}
 	info, _ := i.Rules()
 	return pullMinutesResult(s, code, time.Now(), func(from string) ([]*model.KlineMinute, error) {

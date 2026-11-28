@@ -16,6 +16,9 @@ const (
 // StandardRules returns the common standard protocol rules used by raw decoders.
 func StandardRules() InstrumentRules { return standardSecurityInfo(SecurityOther) }
 
+// StandardRulesFor returns the standard defaults for the specified security kind.
+func StandardRulesFor(kind SecurityKind) InstrumentRules { return standardSecurityInfo(kind) }
+
 func standardSecurityInfo(kind SecurityKind) InstrumentRules {
 	info := InstrumentRules{
 		Protocol:       ProtocolStandard,
@@ -31,9 +34,9 @@ func standardSecurityInfo(kind SecurityKind) InstrumentRules {
 		LongVolumeScale:             SharesPerLot,
 		TimeShare:                   TickRule{Supported: true, Fields: Fields{Price: true, Volume: true}, PriceDivisor: 1},
 		Trade:                       TickRule{Supported: true, Fields: Fields{Price: true, Volume: true}, PriceDivisor: 1},
-		standardMinuteVolumeDivisor: SharesPerLot,
+		StandardMinuteVolumeDivisor: SharesPerLot,
 		// 股本为万股，资产、收入和现金流等金额以千元编码。
-		financeSharesScale: 10_000, financeAmountScale: 1_000,
+		FinanceSharesScale: 10_000, FinanceAmountScale: 1_000,
 	}
 	info.setTickVolume(SharesPerLot)
 	switch kind {
@@ -53,7 +56,7 @@ func standardSecurityInfo(kind SecurityKind) InstrumentRules {
 		info.setTickVolume(BondsPerLot)
 		info.Minute.VolumeScale = BondsPerLot
 		info.Day.VolumeScale, info.LongVolumeScale = 100*BondsPerLot, 100*BondsPerLot
-		info.standardMinuteVolumeDivisor = 1
+		info.StandardMinuteVolumeDivisor = 1
 		info.TimeShare.PriceDivisor, info.Trade.PriceDivisor = 100, 10
 		info.Quote.UseCodeDecimals = true
 	case SecurityFund:

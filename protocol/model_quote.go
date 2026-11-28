@@ -59,25 +59,36 @@ func (q *Quote) String() string {
 
 type quote struct{}
 
-func (quote) Frame(codes ...string) (*Frame, error) {
+func (q quote) Frame(codes ...string) (*Frame, error) {
+	instruments := make([]Instrument, 0, len(codes))
+	for _, input := range codes {
+		exchange, code, err := DecodeCode(input)
+		if err != nil {
+			return nil, err
+		}
+		instruments = append(instruments, Instrument{Exchange: exchange, Code: code})
+	}
+	return q.FrameInstruments(instruments)
+}
+
+// FrameInstruments encodes an already resolved 7709 quote batch.
+func (quote) FrameInstruments(instruments []Instrument) (*Frame, error) {
+	if len(instruments) > (65535-12)/7 {
+		return nil, fmt.Errorf("标准报价请求超过协议 uint16 帧长上限")
+	}
 	f := &Frame{
 		Control: Control01,
 		Type:    TypeQuote,
 		Data:    []byte{0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 	}
-
-	payload := Bytes(uint16(len(codes)))
-	for _, v := range codes {
-		exchange, code, err := DecodeCode(v)
-		if err != nil {
-			return nil, err
+	f.Data = append(f.Data, Bytes(uint16(len(instruments)))...)
+	for _, i := range instruments {
+		if len(i.Code) != 6 {
+			return nil, fmt.Errorf("标准报价代码 %q 须为 6 字节", i.Code)
 		}
-
-		payload = append(payload, exchange.Uint8())
-		payload = append(payload, code...)
+		f.Data = append(f.Data, i.Exchange.Uint8())
+		f.Data = append(f.Data, i.Code...)
 	}
-	f.Data = append(f.Data, payload...)
-
 	return f, nil
 }
 

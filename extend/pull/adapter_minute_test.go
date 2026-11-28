@@ -1,4 +1,4 @@
-package market
+package pull
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -34,7 +33,7 @@ func TestBondMinuteUsesPlainPaging(t *testing.T) {
 }
 
 func TestPullMinutesOneScanAndRecovery(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +94,7 @@ func TestPullMinutesOneScanAndRecovery(t *testing.T) {
 }
 
 func TestPullMinutesEmptyAndFailed(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +124,7 @@ func TestPullMinutesEmptyAndFailed(t *testing.T) {
 }
 
 func TestPullMinutesRetainsExpiredLocalBar(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{"sz000001"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20260101", Codes: []string{"sz000001"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +171,7 @@ type pagingClient struct {
 func TestPullMinutesKeepsPriorExtendedYearOpenAtNewYear(t *testing.T) {
 	code := model.Code{Market: protocol.MarketUS, Code: "AAPL"}
 	store := testStore(t.Name())
-	s, err := pull.New(&pull.Config{Store: store, StartAt: "20251201", Codes: []string{"us.AAPL"}})
+	s, err := New(&Config{Store: store, StartAt: "20251201", Codes: []string{"us.AAPL"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +211,7 @@ func TestPullMinutesKeepsPriorExtendedYearOpenAtNewYear(t *testing.T) {
 }
 
 func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), StartAt: "20261231", Codes: []string{"usAAPL"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20261231", Codes: []string{"usAAPL"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +252,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{"usAAPL"}, ExPool: p})
+	s, err := New(&Config{Store: testStore(t.TempDir()), Codes: []string{"usAAPL"}, ExPool: p})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +279,7 @@ func TestPoolDoesNotInitializeGbbq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{"sh000001"}, Pool: pool})
+	s, err := New(&Config{Store: testStore(t.TempDir()), Codes: []string{"sh000001"}, Pool: pool})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,8 +293,8 @@ func TestPoolDoesNotInitializeGbbq(t *testing.T) {
 }
 
 func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
-	cfg := pull.Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}}
-	s, err := pull.New(&cfg)
+	cfg := Config{Store: testStore(t.TempDir()), StartAt: "20240101", Codes: []string{"sz000001"}}
+	s, err := New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +324,7 @@ func TestPullMinutesEmptyHistoryCacheAndRecheck(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err = pull.New(&cfg)
+	s, err = New(&cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

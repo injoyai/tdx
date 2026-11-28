@@ -98,7 +98,7 @@ func splitPrefix(s string) (Exchange, string, bool) {
 			cands = append(cands, cand{e, len(abbr)})
 		}
 		name := strings.ToLower(e.Name())
-		if len(s) > len(name) && strings.HasPrefix(lower, name) {
+		if name != "" && len(s) > len(name) && strings.HasPrefix(lower, name) {
 			cands = append(cands, cand{e, len(name)})
 		}
 	}
@@ -109,7 +109,8 @@ func splitPrefix(s string) (Exchange, string, bool) {
 		}
 	}
 	for _, c := range cands {
-		if exchangeRoutes[c.ex].preferBareSymbol && isStockSymbol(s) {
+		route, registered := routeFor(c.ex)
+		if registered && route.owner.info.PreferBareSymbol && isStockSymbol(s) {
 			continue
 		}
 		body := s[c.ln:]
