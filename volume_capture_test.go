@@ -27,7 +27,7 @@ func TestCapturedUSDayVolume(t *testing.T) {
 			}
 			return data
 		})
-		r, err := c.GetKlineDay("usAAPL", 0, tc.count)
+		r, err := c.GetKlineDay("us.AAPL", 0, tc.count)
 		if err != nil || r.Count != int(tc.count) || r.Category != protocol.TypeKlineDay2 {
 			t.Fatal(r, err)
 		}

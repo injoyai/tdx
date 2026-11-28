@@ -19,7 +19,7 @@
 ```sh
 # 跨市场查询与批量报价
 go run ./examples/GetKline -code hk00700 -count 5
-go run ./examples/GetKline -code usAAPL -count 5
+go run ./examples/GetKline -code us.AAPL -count 5
 go run ./examples/GetQuote sz000001 sh600000
 
 # 北交所完整代码；沪深北股票代码

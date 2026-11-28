@@ -38,26 +38,26 @@ func TestMarketPrefixForms(t *testing.T) {
 		{[]string{"hkHSI", "hk.HSI", "HK.HSI", "Hk.hsi", " hk.HSI "}, protocol.MarketHKIndex, "HSI"},
 		{[]string{"hkCES120", "HK.CES120"}, protocol.MarketHKIndex, "CES120"},
 		{[]string{"hk.HZ5021", "hkHZ5021"}, protocol.MarketHKIndex, "HZ5021"},
-		{[]string{"usAAPL", "US.AAPL", "Us.aapl"}, protocol.MarketUS, "AAPL"},
+		{[]string{"us.AAPL", "US.AAPL", "Us.aapl"}, protocol.MarketUS, "AAPL"},
 		{[]string{"WIX.US", "us.WIX"}, protocol.MarketUS, "WIX"},
 		{[]string{"USB.Us", "us.USB"}, protocol.MarketUS, "USB"},
-		{[]string{"usBRK.B", "us.BRK.B", "US.BRK.B", "BRK.B", "brk.b"}, protocol.MarketUS, "BRK.B"},
-		{[]string{"usABC1", "us.ABC1", "US.abc1"}, protocol.MarketUS, "ABC1"},
-		{[]string{"cffIF2609", "CFF.IF2609", "cff/IF2609"}, protocol.MarketCFF, "IF2609"},
-		{[]string{"czcSR2609", "CZC.SR2609"}, protocol.MarketCZC, "SR2609"},
-		{[]string{"dceA2609", "DCE.A2609"}, protocol.MarketDCE, "A2609"},
-		{[]string{"shfcu2609", "SHF.cu2609"}, protocol.MarketSHF, "cu2609"},
-		{[]string{"gfeLC2609", "GFE.LC2609"}, protocol.MarketGFE, "LC2609"},
-		{[]string{"qhzT001", "QHZ.T001"}, protocol.MarketQHZ, "T001"},
-		{[]string{"qhz.IMCI", "QHZIMCI"}, protocol.MarketQHZ, "IMCI"},
-		{[]string{"csi.000300", "CSI000300", "000300.CsI", "000300.62"}, protocol.MarketCSI, "000300"},
+		{[]string{"us.BRK.B", "US.BRK.B", "brk.b.US"}, protocol.MarketUS, "BRK.B"},
+		{[]string{"us.ABC1", "US.abc1"}, protocol.MarketUS, "ABC1"},
+		{[]string{"cff.IF2609", "CFF.IF2609", "IF2609.CFF"}, protocol.MarketCFF, "IF2609"},
+		{[]string{"czc.SR2609", "CZC.SR2609"}, protocol.MarketCZC, "SR2609"},
+		{[]string{"dce.A2609", "DCE.A2609"}, protocol.MarketDCE, "A2609"},
+		{[]string{"shf.cu2609", "SHF.cu2609"}, protocol.MarketSHF, "cu2609"},
+		{[]string{"gfe.LC2609", "GFE.LC2609"}, protocol.MarketGFE, "LC2609"},
+		{[]string{"qhz.T001", "QHZ.T001"}, protocol.MarketQHZ, "T001"},
+		{[]string{"qhz.IMCI", "IMCI.QHZ"}, protocol.MarketQHZ, "IMCI"},
+		{[]string{"csi.000300", "000300.CsI", "000300.62"}, protocol.MarketCSI, "000300"},
 		{[]string{"csi.H30533", "h30533.CSI"}, protocol.MarketCSI, "H30533"},
 		{[]string{"csi.932000CN", "932000cn.62"}, protocol.MarketCSI, "932000CN"},
-		{[]string{"wi.A_IXIC", "WIA_IXIC", "global/index.a_ixic"}, protocol.MarketInternationalIndex, "A_IXIC"},
-		{[]string{"HK/STOCK.00700", "hk/stock00700"}, protocol.MarketHK, "00700"},
-		{[]string{"HK/INDEX.HSI", "hk/indexHSI"}, protocol.MarketHKIndex, "HSI"},
-		{[]string{"US/STOCK.AAPL", "us/stockAAPL"}, protocol.MarketUS, "AAPL"},
-		{[]string{"TeSt.one", "TESTone"}, "test", "one"},
+		{[]string{"wi.A_IXIC", "global/index.a_ixic"}, protocol.MarketInternationalIndex, "A_IXIC"},
+		{[]string{"HK/STOCK.00700"}, protocol.MarketHK, "00700"},
+		{[]string{"HK/INDEX.HSI"}, protocol.MarketHKIndex, "HSI"},
+		{[]string{"US/STOCK.AAPL"}, protocol.MarketUS, "AAPL"},
+		{[]string{"TeSt.one"}, "test", "one"},
 	} {
 		for _, input := range tt.inputs {
 			t.Run(input, func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestMarketPrefixForms(t *testing.T) {
 }
 
 func TestBuiltinParsersAgree(t *testing.T) {
-	for _, s := range []string{"000001.SZ", "BRK.B", "hkHSI", "上海600000", "sh.600000", "us.BRK.B", "cff/IF2609", "899050", "hk.CES120"} {
+	for _, s := range []string{"000001.SZ", "BRK.B.US", "hkHSI", "上海600000", "sh.600000", "us.BRK.B", "cff.IF2609", "899050", "hk.CES120"} {
 		i, err := protocol.ParseInstrument(s)
 		if err != nil {
 			t.Fatal(s, err)
@@ -92,6 +92,18 @@ func TestBuiltinParsersAgree(t *testing.T) {
 	}
 	if _, err := ParseCode("unknown.opaque-code"); err == nil {
 		t.Fatal("unregistered market silently accepted")
+	}
+}
+
+func TestParseCodeRequiresMarketDot(t *testing.T) {
+	registerMockOnce.Do(func() { Register(&mockUnit{name: "test"}) })
+	for _, input := range []string{
+		"ANT", "SHOP", "BRK.B", "usANT", "usBRK.B", "us/stockAAPL",
+		"cffIF2609", "cff/IF2609", "CSI000300", "WIA_IXIC", "hk/indexHSI", "TESTone", "test/one",
+	} {
+		if code, err := ParseCode(input); err == nil {
+			t.Errorf("ParseCode(%q) accepted %+v", input, code)
+		}
 	}
 }
 
@@ -136,7 +148,7 @@ func TestMarketRegistryIsCaseInsensitive(t *testing.T) {
 	if got, ok := Get(strings.ToLower(name)); !ok || got != u {
 		t.Fatal("市场查找区分了大小写")
 	}
-	for _, input := range []string{"casemarket.one", "CASEMARKETone"} {
+	for _, input := range []string{"casemarket.one", "CASEMARKET.one"} {
 		got, err := ParseCode(input)
 		if err != nil || got.Market != protocol.MarketID(name) || got.Code != "one" {
 			t.Fatal("自定义市场未保留注册名称", got, err)
@@ -177,9 +189,9 @@ func TestLongerBuiltinMarketPrefixWins(t *testing.T) {
 	}
 }
 
-func TestMarketPrefixDoesNotStripBareSymbols(t *testing.T) {
+func TestMarketPrefixWithUSAndHongKongSymbols(t *testing.T) {
 	for _, input := range []string{"SHOP", "SHY", "BJK", "SZL"} {
-		code, err := ParseCode(input)
+		code, err := ParseCode("us." + input)
 		if err != nil || code.Market != protocol.MarketUS || code.Code != input {
 			t.Fatal("误拆美股代码", input, code, err)
 		}
@@ -220,7 +232,7 @@ func TestBuiltinCodesUseProtocolValidation(t *testing.T) {
 
 func TestInvalidBuiltinFailsBeforeCreatingDatabase(t *testing.T) {
 	dir := t.TempDir()
-	for _, input := range []string{"us.12345", "us.ABCDEFGHIJ", "cn/stock.hk00700"} {
+	for _, input := range []string{"us.12345", "us.ABCDEFGHIJ", "cn/stock.hk00700", "ANT", "usANT", "BRK.B", "cffIF2609"} {
 		s, err := New(&Config{Store: testStore(dir), Codes: []string{input}})
 		if err == nil {
 			s.Close()

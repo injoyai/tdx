@@ -66,7 +66,7 @@ func TestDiscoveredCodesDeduplicateByMarketAndCode(t *testing.T) {
 
 func TestUSCodeCaseDedup(t *testing.T) {
 	var codes []model.Code
-	for _, input := range []string{"aapl", "AAPL", "usaapl", "us.AAPL", "us/stock.aapl"} {
+	for _, input := range []string{"us.aapl", "AAPL.US", "uS.aaPL", "us.AAPL", "us/stock.aapl"} {
 		code, err := ParseCode(input)
 		if err != nil || code.Code != "AAPL" || code.Market != protocol.MarketUS {
 			t.Fatal(input, code, err)

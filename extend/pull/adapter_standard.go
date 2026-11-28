@@ -113,7 +113,7 @@ func (u *stdUnit) FetchDayResult(s *Service, code model.Code) (FetchResult, erro
 	}
 	from := max(last, s.Start().Format(time.DateOnly))
 
-	query := standardQuery(i, code)
+	query := i.CodeKey()
 	var ks []tdx.Kline
 	err = pool.DoContext(s.Context(), func(c tdx.Client) error {
 		c = tdx.WithContext(s.Context(), c)
@@ -162,7 +162,7 @@ func (u *stdUnit) FetchMinuteResult(s *Service, code model.Code) (FetchResult, e
 		return FetchResult{Known: true}, err
 	}
 	info, _ := i.Rules()
-	query := standardQuery(i, code)
+	query := i.CodeKey()
 	if s.TradeFallbackEnabled() && info.TradeFallback {
 		fallback = &minuteFallback{
 			days: func(from time.Time) ([]tdx.Kline, error) {
@@ -217,12 +217,4 @@ func (u *stdUnit) FetchMinuteResult(s *Service, code model.Code) (FetchResult, e
 		}
 		return out, nil
 	}, fallback)
-}
-
-func standardQuery(i protocol.Instrument, code model.Code) string {
-	info, _ := code.Market.Info()
-	if len(info.Routes) > 1 {
-		return i.QueryCode()
-	}
-	return code.Code
 }

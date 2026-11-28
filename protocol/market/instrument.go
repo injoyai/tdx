@@ -3,6 +3,7 @@ package market
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -33,10 +34,10 @@ func (i Instrument) QueryCode() string {
 	return i.String()
 }
 
-// CodeKey preserves the compact code used by single-route standard markets
-// and uses an exact route for securities sharing a market prefix.
+// CodeKey preserves compact sh, sz and bj standard codes and uses a qualified
+// query code for other securities.
 func (i Instrument) CodeKey() string {
-	if route, ok := routeFor(i.Exchange); ok && route.Protocol == ProtocolStandard && len(route.owner.info.Routes) == 1 {
+	if route, ok := routeFor(i.Exchange); ok && route.Protocol == ProtocolStandard && compactExchange(i.Exchange) {
 		return route.owner.info.Prefix + i.Code
 	}
 	return i.QueryCode()
@@ -155,56 +156,44 @@ func (m ID) ParseInstrument(body string) (Instrument, error) {
 	return route.resolve(Code{Symbol: body, Exchange: ex, explicit: true}, InstrumentSnapshot{})
 }
 
-// ParseInstrument 支持完整市场键、显式市场前缀/后缀和可判定的裸代码。
-// 解析顺序固定为：完整市场键 → 显式前缀 → 显式后缀 → 无分隔前缀与裸代码，
-// 避免代码主体中的点（如 WIX.US）被更短的市场前缀抢占。
-// 期货保留合约大小写；港股股票、基金和指数分别路由到市场 31、49 和 27。
-func ParseInstrument(s string) (Instrument, error) {
-	resolve := func(ex Exchange, body string) (Instrument, error) {
-		route, ok := routeFor(ex)
-		if !ok {
-			return Instrument{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
+// ParseInstrument parses a dot-qualified code such as us.ANT or ANT.US.
+// SH, SZ, BJ and HK also accept compact forms and their supported bare codes.
+func ParseInstrument(s string) (Instrument, error) { return parseInstrument(s, false) }
+
+func parseInstrument(s string, allowRaw bool) (Instrument, error) {
+	resolve := func(ex Exchange, body string, explicit bool) (Instrument, error) {
+		if route, ok := routeFor(ex); ok {
+			return route.resolve(Code{Symbol: body, Exchange: ex, explicit: explicit}, InstrumentSnapshot{})
 		}
-		return route.resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
+		if allowRaw {
+			return rawInstrument(ex, body)
+		}
+		return Instrument{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
 	}
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return Instrument{}, fmt.Errorf("代码不能为空")
 	}
-	marketMu.RLock()
-	ex, bare := bareInstruments[strings.ToUpper(s)]
-	marketMu.RUnlock()
-	if bare {
-		return resolve(ex, s)
-	}
-	// 1. 完整市场键显式选择协议路由，代码主体可以包含点。
-	if prefix, body, ok := strings.Cut(s, "."); ok {
+
+	// A full route key has precedence even when a symbol contains a dot.
+	prefix, body, dotted := strings.Cut(s, ".")
+	if dotted {
 		if id, exact := exactRoute(prefix); exact {
 			return id.ParseInstrument(body)
 		}
 	}
-	if p := strings.LastIndexByte(s, '.'); p > 0 && strings.Contains(s[p+1:], "/") {
-		id := ID(strings.ToLower(s[p+1:]))
-		if _, registered := id.Exchange(); registered {
+	p := strings.LastIndexByte(s, '.')
+	if p > 0 && strings.Contains(s[p+1:], "/") {
+		if id, exact := exactRoute(s[p+1:]); exact {
 			return id.ParseInstrument(s[:p])
 		}
 	}
-	// 2. 显式前缀：前缀后的第一个点或斜杠只是分隔符，其余部分属于代码主体。
-	//    显式前缀再早于点后缀处理，保证 "WIX.US" 不会被 "wi" 前缀拆成 X.US。
-	if i := strings.IndexAny(s, "./"); i > 0 {
-		if ex, ok := parseMarketToken(s[:i]); ok {
-			body := s[i+1:]
-			if body != "" {
-				route, _ := routeFor(ex)
-				if strings.EqualFold(s[:i], route.Name) && route.Name != route.owner.info.Name {
-					return route.ID.ParseInstrument(body)
-				}
-				return resolve(ex, body)
-			}
+	if dotted {
+		if ex, known := parseMarketToken(prefix); known {
+			return resolve(ex, body, isRouteName(ex, prefix))
 		}
 	}
-	// 3. 显式后缀：数字编号必须落在 0-255，越界立即报错，不能回绕到其他市场。
-	if p := strings.LastIndexByte(s, '.'); p > 0 {
+	if p > 0 {
 		suffix := s[p+1:]
 		if id, exact := exactRoute(suffix); exact {
 			return id.ParseInstrument(s[:p])
@@ -214,58 +203,55 @@ func ParseInstrument(s string) (Instrument, error) {
 			if err != nil || n > 255 {
 				return Instrument{}, fmt.Errorf("市场编号 %q 超出协议编号范围 0-255", suffix)
 			}
-			ex := Exchange(n)
-			if route, ok := routeFor(ex); ok {
-				return route.ID.ParseInstrument(s[:p])
+			return resolve(Exchange(n), s[:p], true)
+		}
+		if ex, ok := parseMarketToken(suffix); ok {
+			return resolve(ex, s[:p], isRouteName(ex, suffix))
+		}
+	}
+
+	marketMu.RLock()
+	ex, bare := bareInstruments[strings.ToUpper(s)]
+	marketMu.RUnlock()
+	if bare {
+		return resolve(ex, s, true)
+	}
+	var required *snapshotRequired
+	for _, ex := range compactExchanges {
+		for _, alias := range []string{ex.String(), ex.Name()} {
+			if alias == "" || len(s) <= len(alias) || !strings.EqualFold(s[:len(alias)], alias) {
+				continue
 			}
-			return resolve(ex, s[:p])
-		}
-		if ex, err := ParseExchange(suffix); err == nil {
-			if route, ok := routeFor(ex); ok &&
-				(strings.EqualFold(suffix, route.Name) && route.Name != route.owner.info.Name) {
-				return route.ID.ParseInstrument(s[:p])
+			i, err := resolve(ex, s[len(alias):], isRouteName(ex, alias))
+			if err == nil || errors.As(err, &required) {
+				return i, err
 			}
-			return resolve(ex, s[:p])
 		}
 	}
-	// 4. 无分隔前缀（如 sz000001）与裸代码推断。
-	// 原始协议的长前缀（如 cffo）优先，避免误拆为 cff + 合约主体。
-	if ex, body, ok := splitPrefix(s); ok {
-		if _, err := (Instrument{ex, body}).Market(); err != nil {
-			return Instrument{}, err
+	switch {
+	case len(s) == 5 && isDigits(s):
+		return resolve(ExchangeHK, s, false)
+	case len(s) == 6 && isDigits(s):
+		if strings.HasPrefix(s, "89") {
+			return resolve(ExchangeBJ, s, false)
 		}
-		route, _ := routeFor(ex)
-		if route.Name != "" && strings.HasPrefix(strings.ToLower(s), strings.ToLower(route.Name)) && route.Name != route.owner.info.Name {
-			return route.ID.ParseInstrument(body)
-		}
-	}
-	for _, ex := range instrumentRoutes() {
-		prefix := ex.String()
-		if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
-			continue
-		}
-		body := s[len(prefix):]
-		explicit := strings.HasPrefix(body, ".") || strings.HasPrefix(body, "/")
-		if explicit {
-			body = body[1:]
-		}
-		route, _ := routeFor(ex)
-		if route.owner.info.PreferBareSymbol && !explicit && isStockSymbol(s) {
-			continue // WIX 等裸美股代码保持原路由。
-		}
-		i, err := resolve(ex, body)
-		if err == nil || explicit {
-			return i, err
+		if prefixed := AddPrefix(s); prefixed != s {
+			ex, _ := parseMarketToken(prefixed[:2])
+			return resolve(ex, s, false)
 		}
 	}
-	if len(s) == 6 && isDigits(s) && strings.HasPrefix(s, "89") {
-		return resolve(ExchangeBJ, s)
-	}
-	ex, body, err := decodeCode(s)
-	if err != nil {
-		return Instrument{}, err
-	}
-	return resolve(ex, body)
+	return Instrument{}, fmt.Errorf("无法识别的代码 %q，请使用市场.代码格式", s)
+}
+
+var compactExchanges = [...]Exchange{ExchangeSH, ExchangeSZ, ExchangeBJ, ExchangeHK, ExchangeHKFund, ExchangeHI}
+
+func compactExchange(ex Exchange) bool {
+	return slices.Contains(compactExchanges[:], ex)
+}
+
+func isRouteName(ex Exchange, name string) bool {
+	route, ok := routeFor(ex)
+	return ok && route.Name != "" && strings.EqualFold(name, route.Name) && route.Name != route.owner.info.Name
 }
 
 // exactRoute recognizes a route key distinct from the logical market prefix.
@@ -309,14 +295,6 @@ func parseMarketToken(token string) (Exchange, bool) {
 		}
 	}
 	return 0, false
-}
-
-func checkedInstrument(ex Exchange, body string) (Instrument, error) {
-	route, ok := routeFor(ex)
-	if !ok {
-		return Instrument{}, fmt.Errorf("行情市场 %d 尚未接入统一 Client", ex)
-	}
-	return route.resolve(Code{Symbol: body, Exchange: ex}, InstrumentSnapshot{})
 }
 
 // symbolParts validates an extended wire code and describes its ASCII contents.

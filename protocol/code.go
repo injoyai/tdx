@@ -2,20 +2,9 @@ package protocol
 
 import "github.com/injoyai/tdx/v2/protocol/market"
 
-// DecodeCode 解析证券代码,返回(交易所, 去掉前缀的代码主体, 错误)。
-//
-// 已接入行情的品种复用 ParseInstrument 的解析与规范化规则，支持以下形式:
-//  1. 带交易所前缀,如 "sz000001"/"sh600000"/"hk00700"/"usAAPL"/"cffIF2609"/"上海600000",
-//     前缀支持小写缩写(见 Exchange.String())、大写("SZ000001")或中文名("上海600000")。
-//  2. 带点后缀,如 "000001.SZ"/"600000.SH"/"00700.HK"/"AAPL.US"/"IF2609.CFF",
-//     后缀为交易所缩写(大小写均可);美股点代码如 "BRK.B" 因后缀 B 不是交易所而按美股代码解析。
-//  3. 裸 6 位数字代码,自动识别并补前缀(A股/基金/指数/可转债/板块指数),如 "000001"→sz000001。
-//  4. 裸非 6 位代码,根据代码形态推断市场:
-//     - 5 位港股数字代码需要品种快照确认协议编号，调用 ResolveInstrument；已知编号可写 00700.31
-//     - 纯字母代码(如 AAPL/BRK.B)→ 美国(ExchangeUS)
-//     - 字母+数字的合约代码(如 IF2609)→ 无法确定交易所,提示使用显式前缀
-//
-// 港美股主体转大写，期货保留大小写，A股仍为6位数字；原始协议的其他交易所保留旧格式校验。
+// DecodeCode 返回协议市场编号和证券代码主体。支持市场.代码、代码.市场及代码.编号。
+// 沪深北港也支持紧凑前缀和约定的裸代码。其他市场使用点分隔，如 us.ANT、cff.IF2609。
+// 与 ParseInstrument 相比，DecodeCode 也支持尚未接入统一 Client 的原始协议市场。
 func DecodeCode(code string) (Exchange, string, error) { return market.DecodeCode(code) }
 
 // IsStock 是否是股票,示例sz000001

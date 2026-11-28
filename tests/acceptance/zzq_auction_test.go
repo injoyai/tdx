@@ -20,7 +20,7 @@ import (
 // 并用 -run TestZZQAuctionAmount 运行，避免与默认夹具的分笔断言冲突。
 func TestZZQAuctionAmount(t *testing.T) {
 	requireZZQ(t)
-	i, err := protocol.ParseInstrument("zzq123456")
+	i, err := protocol.ParseInstrument("zzq.123456")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestZZQAuctionAmount(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := startAuctionClient(t, tc.quantity, tc.amount)
-			r, err := c.GetKlineMinute241Until("zzq123456", func(tdx.Kline) bool { return false })
+			r, err := c.GetKlineMinute241Until("zzq.123456", func(tdx.Kline) bool { return false })
 			if err != nil {
 				t.Fatal(err)
 			}

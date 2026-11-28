@@ -176,9 +176,9 @@ func TestDecodeCode(t *testing.T) {
 		{"600000", ExchangeSH, "600000"},
 		{"920000", ExchangeBJ, "920000"},
 		{"399001", ExchangeSZ, "399001"}, //深成指
-		{"nq400001", ExchangeNQ, "400001"},
-		{"cffo123456", ExchangeCFFO, "123456"},
-		{"gfeo123456", ExchangeGFEO, "123456"},
+		{"nq.400001", ExchangeNQ, "400001"},
+		{"cffo.123456", ExchangeCFFO, "123456"},
+		{"gfeo.123456", ExchangeGFEO, "123456"},
 		{"sh000001", ExchangeSH, "000001"}, //上证指数
 		{"880741", ExchangeSH, "880741"},   //板块指数(代糖概念),自动补 sh 前缀
 		{"881101", ExchangeSH, "881101"},   //行业板块指数,自动补 sh 前缀
@@ -199,18 +199,17 @@ func TestDecodeCode(t *testing.T) {
 		{"09988.31", ExchangeHK, "09988"},
 
 		// 美股
-		{"usAAPL", ExchangeUS, "AAPL"},
-		{"usBRK.B", ExchangeUS, "BRK.B"},
-		{"AAPL", ExchangeUS, "AAPL"},   //裸字母代码自动识别为美股
-		{"brk.b", ExchangeUS, "BRK.B"}, //小写自动转大写
-		{"SHOP", ExchangeUS, "SHOP"},   //美股代码 SHOP,不得误解析为 sh+OP
+		{"us.AAPL", ExchangeUS, "AAPL"},
+		{"us.BRK.B", ExchangeUS, "BRK.B"},
+		{"us.brk.b", ExchangeUS, "BRK.B"}, //小写自动转大写
+		{"us.SHOP", ExchangeUS, "SHOP"},   //美股代码 SHOP,不得误解析为 sh+OP
 
 		// 期货合约(需显式前缀)
-		{"cffIF2609", ExchangeCFF, "IF2609"},
-		{"dceA2609", ExchangeDCE, "A2609"},
-		{"shfCU2608", ExchangeSHF, "CU2608"},
-		{"czcSR2609", ExchangeCZC, "SR2609"},
-		{"gfeSI2609", ExchangeGFE, "SI2609"},
+		{"cff.IF2609", ExchangeCFF, "IF2609"},
+		{"dce.A2609", ExchangeDCE, "A2609"},
+		{"shf.CU2608", ExchangeSHF, "CU2608"},
+		{"czc.SR2609", ExchangeCZC, "SR2609"},
+		{"gfe.SI2609", ExchangeGFE, "SI2609"},
 	}
 	for _, c := range good {
 		ex, num, err := DecodeCode(c.in)
@@ -224,16 +223,16 @@ func TestDecodeCode(t *testing.T) {
 	}
 	// 非法路径:必须明确报错,不得静默解析
 	bad := []string{
-		"123456789",  //纯数字9位
-		"xx000001",   //非法前缀
-		"sh0000010",  //9位数字无合法前缀
-		"",           //空串
-		"sz",         //只有前缀
-		"sh",         //只有前缀
-		"IF2609",     //期货裸合约,无法确定交易所,需显式前缀
-		"shf6000000", //代码超长
-		"us1",        //美股不能是纯数字
-		"000001.XX",  //点后缀非交易所
+		"123456789",   //纯数字9位
+		"xx000001",    //非法前缀
+		"sh0000010",   //9位数字无合法前缀
+		"",            //空串
+		"sz",          //只有前缀
+		"sh",          //只有前缀
+		"IF2609",      //期货裸合约,无法确定交易所,需显式前缀
+		"shf.6000000", //代码超长
+		"us.1",        //美股不能是纯数字
+		"000001.XX",   //点后缀非交易所
 	}
 	for _, in := range bad {
 		if _, _, err := DecodeCode(in); err == nil {

@@ -71,7 +71,7 @@ func TestMinuteResultEmptyAndFuture(t *testing.T) {
 }
 
 func TestBuiltinResultsAndRecheckKeepHistoricalCoverage(t *testing.T) {
-	for _, input := range []string{"sz000001", "sh880001", "hk00700", "hk.HSI", "usAAPL", "cffIF2609"} {
+	for _, input := range []string{"sz000001", "sh880001", "hk00700", "hk.HSI", "us.AAPL", "cff.IF2609"} {
 		t.Run(input, func(t *testing.T) {
 			year := time.Now().In(protocol.Location()).Year()
 			dayTime := fmt.Sprintf("%04d-01-05", year)

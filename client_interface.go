@@ -24,7 +24,7 @@ type KlineReader interface {
 // 查询与该连接协议不匹配的品种会报错，不会自动建立另一类连接。
 // StConn 和 ExConn 直接实现对应协议业务，内部 conn 只负责传输和生命周期。
 //
-// code 推荐使用带市场前缀的证券代码，如 sh600000、hk00700、usAAPL、cffIF2609；
+// code 推荐使用市场.代码，如 us.ANT、cff.IF2609。bj、sz、sh、hk 也可直接拼接，如 sh600000、hk00700。
 // 显式传入 exchange 的方法使用该市场的代码主体。date 使用有效 YYYYMMDD。
 // 统一结果的价格按品种原币种/报价单位表示，成交量和五档买卖量使用最小单位：股票为股，可转债和期货为张；
 // Standard、Extended 和 RangeExtended 保留原始协议数据，未知尺度不推测换算。

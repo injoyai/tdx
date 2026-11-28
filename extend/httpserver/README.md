@@ -251,7 +251,7 @@ curl "http://localhost:8080/kline/day?code=600519&start=0&count=100"
 curl "http://localhost:8080/markets"
 
 # 获取扩展行情报价
-curl "http://localhost:8080/quote?codes=hk00700,cffIF2609"
+curl "http://localhost:8080/quote?codes=hk00700,cff.IF2609"
 ```
 
 基础行情 HTTP 的 `data` 直接使用 Go Client 的统一模型，不转换回旧协议响应：
@@ -266,7 +266,7 @@ curl "http://localhost:8080/quote?codes=hk00700,cffIF2609"
 | `/minute/*` | `tdx.MinuteResp` |
 | `/trade/*` | `tdx.TradeResp`；扩展价格尺度未确认时 `Price=null` |
 
-单代码查询按证券前缀选择标准或扩展连接池；混合报价保持输入顺序与重复项，任一查询失败返回错误，不返回部分结果。取消请求会退出连接池等待，并取消原生客户端的响应等待与后续分页。扩展池未配置时拒绝扩展品种查询。
+单代码查询按证券代码选择标准或扩展连接池。只有 `bj`、`sz`、`sh`、`hk` 支持直接拼接前缀，其他市场使用点分隔（如 `us.ANT`）。混合报价保持输入顺序与重复项，任一查询失败返回错误，不返回部分结果。取消请求会退出连接池等待，并取消原生客户端的响应等待与后续分页。扩展池未配置时拒绝扩展品种查询。
 
 `/code` 的 `count` 必填且为 1..1000，`start` 为 uint32，表示指定交易所内的偏移。`/count`、`/code` 与原始 `/ex/count`、`/ex/instruments` 的全市场语义不同，后两者是独立的协议发现能力。
 

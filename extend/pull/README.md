@@ -88,7 +88,7 @@ func syncExample(ctx context.Context, pool tdx.ClientPool) error {
 | `protocol.MarketCSI` | `csi` | 中证指数 | 7727 | 市场编码 62，如 `csi.000300`，通过 `ExPool` 同步日线和 1 分钟 K 线，量为股、额为元 |
 | `protocol.MarketInternationalIndex` | `global/index` | 国际指数 | 7727 | 市场编码 12，如 `wi.A_IXIC`。通过 `Config.Schedules` 配置调度 |
 
-市场键由 `protocol.MarketID` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff/IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
+市场键由 `protocol.MarketID` 常量表示，也是 SQLite 的市场目录。通过 `pull.ParseCode` 构造已明确归属的 `Code`。例如 `sh.510300` 存为 `{Market: "sh", Code: "sh510300"}`，`cff.IF2609` 存为 `{Market: "cff", Code: "IF2609"}`。
 
 内置市场在 [`protocol/market/`](../../protocol/market) 逐个声明。增加复用现有报文格式的市场时，在一个文件注册市场键、协议编号、代码规则、量价单位和调度。`pull` 按路由键和协议类型直接选用标准或扩展适配器。
 
@@ -232,7 +232,7 @@ Codes: []string{
     "hk02800",  // 盈富基金（香港 ETF，市场 49）
     "HSI",      // 恒生指数（知名港股指数白名单）
     "AAPL",     // 美股（纯字母）
-    "cff/IF2609", // 期货（带交易所前缀）
+    "cff.IF2609", // 期货（带交易所前缀）
 }
 ```
 
@@ -455,4 +455,4 @@ go test ./extend/pull/... -count=1
 
 > 存储/合并/单位换算均有单测（离线）；全市场拉取需联网，见 `examples/pull`。
 
-协议市场的证券代码与 `protocol.ParseInstrument` 共用解析规则，包括 `000001.SZ`、`BRK.B` 和中文交易所前缀。应用专有 Unit 使用自己的 `unit.code`。完整内置市场键与简称使用相同的规范化文件名，例如 `sh.600000` 和 `sh600000` 的日线均使用 `sh/day/sh600000.db`。
+协议市场的证券代码与 `protocol.ParseInstrument` 共用解析规则，只有 `bj`、`sz`、`sh`、`hk` 可以直接拼接。其他市场使用点分隔，如 `us.BRK.B`、`cff.IF2609`、`demoex.Aa12`。应用专有 Unit 使用 `unit.code`。完整内置市场键与简称使用相同的规范化文件名，例如 `sh.600000` 和 `sh600000` 的日线均使用 `sh/day/sh600000.db`。

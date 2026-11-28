@@ -21,17 +21,17 @@ func TestParseInstrument(t *testing.T) {
 		{"02800.香港基金", ExchangeHKFund, "02800"},
 		{"HKCES120", ExchangeHI, "CES120"}, {"HKL", ExchangeHI, "HKL"},
 		{"HSI", ExchangeHI, "HSI"}, {"HSI.HK", ExchangeHI, "HSI"},
-		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"SHOP", ExchangeUS, "SHOP"},
-		{"us.bRk.B", ExchangeUS, "BRK.B"}, {"BRK.B", ExchangeUS, "BRK.B"},
-		{"WIX", ExchangeUS, "WIX"}, {"WING", ExchangeUS, "WING"},
+		{"hk.HZ5021", ExchangeHI, "HZ5021"}, {"us.SHOP", ExchangeUS, "SHOP"},
+		{"us.bRk.B", ExchangeUS, "BRK.B"},
+		{"us.WIX", ExchangeUS, "WIX"}, {"WING.US", ExchangeUS, "WING"},
 		{"WIX.US", ExchangeUS, "WIX"}, {"USB.Us", ExchangeUS, "USB"},
 		{"US.BRK.B", ExchangeUS, "BRK.B"}, {"BRK.B.US", ExchangeUS, "BRK.B"},
-		{"wi.A_IXIC", ExchangeWI, "A_IXIC"}, {"Wi/a_ndx", ExchangeWI, "A_NDX"},
-		{"wiA_SOX", ExchangeWI, "A_SOX"}, {"A_IXIC.12", ExchangeWI, "A_IXIC"},
+		{"wi.A_IXIC", ExchangeWI, "A_IXIC"}, {"Wi.a_ndx", ExchangeWI, "A_NDX"},
+		{"wi.A_SOX", ExchangeWI, "A_SOX"}, {"A_IXIC.12", ExchangeWI, "A_IXIC"},
 		{"B_SDAX.K.WI", ExchangeWI, "B_SDAX.K"},
-		{"cff.IF2609", ExchangeCFF, "IF2609"}, {"CFF/IF2609", ExchangeCFF, "IF2609"},
+		{"cff.IF2609", ExchangeCFF, "IF2609"}, {"US.ANT", ExchangeUS, "ANT"},
 		{"shf.cu2609", ExchangeSHF, "cu2609"}, {"IF2609.CFF", ExchangeCFF, "IF2609"},
-		{"qhz.IMCI", ExchangeQHZ, "IMCI"}, {"QHZIMCI", ExchangeQHZ, "IMCI"}, {"T001.QHZ", ExchangeQHZ, "T001"},
+		{"qhz.IMCI", ExchangeQHZ, "IMCI"}, {"IMCI.QHZ", ExchangeQHZ, "IMCI"}, {"T001.QHZ", ExchangeQHZ, "T001"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			i, err := ParseInstrument(tc.input)
@@ -44,7 +44,7 @@ func TestParseInstrument(t *testing.T) {
 			}
 		})
 	}
-	for _, s := range []string{"", "hk.", "us.", "sh.12345", "sh.AAPL", "cff.IF", "IF2609", "us.A..B", "us.A-", "us.1234", "hk.123456", "hk.ABCDEFGHIJ", "us.ABCDEFGHIJ", "cff.IF$2609", "nq400001", "cffo123456", "gfeo123456", "us.股票"} {
+	for _, s := range []string{"", "hk.", "us.", "sh.12345", "sh.AAPL", "cff.IF", "IF2609", "us.A..B", "us.A-", "us.1234", "hk.123456", "hk.ABCDEFGHIJ", "us.ABCDEFGHIJ", "cff.IF$2609", "nq.400001", "cffo.123456", "gfeo.123456", "us.股票"} {
 		if i, err := ParseInstrument(s); err == nil {
 			t.Errorf("accepted invalid/unsupported code %q as %s", s, i)
 		}
@@ -66,12 +66,12 @@ func TestParseInstrumentMarketPriority(t *testing.T) {
 		{"WIX.US", ExchangeUS, "WIX"}, {"us.WIX", ExchangeUS, "WIX"},
 		{"USB.US", ExchangeUS, "USB"}, {"BRK.B.US", ExchangeUS, "BRK.B"},
 		// 裸代码推断保持不变。
-		{"000001", ExchangeSZ, "000001"}, {"SHOP", ExchangeUS, "SHOP"},
+		{"000001", ExchangeSZ, "000001"}, {"us.SHOP", ExchangeUS, "SHOP"},
 		// 裸品种符号与完整市场键。
 		{"HKL", ExchangeHI, "HKL"},
 		{"hk/fund.02800", ExchangeHKFund, "02800"},
 		{"02800.hk/fund", ExchangeHKFund, "02800"},
-		{"cff/IF2609", ExchangeCFF, "IF2609"},
+		{"cff.IF2609", ExchangeCFF, "IF2609"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			i, err := ParseInstrument(tc.input)
@@ -87,6 +87,22 @@ func TestParseInstrumentMarketPriority(t *testing.T) {
 				t.Fatalf("DecodeCode(%q)=%d %q, %v", tc.input, ex, code, err)
 			}
 		})
+	}
+}
+
+func TestInstrumentRequiresMarketDot(t *testing.T) {
+	for _, input := range []string{
+		"ANT", "SHOP", "BRK.B", "WIX", "WING", "usANT", "usBRK.B", "us/ANT", "us/stockAAPL",
+		"cffIF2609", "cff/IF2609", "shfcu2609", "QHZIMCI", "CSI000300", "WIA_IXIC",
+		"hk/00823", "hk/stock00700", "hk/fund02800", "hk/indexHSI",
+		"nq400001", "cffo123456", "gfeo123456",
+	} {
+		if i, err := ParseInstrument(input); err == nil {
+			t.Errorf("ParseInstrument(%q) accepted %s", input, i)
+		}
+		if ex, code, err := DecodeCode(input); err == nil {
+			t.Errorf("DecodeCode(%q) accepted %v %q", input, ex, code)
+		}
 	}
 }
 
@@ -193,7 +209,7 @@ func TestHongKongFundWithKnownExchange(t *testing.T) {
 
 func TestNumericHongKongRequiresSnapshot(t *testing.T) {
 	for _, input := range []string{
-		"00700", "hk00700", "HK.00700", "00700.HK", "hk09988", "02800", "02800.HK", "hk/00823",
+		"00700", "hk00700", "HK.00700", "00700.HK", "hk09988", "02800", "02800.HK",
 		"HK02849", "hk.02850", "HK03199", "hk03200", "hk03499", "hk03500",
 		"hk09801", "hk09850", "hk82800", "hk83200", "hk.02800",
 	} {

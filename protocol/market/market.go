@@ -45,6 +45,8 @@ type MarketInfo struct {
 	// Change it when either changes stored data or code assignment.
 	Version string
 
+	// PreferBareSymbol is part of the market definition fingerprint.
+	// Dotless input is reserved for the built-in SH, SZ, BJ and HK markets.
 	PreferBareSymbol bool
 }
 
@@ -56,8 +58,9 @@ type RouteInfo struct {
 	Protocol       MarketProtocol
 	CodeSource     CodeSource
 	DiscoverBlocks bool
-	BareSymbols    []string
-	Snapshot       bool
+	// BareSymbols lists the built-in route symbols accepted without a prefix.
+	BareSymbols []string
+	Snapshot    bool
 	// Report selects the archive member and parser for report-backed code lists.
 	// It must be set when CodeSource is CodeListZHBReport.
 	Report *CodeReport
@@ -217,6 +220,9 @@ func register(m Market, external bool) error {
 			if symbol == "" || symbol != strings.TrimSpace(symbol) {
 				return fmt.Errorf("无效裸代码 %q", symbol)
 			}
+			if !compactExchange(route.Exchange) {
+				continue
+			}
 			if _, exists := bareInstruments[symbol]; exists || symbols[symbol] {
 				return fmt.Errorf("重复定义裸代码 %q", symbol)
 			}
@@ -227,7 +233,9 @@ func register(m Market, external bool) error {
 	prefixMarkets[info.Prefix] = entry
 	for _, route := range info.Routes {
 		for _, symbol := range route.BareSymbols {
-			bareInstruments[strings.ToUpper(symbol)] = route.Exchange
+			if compactExchange(route.Exchange) {
+				bareInstruments[strings.ToUpper(symbol)] = route.Exchange
+			}
 		}
 		marketRoutes[route.ID] = route
 		exchangeRoutes[route.Exchange] = registeredRoute{route, entry}
@@ -308,12 +316,6 @@ func routeFor(ex Exchange) (registeredRoute, bool) {
 	defer marketMu.RUnlock()
 	route, ok := exchangeRoutes[ex]
 	return route, ok
-}
-
-func instrumentRoutes() []Exchange {
-	marketMu.RLock()
-	defer marketMu.RUnlock()
-	return slices.Clone(instrumentExchanges)
 }
 
 // Identity returns the persistent data definition of an application market.

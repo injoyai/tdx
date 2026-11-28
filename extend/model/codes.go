@@ -50,10 +50,15 @@ type CodeModel struct {
 
 // FullCode returns a query code retaining the row's route, e.g. sz000001.
 func (c *CodeModel) FullCode() string {
-	if ex, ok := protocol.MarketID(c.Exchange).Exchange(); ok && multipleRoutes(ex) {
-		return (protocol.Instrument{Exchange: ex, Code: c.Code}).QueryCode()
+	ex, ok := protocol.MarketID(c.Exchange).Exchange()
+	if !ok {
+		parsed, err := protocol.ParseExchange(c.Exchange)
+		if err != nil {
+			return c.Exchange + "." + c.Code
+		}
+		ex = parsed
 	}
-	return c.Exchange + c.Code
+	return (protocol.Instrument{Exchange: ex, Code: c.Code}).CodeKey()
 }
 
 type CodeModels []*CodeModel

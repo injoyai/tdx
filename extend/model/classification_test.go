@@ -19,7 +19,7 @@ func TestStandardCodeUsesRouteProtocol(t *testing.T) {
 			t.Fatalf("StandardCode(%q)=%q, %v", tc.in, got, err)
 		}
 	}
-	for _, in := range []string{"us.AAPL", "00700.31", "cff/IF2609"} {
+	for _, in := range []string{"us.AAPL", "00700.31", "cff.IF2609"} {
 		if _, err := StandardCode(in); err == nil {
 			t.Fatalf("扩展市场 %q 不应进入标准元数据缓存", in)
 		}

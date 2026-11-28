@@ -46,7 +46,7 @@ func TestUnifiedQuoteVolume(t *testing.T) {
 		}
 		return data
 	})
-	for _, code := range []string{"sz000001", "sh000001", "hk00700", "usAAPL", "cffIF2609"} {
+	for _, code := range []string{"sz000001", "sh000001", "hk00700", "us.AAPL", "cff.IF2609"} {
 		quotes, err := c.GetQuote(code)
 		if err != nil {
 			t.Fatal(code, err)

@@ -26,9 +26,9 @@ func TestMarketInfoRouting(t *testing.T) {
 		{"sh880001", protocol.MarketSH, protocol.ProtocolStandard, protocol.KindIndex, 9, 7, 1, 1},
 		{"hk00700", protocol.MarketHK, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
 		{"hk02800", protocol.MarketHKFund, protocol.ProtocolExtended, "", 4, 8, protocol.SharesPerLot, protocol.SharesPerLot},
-		{"cffIF2609", protocol.MarketCFF, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"cff.IF2609", protocol.MarketCFF, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 		{"hk.HSI", protocol.MarketHKIndex, protocol.ProtocolExtended, "", 4, 8, 0, 0},
-		{"usAAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
+		{"us.AAPL", protocol.MarketUS, protocol.ProtocolExtended, "", 4, 8, 1, 1},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			code, err := ParseCodeWithSnapshot(tc.code, hkTestSnapshot)

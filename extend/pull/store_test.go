@@ -83,10 +83,10 @@ func TestParseCode(t *testing.T) {
 		{"HSI", protocol.MarketHKIndex, "HSI"},
 		{"VHSI", protocol.MarketHKIndex, "VHSI"},
 		// 美股
-		{"AAPL", protocol.MarketUS, "AAPL"},
+		{"us.AAPL", protocol.MarketUS, "AAPL"},
 		// 期货
-		{"cff/IF2609", protocol.MarketCFF, "IF2609"},
-		{"shf/cu2609", protocol.MarketSHF, "cu2609"},
+		{"cff.IF2609", protocol.MarketCFF, "IF2609"},
+		{"shf.cu2609", protocol.MarketSHF, "cu2609"},
 		// 完整键
 		{"hk/stock.00700", protocol.MarketHK, "00700"},
 		{"US.AAPL", protocol.MarketUS, "AAPL"},

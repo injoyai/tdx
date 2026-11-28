@@ -163,12 +163,12 @@ func TestConsistencyUnknownExtendedAmountStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{"cffIF2609"}, StartAt: "20261019", Day: true, ExPool: p})
+	s, err := pull.New(&pull.Config{Store: testStore(t.TempDir()), Codes: []string{"cff.IF2609"}, StartAt: "20261019", Day: true, ExPool: p})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	code, err := pull.ParseCode("cffIF2609")
+	code, err := pull.ParseCode("cff.IF2609")
 	if err != nil {
 		t.Fatal(err)
 	}

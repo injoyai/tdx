@@ -136,21 +136,6 @@ func allExchangesLocked() []Exchange {
 	return out
 }
 
-// isExchangeName 判断字符串是否为已知市场的字母缩写或中文名(排除纯数字)。
-// 用于 DecodeCode 校验前缀,避免 "000001.SZ" 之类输入把数字前缀 "000" 误当市场编码。
-func isExchangeName(s string) bool {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" {
-		return false
-	}
-	for _, e := range allExchanges() {
-		if s == strings.ToLower(e.String()) || s == strings.ToLower(e.Name()) {
-			return true
-		}
-	}
-	return false
-}
-
 // 市场类型, 来源: 通达信量化 Dict 枚举
 // https://help.tdx.com.cn/quant/docs/markdown/Dict.html
 const (

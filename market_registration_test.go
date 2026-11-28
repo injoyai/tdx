@@ -88,7 +88,7 @@ func TestApplicationMarketRegistration(t *testing.T) {
 		if _, ok := protocol.Exchange(252).Route(); ok {
 			t.Fatal("failed registration published a wire number")
 		}
-		// This also exercises reuse of the first route's wire number and bare symbol.
+		// This also exercises reuse of the first route's wire number.
 		if err := protocol.Register(m); err != nil {
 			t.Fatal(err)
 		}
@@ -103,8 +103,6 @@ func TestApplicationMarketRegistration(t *testing.T) {
 		code  string
 	}{
 		{"TESTEX.Aa12", testCash, 252, "Aa12"},
-		{"Aa12", testCash, 252, "Aa12"},
-		{"testexBb34", testFund, 251, "Bb34"},
 		{"Bb34.TESTEX", testFund, 251, "Bb34"},
 		{"testex/fund.Bb34", testFund, 251, "Bb34"},
 		{"Bb34.251", testFund, 251, "Bb34"},
@@ -116,6 +114,14 @@ func TestApplicationMarketRegistration(t *testing.T) {
 		code, err := pull.ParseCode(tc.input)
 		if err != nil || code.Market != tc.id || code.Code != tc.code {
 			t.Fatal(tc.input, code, err)
+		}
+	}
+	for _, input := range []string{"Aa12", "testexAa12", "testexBb34", "testex/fundBb34"} {
+		if _, err := protocol.ParseInstrument(input); err == nil {
+			t.Errorf("protocol accepted %q without a market separator", input)
+		}
+		if _, err := pull.ParseCode(input); err == nil {
+			t.Errorf("pull accepted %q without a market separator", input)
 		}
 	}
 	if _, err := pull.ParseCode("testex/cash.Bb34"); err == nil {

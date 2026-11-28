@@ -78,7 +78,7 @@ func (p *waitingPool) DoContext(ctx context.Context, fn func(tdx.Client) error) 
 }
 
 func TestUpdateCancellationWhileWaitingForPool(t *testing.T) {
-	for _, code := range []string{"sz000001", "usAAPL", "sh880001"} {
+	for _, code := range []string{"sz000001", "us.AAPL", "sh880001"} {
 		t.Run(code, func(t *testing.T) {
 			pool, err := tdx.NewPool(func() (tdx.Client, error) { return &unifiedClient{}, nil }, 1)
 			if err != nil {

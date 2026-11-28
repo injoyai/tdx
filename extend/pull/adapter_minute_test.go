@@ -211,7 +211,7 @@ func TestPullMinutesKeepsPriorExtendedYearOpenAtNewYear(t *testing.T) {
 }
 
 func TestPullMinutesKeepsReturnedSourceYear(t *testing.T) {
-	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20261231", Codes: []string{"usAAPL"}})
+	s, err := New(&Config{Store: testStore(t.TempDir()), StartAt: "20261231", Codes: []string{"us.AAPL"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestExtendedBarsUsesClientPaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	s, err := New(&Config{Store: testStore(t.TempDir()), Codes: []string{"usAAPL"}, ExPool: p})
+	s, err := New(&Config{Store: testStore(t.TempDir()), Codes: []string{"us.AAPL"}, ExPool: p})
 	if err != nil {
 		t.Fatal(err)
 	}

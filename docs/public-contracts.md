@@ -70,4 +70,4 @@ err := service.UpdateWithOptions(ctx, pull.UpdateOptions{
 
 - `BarStore`、`Unit`、`Progress` 和旧更新方法的签名保持不变。新增更新入口、可选结果接口及 `Config.OnEvent`；Config 请用带字段名的结构字面量，无字段名构造须调整。
 - SQLite 改用 `source-time-v2`，为解决大小写不敏感文件系统的证券碰撞。**不兼容旧数据目录**：旧 `source-time-v1`、Unix 格式或未标记的旧库拒绝打开，不迁移、覆盖或清理，须使用新目录。字段、源时间和量价语义不变。
-- 路径各段只保留小写 ASCII 字母、数字、`-_.`，其余 UTF-8 字节编码成 `~hh`，包括大写和 `~` 本身。期货的规范分隔符先转换为 `-`。例如 `cff/IF2609` 使用 `cff-~49~462609`，与 `cff/if2609` 隔离；自定义市场名同样编码，避免 Unicode 规范化碰撞。
+- 路径各段只保留小写 ASCII 字母、数字、`-_.`，其余 UTF-8 字节编码成 `~hh`，包括大写和 `~` 本身。期货按市场键和合约主体存储。例如 `cff.IF2609` 的日线路径为 `cff/day/~49~462609.db`，与 `cff.if2609` 使用不同文件；自定义市场名同样编码，避免 Unicode 规范化碰撞。

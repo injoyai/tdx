@@ -252,7 +252,7 @@ func TestHongKongMarketRouting(t *testing.T) {
 	}
 	// Compiled codes route directly, including on a cold connection.
 	var workers sync.WaitGroup
-	inputs := []string{"hk.00823", "HK00823", "00823.Hk", "00823", "hk/00823", "香港交易所00823", "00823.香港交易所"}
+	inputs := []string{"hk.00823", "HK00823", "00823.Hk", "00823", "香港交易所00823", "00823.香港交易所"}
 	for n, input := range inputs {
 		workers.Go(func() {
 			var client Client = native.protocolClient

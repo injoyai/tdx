@@ -10,6 +10,7 @@ import (
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -129,12 +130,19 @@ func startZZQClient(t *testing.T) (*tdx.StConn, *standardFixture) {
 
 func TestZZQStandardMarket(t *testing.T) {
 	requireZZQ(t)
-	i, err := protocol.ParseInstrument("zzq123456")
+	i, err := protocol.ParseInstrument("zzq.123456")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if i.Exchange != 200 || i.StorageCode() != "zzq123456" {
 		t.Fatalf("解析结果=%+v", i)
+	}
+	row := &model.CodeModel{Exchange: "zzq", Code: "123456"}
+	if code := row.FullCode(); code != "zzq.123456" {
+		t.Fatalf("元数据查询代码=%q", code)
+	}
+	if err := model.ValidateCodes(model.CodeModels{row}); err != nil {
+		t.Fatal(err)
 	}
 	rules, ok := i.Rules()
 	if !ok || rules.Protocol != protocol.ProtocolStandard || rules.Security != protocol.SecurityStock {
@@ -149,7 +157,7 @@ func TestZZQStandardMarket(t *testing.T) {
 
 	c, fixture := startZZQClient(t)
 
-	k, err := c.GetKline(protocol.TypeKlineMinute, "zzq123456", 0, 10)
+	k, err := c.GetKline(protocol.TypeKlineMinute, "zzq.123456", 0, 10)
 	if err != nil || len(k.List) != 1 {
 		t.Fatal(k, err)
 	}
@@ -157,7 +165,7 @@ func TestZZQStandardMarket(t *testing.T) {
 		t.Fatalf("标准分钟入口=%+v", k.List[0])
 	}
 
-	m, err := c.GetHistoryMinute("20261120", "zzq123456")
+	m, err := c.GetHistoryMinute("20261120", "zzq.123456")
 	if err != nil || len(m.List) != 2 {
 		t.Fatal(m, err)
 	}
@@ -165,7 +173,7 @@ func TestZZQStandardMarket(t *testing.T) {
 		t.Fatalf("历史分时入口=%+v", m.List[1])
 	}
 
-	d, err := c.GetKline(protocol.TypeKlineDay, "zzq123456", 0, 10)
+	d, err := c.GetKline(protocol.TypeKlineDay, "zzq.123456", 0, 10)
 	if err != nil || len(d.List) != 1 {
 		t.Fatal(d, err)
 	}
@@ -175,7 +183,7 @@ func TestZZQStandardMarket(t *testing.T) {
 
 	// 分笔未接入时应发送前拒绝，且不产生协议请求。
 	before := fixture.requests[protocol.TypeTrade]
-	if _, err := c.GetTradeAll("zzq123456"); err == nil {
+	if _, err := c.GetTradeAll("zzq.123456"); err == nil {
 		t.Fatal("未接入的分笔能力没有报错")
 	}
 	if got := fixture.requests[protocol.TypeTrade]; got != before {

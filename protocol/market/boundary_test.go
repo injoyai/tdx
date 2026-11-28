@@ -120,7 +120,7 @@ func TestRouteReturnsIsolatedBareSymbols(t *testing.T) {
 
 // TestRulesProtocolFromRoute 固定规则中的协议类型由路由声明提供。
 func TestRulesProtocolFromRoute(t *testing.T) {
-	for _, code := range []string{"sh600000", "sz000001", "hkHSI", "usAAPL", "cffIF2609"} {
+	for _, code := range []string{"sh600000", "sz000001", "hkHSI", "us.AAPL", "cff.IF2609"} {
 		i, err := ParseInstrument(code)
 		if err != nil {
 			t.Fatalf("%s: %v", code, err)

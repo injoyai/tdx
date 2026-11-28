@@ -52,6 +52,8 @@
 
 跨市场行情可只创建一个业务对象，自动路由标准和扩展连接：
 
+证券代码使用 `市场.代码`，例如 `us.ANT`。只有 `bj`、`sz`、`sh`、`hk` 也支持直接拼接，例如 `sh000001`。
+
 ```go
 c := tdx.NewClient(tdx.WithRedial(false)) // 首次查询才联网
 defer c.Close()
@@ -60,7 +62,7 @@ a, err := c.GetKlineDay("sz000001", 0, 100)
 if err != nil { panic(err) }
 h, err := c.GetKlineDay("hk00700", 0, 100)
 if err != nil { panic(err) }
-f, err := c.GetKlineDay("cffIF2609", 0, 100)
+f, err := c.GetKlineDay("cff.IF2609", 0, 100)
 if err != nil { panic(err) }
 _ = a; _ = h; _ = f
 ```

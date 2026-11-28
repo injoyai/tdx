@@ -45,13 +45,13 @@ func TestRegisterDefinition(t *testing.T) {
 			t.Fatalf("successful registrations = %d", successes.Load())
 		}
 	}
-	for _, input := range []string{"testex.Aa12", "Aa12.TESTEX", "Aa12.252", "testexAa12"} {
+	for _, input := range []string{"testex.Aa12", "Aa12.TESTEX", "Aa12.252"} {
 		got, err := ParseInstrument(input)
 		if err != nil || got != (Instrument{Exchange: 252, Code: "Aa12"}) {
 			t.Fatal(input, got, err)
 		}
 	}
-	for _, input := range []string{"testex.Aa123", "testex.xAa12", "testex../Aa12"} {
+	for _, input := range []string{"testexAa12", "testex.Aa123", "testex.xAa12", "testex../Aa12"} {
 		if _, err := ParseInstrument(input); err == nil {
 			t.Fatal("invalid code accepted", input)
 		}

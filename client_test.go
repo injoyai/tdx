@@ -94,7 +94,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 		{"hk00700", 45600},
 		{"hk02800", 45600},
 		{"00823.49", 45600},
-		{"cffIF2609", 456}, {"usAAPL", 456},
+		{"cff.IF2609", 456}, {"us.AAPL", 456},
 	} {
 		r, err := c.GetKlineDay(tc.code, 0, 1)
 		if err != nil || r.Count != 1 || r.List[0].Volume != tc.vol {
@@ -108,7 +108,7 @@ func TestMarketClientKlineRouting(t *testing.T) {
 			if k.Close != 10 || k.Amount == nil || *k.Amount != 1000 {
 				t.Fatal("standard prices/amount changed", k)
 			}
-		} else if tc.code == "hk00700" || tc.code == "hk02800" || tc.code == "00823.49" || tc.code == "usAAPL" {
+		} else if tc.code == "hk00700" || tc.code == "hk02800" || tc.code == "00823.49" || tc.code == "us.AAPL" {
 			if k.Close != 10.5 || k.Amount == nil || *k.Amount != 478800 {
 				t.Fatal(tc.code, "daily amount missing or incorrect", k)
 			}
@@ -195,13 +195,13 @@ func TestMarketClientMixedQuotesAndMetadata(t *testing.T) {
 		binary.LittleEndian.PutUint32(data[30:34], math.Float32bits(500))
 		return data
 	})
-	inputs := []string{"hk00700", "sz000001", "usAAPL", "sh110075", "sz000001"}
+	inputs := []string{"hk00700", "sz000001", "us.AAPL", "sh110075", "sz000001"}
 	for repeat := 0; repeat < 2; repeat++ {
 		r, err := c.GetQuote(inputs...)
 		if err != nil || len(r) != len(inputs) {
 			t.Fatal(r, err)
 		}
-		for j, input := range []string{"00700.31", "sz000001", "usAAPL", "sh110075", "sz000001"} {
+		for j, input := range []string{"00700.31", "sz000001", "us.AAPL", "sh110075", "sz000001"} {
 			i, _ := protocol.ParseInstrument(input)
 			if r[j].Instrument != i {
 				t.Fatal("mixed quote order lost", r)
@@ -314,7 +314,7 @@ func TestMarketClientTicks(t *testing.T) {
 		binary.LittleEndian.PutUint16(b[30:32], nature)
 		return b
 	})
-	for _, code := range []string{"sz000001", "hk00700", "hk02800", "cffIF2609", "usAAPL"} {
+	for _, code := range []string{"sz000001", "hk00700", "hk02800", "cff.IF2609", "us.AAPL"} {
 		for _, historical := range []bool{false, true} {
 			minute, err := c.GetMinute(code)
 			if historical {
@@ -328,7 +328,7 @@ func TestMarketClientTicks(t *testing.T) {
 				trade, err = c.GetHistoryTrade("20261009", code, 0, 1)
 			}
 			wantDirection := -1
-			if code == "usAAPL" || code == "hk02800" {
+			if code == "us.AAPL" || code == "hk02800" {
 				wantDirection = 0
 			}
 			if err != nil || trade.Count != 1 || trade.List[0].Direction != wantDirection ||
@@ -467,6 +467,11 @@ func TestMarketClientValidationBeforeDial(t *testing.T) {
 			t.Errorf("validation %d passed", j)
 		}
 	}
+	for _, code := range []string{"ANT", "SHOP", "BRK.B", "usANT", "cff/IF2609", "CSI000300"} {
+		if _, err := c.GetQuote(code); err == nil {
+			t.Errorf("GetQuote(%q) accepted a code without an explicit market", code)
+		}
+	}
 }
 
 func TestMarketClientMinuteCategories(t *testing.T) {
@@ -481,7 +486,7 @@ func TestMarketClientMinuteCategories(t *testing.T) {
 		}
 		return make([]byte, 20)
 	})
-	for _, code := range []string{"sz000001", "sh000001", "hk00700", "cffIF2609", "usAAPL"} {
+	for _, code := range []string{"sz000001", "sh000001", "hk00700", "cff.IF2609", "us.AAPL"} {
 		r, err := c.GetKlineMinute(code, 0, 1)
 		if err != nil || r.Count != 0 {
 			t.Fatal(code, r, err)
@@ -560,15 +565,15 @@ func TestMarketClientExtendedKlineAmount(t *testing.T) {
 		{"hk00700", protocol.TypeKlineYear, false, true, 4_560_000},
 		{"hk02800", protocol.TypeKlineMinute, true, true, 45_600},
 		{"hk.02800", protocol.TypeKlineWeek, false, true, 4_560_000},
-		{"usAAPL", protocol.TypeKlineMinute2, true, true, 456},
-		{"usAAPL", protocol.TypeKline30Minute, false, true, 456},
-		{"usAAPL", protocol.TypeKline60Minute, false, true, 456},
-		{"usAAPL", protocol.TypeKlineWeek, false, true, 45_600},
-		{"usAAPL", protocol.TypeKlineMonth, false, true, 45_600},
-		{"usAAPL", protocol.TypeKlineQuarter, false, true, 45_600},
-		{"usAAPL", protocol.TypeKlineYear, false, true, 45_600},
-		{"cffIF2609", protocol.TypeKlineMinute, true, false, 456},
-		{"cffIF2609", protocol.TypeKlineWeek, false, false, 456},
+		{"us.AAPL", protocol.TypeKlineMinute2, true, true, 456},
+		{"us.AAPL", protocol.TypeKline30Minute, false, true, 456},
+		{"us.AAPL", protocol.TypeKline60Minute, false, true, 456},
+		{"us.AAPL", protocol.TypeKlineWeek, false, true, 45_600},
+		{"us.AAPL", protocol.TypeKlineMonth, false, true, 45_600},
+		{"us.AAPL", protocol.TypeKlineQuarter, false, true, 45_600},
+		{"us.AAPL", protocol.TypeKlineYear, false, true, 45_600},
+		{"cff.IF2609", protocol.TypeKlineMinute, true, false, 456},
+		{"cff.IF2609", protocol.TypeKlineWeek, false, false, 456},
 	} {
 		check := func(r *KlineResp, err error) {
 			t.Helper()
@@ -1306,7 +1311,7 @@ func TestNamelessMarketPreservesBareCodes(t *testing.T) {
 	const id protocol.MarketID = "emptyex"
 	bare := map[string]protocol.Exchange{
 		"600000": protocol.ExchangeSH, "000001": protocol.ExchangeSZ, "899050": protocol.ExchangeBJ,
-		"SHOP": protocol.ExchangeUS, "HKL": protocol.ExchangeHI,
+		"HKL": protocol.ExchangeHI,
 	}
 	check := func() {
 		t.Helper()
