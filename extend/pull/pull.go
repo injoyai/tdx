@@ -434,12 +434,12 @@ func (s *Service) checkIdentity(u Unit) error {
 	}
 	key := "pull:definition:" + u.Name()
 	digest := sha256.Sum256([]byte(identity))
-	// Negative values distinguish definition fingerprints from the old Unix-second markers.
+	// Definition fingerprints use a negative value in the update store.
 	token := int64(binary.BigEndian.Uint64(digest[:8]) | (uint64(1) << 63))
 	var matches bool
 	var err error
 	if store, ok := s.store.(storage.DefinitionStore); ok {
-		matches, err = store.BindDefinition(key, fmt.Sprintf("%s:%x", key, digest), token)
+		matches, err = store.BindDefinition(key, token)
 	} else {
 		matches, err = s.bindDefinition(key, token)
 	}
@@ -447,7 +447,7 @@ func (s *Service) checkIdentity(u Unit) error {
 		return err
 	}
 	if !matches {
-		return fmt.Errorf("pull: 市场 %s 的定义已改变或旧绑定无法唯一确认，须使用独立数据集或显式重建历史数据", u.Name())
+		return fmt.Errorf("pull: 市场 %s 的定义指纹与数据集绑定不一致，须使用独立数据集或显式重建历史数据", u.Name())
 	}
 	return nil
 }

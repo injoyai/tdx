@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"strings"
 	"sync"
 	"testing"
 )
@@ -65,42 +64,28 @@ func TestUpdateStoreReopensExistingMarks(t *testing.T) {
 	}
 }
 
-func TestDefinitionClaimLegacyMarkers(t *testing.T) {
+func TestDefinitionClaimRejectsTimestamp(t *testing.T) {
+	store, err := NewPull(t.TempDir(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
 	const key = "pull:definition:test"
-	a := key + ":" + strings.Repeat("a", 64)
-	b := key + ":" + strings.Repeat("b", 64)
-	for _, tc := range []struct {
-		name  string
-		aTime int64
-		bTime int64
-		bound int64
-		match bool
-	}{
-		{"orphan without binding", 123, 0, 0, true},
-		{"unique legacy binding", 0, 456, 456, true},
-		{"orphan before binding", 123, 456, 456, false},
-		{"ambiguous legacy binding", 456, 456, 456, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			store, err := NewPull(t.TempDir(), 1)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer store.Close()
-			for k, v := range map[string]int64{key: tc.bound, a: tc.aTime, b: tc.bTime} {
-				if v != 0 {
-					if err := store.SaveUpdate(k, v); err != nil {
-						t.Fatal(err)
-					}
-				}
-			}
-			if match, err := store.BindDefinition(key, b, -2); err != nil || match != tc.match {
-				t.Fatalf("B matched=%t, err=%v", match, err)
-			}
-			if match, err := store.BindDefinition(key, a, -1); err != nil || match {
-				t.Fatalf("A matched=%t, err=%v", match, err)
-			}
-		})
+	if _, err := store.updatedDB.Insert(&updateRecord{Key: key, Time: 456}); err != nil {
+		t.Fatal(err)
+	}
+	if match, err := store.BindDefinition(key, -1); err != nil || match {
+		t.Fatal(match, err)
+	}
+	if match, err := store.BindDefinition(key, 456); err == nil || match {
+		t.Fatal("binding accepted a timestamp as a fingerprint", match, err)
+	}
+	if err := store.SaveUpdate(key, 789); err == nil {
+		t.Fatal("update store accepted a timestamp as a fingerprint")
+	}
+	if value, bound, err := store.LoadUpdate(key); err != nil || !bound || value != 456 {
+		t.Fatal(value, bound, err)
 	}
 }
 
@@ -130,7 +115,7 @@ func TestDefinitionClaimAcrossStores(t *testing.T) {
 		wg.Go(func() {
 			<-begin
 			token := -int64(j + 1)
-			match, err := db.BindDefinition(key, "", token)
+			match, err := db.BindDefinition(key, token)
 			results <- result{token, match, err}
 		})
 	}
@@ -146,7 +131,7 @@ func TestDefinitionClaimAcrossStores(t *testing.T) {
 			t.Fatalf("concurrent claim %+v, winner=%d", r, winner)
 		}
 		// Competing SQLite connections may return BUSY before the winner commits.
-		if match, err := second.BindDefinition(key, "", r.token); err != nil || match != (winner == r.token) {
+		if match, err := second.BindDefinition(key, r.token); err != nil || match != (winner == r.token) {
 			t.Fatalf("retry token=%d, match=%t, err=%v, winner=%d", r.token, match, err, winner)
 		}
 		if err := second.SaveUpdate(key, r.token); (err == nil) != (winner == r.token) {

@@ -12,7 +12,6 @@ tdx/
 │   ├── metadata/        证券、股本、历史日历的内存查询
 │   │   └── httpclient/  可选的元数据 HTTP 获取与刷新
 │   ├── pull/            元数据获取与行情同步、历史分笔下载
-│   │   └── market/      旧导入路径兼容包
 │   ├── storage/         行情 BarStore 和事务契约
 │   │   ├── storagetest/ 可被外部适配器调用的契约测试
 │   │   └── sqlite/      SQLite/XORM 实现、表模型及文件布局

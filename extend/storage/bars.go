@@ -29,9 +29,9 @@ type BarStore interface {
 }
 
 // DefinitionStore optionally provides an atomic definition claim for a BarStore
-// shared by multiple processes. key identifies the market, token is its negative
-// binding fingerprint, and legacyKey identifies the older definition marker.
+// shared by multiple processes. key identifies the market and token is its
+// negative binding fingerprint.
 // Implementations must preserve a matching claim and reject a different claim.
 type DefinitionStore interface {
-	BindDefinition(key, legacyKey string, token int64) (matches bool, err error)
+	BindDefinition(key string, token int64) (matches bool, err error)
 }
